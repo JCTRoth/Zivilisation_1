@@ -62,8 +62,9 @@ shared *Continue*), parameterized where the news names a city.
   advance the queue).
 * **Huge by CSS**: `storyModal.css` stretches the shell's `artLayout="cover"`
   hero to `min(64vh, 560px)` with pixel-crisp rendering over the `#0b0f14`
-  stage; the city and wonder heroes get the same art treatment at
-  `min(52vh, 440px)`.
+  stage; the city and wonder heroes use the shell's own cover height
+  (`.gm-hero--cover` in `gameModalShell.css`, 300 px / 340 px on wide
+  screens) — there is no second, smaller hero rule.
 
 == 3. Rules and boundaries
 

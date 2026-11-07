@@ -1,180 +1,161 @@
 = Round Manager and Automated Path Following Implementation
 
 == Overview
-This document describes the implementation of automated unit path following and the dedicated Round Manager system.
 
-== Components Created/Modified
+**Round management now lives in `src/game/engine/TurnManager.ts`.** The
+original `src/game/engine/RoundManager.ts` was merged into it and no longer
+exists; the only trace of the old name is a comment — `TurnManager.ts:181`,
+`// --- Unit path management (compatibility with previous RoundManager) ---`
+— and a few stale code comments elsewhere. Nothing in the repository logs
+with the `[RoundManager]` prefix any more.
 
-=== 1. RoundManager (`src/game/engine/RoundManager.ts`)
-*Purpose*: Manages turn execution and ensures all players (human and AI) complete their moves properly.
+This document describes the system as it is today: the real API, the legacy
+`roundManager` property that kept its name, the log prefix to filter on, and
+how automated path following fits into the turn flow.
 
-*Key Features*:
-* *Path Storage*: Maintains a Map of unit paths (unitId -> array of {col, row} positions)
-* *Automated Movement*: Processes unit movements at the start of each turn
-* *Path Management*: Set, get, clear, and cleanup paths for units
-* *Turn Execution*: Handles civilization turns and triggers AI moves when appropriate
+== Components
 
-*Main Methods*:
+=== 1. TurnManager (`src/game/engine/TurnManager.ts`)
+
+*Purpose*: runs the turn for every civilization — phase machine, unit turn
+queue, AI turns, research/production phases — **and** owns the unit path
+store that used to belong to `RoundManager`.
+
+*Unit path API* (the old RoundManager surface, kept for compatibility —
+`TurnManager.ts:182-196`):
+
 [source,typescript]
 ----
-setUnitPath(unitId, path)           // Store a path for a unit
-getUnitPath(unitId)                 // Retrieve a unit's path
-clearUnitPath(unitId)               // Remove a unit's path
-getAllUnitPaths()                   // Get all stored paths
-processAutomatedMovements(civId)    // Execute automated movements for a civilization
-executeCivilizationTurn(civId)      // Execute complete turn for a civilization
-startNewRound(activePlayer)         // Start a new round (called on turn advance)
-cleanupDestroyedUnits(unitIds)      // Remove paths for destroyed units
+setUnitPath(unitId, path)                 // TurnManager.ts:182 — store a path
+getUnitPath(unitId)                       // TurnManager.ts:186 — read it back
+clearUnitPath(unitId)                     // TurnManager.ts:189 — drop it
+getAllUnitPaths()                         // TurnManager.ts:193 — copy of the map
+cleanupDestroyedUnits(existingUnitIds)    // TurnManager.ts:196 — prune dead units
 ----
 
-*Path Following Logic*:
-. At the start of each turn, checks all units for the active civilization
-. For each unit with a stored path and remaining moves:
-   ** Attempts to move to the next position in the path
-   ** If successful: removes that step from the path and continues
-   ** If movement fails: clears the entire path
-   ** Continues until unit runs out of moves or path is complete
+The store is a plain `Map<string, Array<{ col, row }>>` (`TurnManager.ts:44`),
+created with the manager and cleared with it (`:82`, `:111`). Paths persist
+across turns; they are what the UI and `GoToManager` read and write.
 
-=== 2. GameEngine Integration (`src/game/engine/GameEngine.ts`)
+*Automated movement*:
 
-*Changes Made*:
-* Added `import { RoundManager } from './RoundManager'`
-* Added `roundManager: RoundManager` property
-* Initialized RoundManager in constructor: `this.roundManager = new RoundManager(this)`
-* Modified `processTurn()` to:
-** Log turn processing steps
-** Clean up paths for destroyed units
-** Call `roundManager.startNewRound()` to execute automated movements
+[source,typescript]
+----
+processAutomatedMovements(civilizationId)   // TurnManager.ts:1614 (private)
+----
 
-*Turn Flow*:
+Runs at the start of the `UNIT_MOVEMENT` phase (`TurnManager.ts:387`): every
+unit of that civilization that still has a stored path and movement points
+walks one step after another, the path shrinking with each successful move
+and being cleared when a step fails or the destination is reached.
+
+*Turn API* (what actually exists — there is **no** `executeCivilizationTurn`
+and **no** `startNewRound`):
+
+[source,typescript]
+----
+startTurn(civilizationId)   // TurnManager.ts:242 — reset moves, open the turn
+endHumanTurn()              // TurnManager.ts:339 — the human's "End Turn"
+nextPhase()                 // advance the phase machine
+getRoundNumber() / restoreState(...) / getPhase()   // round bookkeeping + save
+----
+
+=== 2. GameEngine integration (`src/game/engine/GameEngine.ts`)
+
+* The property is still called `roundManager`, but its type is `TurnManager`:
+  `roundManager: TurnManager; // kept property name for compatibility`
+  (`GameEngine.ts:330`), assigned `this.roundManager = new TurnManager(this)`
+  (`:434`), and handed to `GoToManager` right after (`:435`).
+* `GameEngine.processTurn()` (`:7144`) does nothing itself: it delegates to
+  `this.roundManager.endHumanTurn()` (`:7158-7159`).
+* The first turn is opened with `this.roundManager.startTurn(this.activePlayer)`
+  (`GameEngine.ts:1211`).
+* Save/load round-trips the paths through the alias:
+  `this.roundManager.getAllUnitPaths()` in `getSaveJSON()` (`:9082`) and
+  `setUnitPath` / `restoreState` when loading (`:9416`, `:9429`).
+
+Turn flow as it runs today:
+
 [source]
 ----
-processTurn() called
-  ↓
-Advance to next player
-  ↓
-Reset unit moves
-  ↓
-Clean up destroyed unit paths
-  ↓
-RoundManager.startNewRound(activePlayer)
-  ↓
-  → processAutomatedMovements (follow paths)
-  → executeCivilizationTurn (handle AI if needed)
-  ↓
-Continue with city production, etc.
+GameEngine.processTurn()                (GameEngine.ts:7144)
+  └─► TurnManager.endHumanTurn()        (GameEngine.ts:7158)
+        ├─ cleanup / advance to the next phase
+        ├─ CITY_PRODUCTION → RESEARCH → END
+        └─ startTurn(nextPlayer)  (TurnManager.ts:733)
+              └─ UNIT_MOVEMENT phase:
+                   processAutomatedMovements(civ)   (TurnManager.ts:387)
+                     → walk stored GoTo paths, then the unit turn queue
 ----
 
-=== 3. GameCanvas Integration (`src/components/game/GameCanvas.tsx`)
+=== 3. GameCanvas integration (`src/components/game/GameCanvas.tsx`)
 
-*Changes Made*:
-* Added sync with RoundManager when setting paths
-* Added sync when updating paths after movement
-* Added useEffect to sync paths from RoundManager on turn changes
+* On every turn change the canvas reloads the paths for the UI:
+  `roundManager.getAllUnitPaths()` (`GameCanvas.tsx:1125-1129`, behind the
+  `Sync unit paths … on turn change` effect).
+* Orders go through `GoToManager` (`calculatePath` / `setUnitPath` /
+  `getUnitPath` / `clearUnitPath`, `GameCanvas.tsx:1998-2081`), which writes
+  into the same store — its collaborator field is *named* `roundManager` but
+  typed `TurnManager` (`GoToManager.ts:25,28`).
 
-*Path Synchronization Points*:
-. *When setting GoTo destination*: Syncs path to RoundManager
-. *After automatic movement*: Syncs remaining path to RoundManager
-. *When continuing existing path*: Syncs updated path to RoundManager
-. *On turn change*: Loads all paths from RoundManager to update UI
+=== 4. SettlementEvaluator logging
 
-*Example Code*:
-[source,typescript]
-----
-// Setting path
-if (gameEngine && gameEngine.roundManager) {
-  gameEngine.roundManager.setUnitPath(gotoUnit.id, pathToFollow);
-}
+The `SettlementEvaluator` logging notes that used to travel with this document
+(`getTileYields`, `hasWaterAccess`, `evaluateArea`) are unchanged and live in
+`src/game/engine/SettlementEvaluator.ts`.
 
-// Syncing on turn change
-useEffect(() => {
-  if (gameEngine && gameEngine.roundManager) {
-    const paths = gameEngine.roundManager.getAllUnitPaths();
-    setUnitPaths(paths);
-  }
-}, [gameState.currentTurn, gameEngine]);
-----
+== How it works
 
-=== 4. SettlementEvaluator Extended Logging (`src/game/engine/SettlementEvaluator.ts`)
+=== User workflow
+. User selects a unit and clicks "Go To" from the context menu.
+. User clicks the destination tile.
+. The path is computed in `Pathfinding.ts` and stored through
+  `GoToManager.setUnitPath` → `TurnManager.setUnitPath`.
+. The unit moves the first step immediately if it still has moves; the route
+  is drawn as a red line with an arrow.
+. On the next turn the `UNIT_MOVEMENT` phase picks the path up again.
 
-*Enhanced Logging Added*:
-* *getTileYields*: Changed `console.log` to `console.warn` for unknown terrain, improved yield logging format
-* *hasWaterAccess*: Added checkmark/cross symbols (✓/✗) for better visual scanning of logs
-* *evaluateArea*: Added detailed score calculation formula in logs
+=== Path persistence
+* Paths live on the engine level (`TurnManager.unitPaths`), so they survive
+  turn changes and save/load.
+* They are synced to `GameCanvas` for display, and shown only for the
+  selected unit.
+* Cleared when the unit reaches its destination, when a step fails, when the
+  order is cancelled — or explicitly by `cleanupDestroyedUnits(existingUnitIds)`
+  (`TurnManager.ts:196`). Note that neither that method nor its `GoToManager`
+  twin (`GoToManager.ts:345`) has a caller in `src/` today, so a destroyed
+  unit's path is currently left in the map until something clears it.
 
-== How It Works
+== Logging
 
-=== User Workflow
-. User selects a unit and clicks "Go To" from context menu
-. User clicks destination tile
-. Path is calculated using Pathfinding.ts
-. Path is stored in both GameCanvas state and RoundManager
-. Unit automatically moves first step (if has moves)
-. Path is displayed as red line with arrow
-
-=== Automated Turn Flow
-. When player ends turn, `processTurn()` is called
-. Active player advances to next civilization
-. All unit moves are reset for the new active player
-. RoundManager cleans up paths for destroyed units
-. RoundManager processes automated movements:
-   ** For each unit with a path:
-      *** Move along path while unit has moves
-      *** Update path after each successful move
-      *** Clear path if movement fails or completes
-. If AI civilization, trigger AI turn processing
-. Continue with city production and other game mechanics
-
-=== Path Persistence
-* Paths are stored in RoundManager (game engine level)
-* Paths persist across turns
-* Paths are synchronized to GameCanvas for UI display
-* Only displayed for selected units (red line with arrow)
-* Automatically cleared when:
-   ** Unit reaches destination
-   ** Movement fails (blocked terrain, enemy unit, etc.)
-   ** Unit is destroyed
-
-== Benefits
-
-. *Automated Movement*: Units follow their set paths automatically each turn
-. *Reduced Micromanagement*: Players don't need to manually move units every turn
-. *Clear Visual Feedback*: Red path lines show unit destinations
-. *Robust Path Management*: Handles failures gracefully
-. *Clean Architecture*: Centralized turn management in RoundManager
-. *Better Debugging*: Enhanced logging in SettlementEvaluator
-
-== Future Enhancements
-
-Possible improvements:
-* Add UI button to cancel unit paths
-* Show path ETA (estimated turns to arrival)
-* Alert player when path is blocked
-* Allow path modification without canceling
-* Support waypoints for complex paths
-* Add path preview before confirming
-
-== Testing Recommendations
-
-. *Basic Path Following*: Set path for unit, end turn, verify unit moves along path
-. *Multiple Units*: Set paths for multiple units, verify each follows its path independently
-. *Path Obstacles*: Set path that becomes blocked, verify path is cleared appropriately
-. *Turn Changes*: Set path, end turn multiple times, verify path persists and continues
-. *AI Players*: Verify AI turns execute after automated movements
-. *Unit Destruction*: Set path for unit, destroy unit, verify path is cleaned up
-
-== Console Logging
-
-All major operations are logged with `[RoundManager]` or `[SettlementEvaluator]` prefixes for easy filtering:
+Every major operation is logged with the **`[TurnManager]`** prefix — 80-plus
+occurrences in `TurnManager.ts`, and *zero* `[RoundManager]` occurrences in
+`src/` or `tests/`:
 
 [source,javascript]
 ----
-// Filter RoundManager logs in browser console
+// Filter TurnManager logs in the browser console
 console.log = (function(log) {
   return function() {
-    if (arguments[0] && arguments[0].includes('[RoundManager]')) {
+    if (arguments[0] && arguments[0].includes('[TurnManager]')) {
       log.apply(console, arguments);
     }
   };
 })(console.log);
 ----
+
+== Testing recommendations
+
+. *Basic path following*: set a path, end the turn, verify the unit moves.
+. *Multiple units*: several paths, each followed independently.
+. *Blocked paths*: a path that becomes impassable is cleared, not retried.
+. *Turn changes*: paths persist and continue across turns.
+. *Unit destruction*: the path does not outlive its unit.
+. *Save/load*: paths survive a round trip (`getSaveJSON` → `loadGame`).
+
+== Future enhancements
+
+* UI button to cancel a unit path.
+* Path ETA (estimated turns to arrival).
+* Alert when a path is blocked; allow modification without cancelling.
+* Waypoints and a path preview before confirming.

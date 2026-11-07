@@ -1,8 +1,8 @@
 = AI Overview
 
-Entry point to the computer-player layer. `AIManager.ts` alone is ~7,500 lines
-and the whole `AI/` folder is ~14,500, so this page is the map you want before
-you open any of it.
+Entry point to the computer-player layer. `AIManager.ts` alone is ~11,400 lines
+and the whole `AI/` folder is ~25,600 (31 files), so this page is the map you
+want before you open any of it.
 
 For the numbers the AI plays against, see link:GAME_RULES.adoc[Game Rules Reference].
 
@@ -27,15 +27,15 @@ its own tax rates.
 |File |Lines |Responsibility
 
 |`AIManager.ts`
-|7,519
+|11,403
 |The turn orchestrator. Unit movement, target selection, missions, army assembly.
 
 |`AIResearch.ts`
-|483
+|663
 |Picks the next technology.
 
 |`AIUtility.ts`
-|664
+|672
 |Movement and tactical helpers. Best move, patrol waypoints, threat levels, defensive positions.
 
 |`AIStrategy.ts`
@@ -47,31 +47,31 @@ its own tax rates.
 |Chooses the strategy profile, with hysteresis.
 
 |`AIAggression.ts`
-|378
+|435
 |When to start a war, and bulk attack planning.
 
 |`AICoordinator.ts`
-|355
+|1,250
 |Army groups: formation, rally, retreat, readiness.
 
 |`AICityManager.ts`
-|494
+|761
 |The **city governor** — re-assigns tiles, feeds people, picks specialists.
 
 |`AIEconomicManager.ts`
-|276
+|584
 |Tax rate policy, reserve targets, sustainable unit cap.
 
 |`AIBuildingStrategy.ts`
-|444
+|535
 |Building and wonder choice.
 
 |`NavalDoctrine.ts`
-|360
+|1,040
 |Fleet sizing, warship and landing target scoring.
 
 |`AITypes.ts`
-|360
+|374
 |Shared types, `CIV_PRODUCTION_PROFILES`, personality table, tech categories.
 |===
 
@@ -81,19 +81,19 @@ Shared, non-AI code the AI depends on:
 |===
 |File |Why the AI needs it
 
-|`AutoProduction.ts` (2,469)
+|`AutoProduction.ts` (4,016)
 |The AI does **not** have its own production logic. It uses the same auto-production you can turn on for your own cities.
 
-|`SettlementEvaluator.ts` (649)
+|`SettlementEvaluator.ts` (676)
 |City-site scoring, with per-strategy weight presets.
 
-|`BarbarianManager.ts` (252)
+|`BarbarianManager.ts` (263)
 |A separate, simpler AI for the horde.
 
-|`EnemySearcher.ts` (427)
+|`EnemySearcher.ts` (442)
 |Spiral search for enemies, scout zones.
 
-|`ScoutMemory.ts` (221)
+|`ScoutMemory.ts` (222)
 |Cross-turn intel so a scout does not re-explore the same tiles.
 |===
 
@@ -118,7 +118,7 @@ CIV_PRODUCTION_PROFILES = [
 getCivProductionProfile(id) = PROFILES[id % 6]
 ----
 
-[cols="1,1,1,1,1,1,1,1", options="header"]
+[cols="1,1,1,1,1,1,1", options="header"]
 |===
 |Profile |aggression |diplomacy |military |expansion |science |economy
 
@@ -186,28 +186,31 @@ pinned `?seed=` makes that rotation reproducible.
 
 `AIManager.runAITurn`:
 
-0. **Load state.** Read or seed `AIState` from `storage.turnData.aiState`. AI
+1. **Load state.** Read or seed `AIState` from `storage.turnData.aiState`. AI
    memory is per-civ and survives save/load.
-1. **Strategy.** `AIStrategySelector.evaluateStrategy` — six scoring functions,
+2. **Strategy.** `AIStrategySelector.evaluateStrategy` — six scoring functions,
    plus `shouldForceReevaluation` hysteresis so the AI does not flip-flop.
-2. **Research.** `AIResearch.selectResearch` → `setResearch`.
-3. **Government.** `GovernmentManager.evaluateGovernmentForCiv`, and start a
+3. **Research.** `AIResearch.selectResearch` → `setResearch`.
+4. **Government.** `GovernmentManager.evaluateGovernmentForCiv`, and start a
    revolution if it wins by more than the switch margin.
-4. **Diplomacy.** `DiplomacyManager.processAIDiplomacy`.
-5. **Plans.** `getAggressionState`, then update the offensive plan, the colony
+5. **Diplomacy.** `DiplomacyManager.processAIDiplomacy`.
+6. **Plans.** `getAggressionState`, then update the offensive plan, the colony
    mission and the invasion mission. A deliberate rush war declaration happens
    here if the AI is aggressive and the target is land-reachable.
-6. **Army groups.** Pull out city defense reserves first, then
+7. **Army groups.** Pull out city defense reserves first, then
    `AICoordinator.formArmyGroups` and `updateGroupStatuses`.
-7. **Units.** Release non-garrison fortified units, then per unit:
+8. **Units.** Release non-garrison fortified units, then per unit:
    oscillation check → movement loop (`MAX_MOVEMENT_ATTEMPTS = 50`,
    `MAX_STUCK_ITERATIONS = 3`) → type-specific handling for diplomat, settler,
    stacked enemy, ferry, Fisher Boat → `chooseAITarget` → attack if adjacent,
    otherwise path and step.
-8. **Production.** `AutoProduction.processAutoProductionForCivilization`.
+9. **Production.** `AutoProduction.processAutoProductionForCivilization`.
 
-There is a 250 ms start delay for readability, skipped entirely on the
-`AI_VS_AI*` spectator maps so those games play at full speed.
+There is a 250 ms start delay for readability in a watched game. On the
+`AI_VS_AI*` / auto-scenario maps the delay is `getGameSpeedStep() × 300 ms`
+(`GameEngine.getAITurnStartDelay`), so those games play at full speed only
+while the speed step is 0 — an observer stepping the speed down pays the
+pacing they chose.
 
 A hard timeout force-ends the turn:
 `aiTurnTimeoutMs(tiles) = min(180000, 30000 + max(0, tiles − 1600) × 25)`.
@@ -306,19 +309,19 @@ A hard timeout force-ends the turn:
 
 |`AI_MAX_SPECIALISTS_PER_CITY`
 |2
-|
+|Profile cap on taxmen/scientists while the city's area is still unbuilt (the population-scaled cap of §6 takes over once it is)
 
 |`MAX_ENTERTAINERS_PER_CITY`
 |2
-|
+|Minimum entertainer staff the contentment pass keeps
 
 |`MAX_WARSHIPS_ABSOLUTE`
-|12
+|8
 |Hard fleet cap
 
 |`MAX_TRANSPORTS_PER_CITY`
-|0.5
-|Ferry target as a fraction of city count
+|1.0
+|Ferry target as a fraction of city count (absolute cap 4)
 
 |`AUTO_QUEUE_TARGET`
 |3
@@ -326,23 +329,30 @@ A hard timeout force-ends the turn:
 
 |`AI_ABSOLUTE_MAX_SCOUTS`
 |3
-|
+|Auto-production never keeps more than 3 scouts
 |===
 
 ---
 
 == 6. The city governor
 
-`AICityManager` runs every city every turn:
+`AICityManager` runs every city every turn, in this order:
 
-1. **Secure contentment** — build or sell for happiness.
-2. **Secure food** — if a famine is within `AI_FAMINE_WARNING_TURNS`, switch to
+1. **Secure food** — if a famine is within `AI_FAMINE_WARNING_TURNS`, switch to
    a granary or an aqueduct.
+2. **Secure contentment** — hire entertainers until the city is content (a
+   disordered city produces nothing at all), keeping at least two workers on
+   the fields.
 3. **Steer surplus** — stop hoarding food once `AI_FOOD_SURPLUS_CAP` is reached.
-4. **Manage specialists** — at most 2 per city, at most 2 entertainers, and only
-   once population ≥ 3.
-5. **Swap worked tiles** — hand-assign tiles rather than trusting the generic
-   optimizer, so the choice is explainable.
+4. **Manage specialists** — the staff cap scales with population
+   (`specialistCapForPopulation`: 2 up to size 8, +1 per three citizens, capped
+   at `MAX_SPECIALISTS_PER_CITY` = 5); entertainers are hired until content up
+   to `min(pop − 2, cap)`, and taxmen/scientists only from population ≥ 3
+   (`AI_SPECIALIST_MIN_POP`).
+
+Worked tiles are hand-swapped (`swapWorkedTile`) inside the food and surplus
+passes rather than trusting the generic optimizer, so the choice is
+explainable.
 
 The human has an equivalent: `setCityGovernor` in `GameEngine`, with
 `releaseManualAllocations` to hand control back.
@@ -356,10 +366,12 @@ Pure policy lives in `NavalDoctrine`; the movement lives in `AIManager`.
 * Fleet budget is a function of city count and naval pressure. Budgets are
   computed per hull class: a civ that can feed a trireme but not a battleship
   fields the trireme instead of nothing.
-* Transports target `1.0 × cities` (cap 6 absolute) and scale with parallel
+* Transports target `1.0 × cities` (cap 4 absolute) and scale with parallel
   objectives — 1 hull for 1–3 islands, 2 for 4–6, 3 for 7+, plus lift per
-  invasion target. Warships target `2 × cities`, capped at 16 absolute.
-* Colony missions run **in parallel** (up to 3 islands at once, one settler +
+  invasion target. Warships are budget × naval pressure, clamped to
+  `min(8, coastal cities × 1.0, budget)` — the hard cap is 8, not 16.
+* Colony missions run **in parallel** (up to 6 at once —
+  `maxParallelColonies = clamp(settlers + hulls, 3, 6)` — one settler +
   hull each, ferries never double-booked). Islands are picked by size versus
   sailing time (`scoreColonyIsland`); founding tiles by yield plus high ground
   (`findBestColonySite`). Landed settlers found instead of re-embarking, and
@@ -491,7 +503,10 @@ link:GAME_PROGRESSION_EXPORT.adoc[Game Progression Export] for the format.
 * `space-bunny-free_ai_gov.adoc` argues the strategy layer is close to dead code
   and that two 500-line if-cascades in `AICityManager` and `AIManager` are the
   real governors. That critique has not been acted on.
-* There is almost no per-civ AI *memory* beyond the current `AIState` blob.
+* AI memory now lives in a handful of bounded modules (`ScoutMemory`,
+  `SettlerMemory`, `CaravanMemory`, `NavalPatrolMemory`) alongside the `AIState`
+  blob — but none of them serialise, so a loaded game still starts the AI with
+  amnesia (see link:AI_MEMORY.adoc[AI Memory] item 9).
 * "Commitment" — settlers heading for a site, armies heading for a target — is
   implemented separately in roughly six places rather than once.
 * There is no measurement gate, so AI changes are judged by playing the game

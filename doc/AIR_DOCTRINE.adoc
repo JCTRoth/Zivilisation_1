@@ -61,7 +61,9 @@ late-game economics test (communism climb) stays green.
 == Verification
 
 * `npx tsc --noEmit` — clean
-* `npx vitest run` — 213 test files, 2599 tests, all green
+* `npx vitest run` — 213 test files, 2599 tests, all green (as of this report;
+  re-checked 2026-11-07: 247 test files, 2,929 tests — 2,927 green, with 2
+  failures in `tests/nomads.test.ts`)
 * `npm run build` — success (3.67s)
 
 == Files touched

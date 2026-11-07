@@ -6,13 +6,14 @@
 :source: `src/game/engine/DiplomacyManager.ts`, `src/game/engine/AI/AITypes.ts`, `src/data/GameData.ts`, `src/data/LeaderPortraits.ts`, `src/components/ui/GameModals.tsx`
 
 Scope: civ ↔ leader identity. The constraint that shapes everything below: *the
-player may pick any of the 14 civs, on any of the 12 map types*, and the layer
-that must stay identical in all 168 combinations is diplomacy.
+player may pick any of the 14 civs, on any of the 13 map types*, and the layer
+that must stay identical in all 182 combinations is diplomacy.
 
 Related: `doc/DIPLOMACY_SYSTEM.adoc` (current mechanics),
 `doc/space-bunny-free_ai_gov.adoc` (AI architecture; already uses the word
 *doctrine* for the goal set), `doc/AI_PRODUCTION.adoc:6-24` (the index → profile
-table this document replaces), `TODO.txt:1-16` (diplomacy to-dos),
+table this document replaces), `TODO/DONE.txt` (the diplomacy to-dos — closed
+there and listed as DONE),
 `doc/AI_VS_AI_ANALYSIS.adoc` (the stalemate that motivates a peace-with-terms
 model).
 
@@ -92,7 +93,7 @@ Keep it there.
 | Civ identity | `doctrine` | implicit — a `name` + a `leader` string in `GameData.ts:31-133`
 | Behavioural family | `archetype` | `productionProfile` / `StrategyProfile` (`AITypes.ts:14-20`)
 | Six 1–10 sliders | `traits` | `personality` (`AITypes.ts:26-33`)
-| Diplomatic rules | `charter` | *hard-coded inside `processAIDiplomacy`* (`DiplomacyManager.ts:675-783`)
+| Diplomatic rules | `charter` | *scored in `AIDiplomacyPolicy.scoreCandidates`, dispatched by `processAIDiplomacy`* (`DiplomacyManager.ts:2581`; policy in `src/game/engine/diplomacy/AIDiplomacyPolicy.ts:276-564`)
 | One mechanical rule | `signature` | *nothing*
 | Standing goal | `agenda` | *nothing* (only `STRATEGY_GOAL_TECHS`, tech ids)
 | Flavour | `dossier` | `LEADER_PORTRAITS` (`LeaderPortraits.ts:51-262`), title + scene only
@@ -102,7 +103,8 @@ Keep it there.
 
 === Today, choosing a civ changes nothing
 
-The civ picker offers 14 civilizations (`GameSetupModal.tsx:119-122`), each with
+The civ picker offers 14 civilizations (`GameSetupModal.tsx:1011-1046`, the
+list built from `CIVILIZATIONS` at `:824`), each with
 its own colour, icon, leader and 40–70 city names. Mechanically the choice is
 **cosmetic**. The evidence: every single read of `personality` and
 `productionProfile` in the codebase reads *the acting civ's own* value —
@@ -125,23 +127,31 @@ always `early_expansion`.
 
 === Three reasons diplomacy is the right layer
 
-. **It is the only layer that is identical on all 12 map types.** Production
+. **It is the only layer that is identical on all 13 map types.** Production
   depends on terrain, tile counts and coastlines; research depends on what is
   reachable. The diplomatic ruleset reads only turn number, strength ratio,
   treaties and reputation — so a Doctrine behaves the same on `EARTH`
   (180×90), on `CLOSEUP_1V1` (20×20), on `NAVAL_CLOSEUP` (mostly water) and on
-  `AI_VS_AI_NAVAL` (8 islands). A civ must be playable in all 168 civ × map
+  `AI_VS_AI_NAVAL` (8 islands). A civ must be playable in all 182 civ × map
   combinations; the charter is the only place that can guarantee it.
 . **It is the layer the player actually reads.** The diplomacy screen is the
   only place a leader's name, title, portrait scene, attitude, reputation,
   strength ratio and event history appear together (`GameModals.tsx:740-1012`).
   A Doctrine that only touched `determineProductionItem` would be invisible.
-. **It is unfinished, so the differentiation is free.** Attitude has no memory
-  (`getAttitude` recomputes from scratch, `:175-231`), willingness reads no
-  personality at all (`:869-932`), refusing an offer costs nothing, peace is
-  unconditional, there is no war weariness, gold gifting does not exist, tech
-  exchange is unreachable from any UI (`:518-541`), and there is no third-party
-  reaction to a war declaration. All of that is room to build in.
+. **The plumbing is built; the differentiation is not.** Every gap this design
+  once pointed at has since been closed: attitude is a *stored* directed ledger
+  (`DiplomacyManager.getAttitudeScore:564-568`, `DiplomaticOpinion.ts`),
+  willingness is personality-scaled (`ProposalScoring.GOODWILL_WEIGHT` and
+  `thresholdFor(weights)`), a refusal is remembered (`recordRefusal`,
+  `DiplomacyManager:1195`) and costs −5 points on the next score, gold gifting
+  and asking exist (`gift_gold`, `offer_gift`, `request_gold`), the Exchange of
+  Knowledge sits on the diplomat menu and the negotiation screen, war weariness
+  drives the AI (`getWarExhaustion:519`), and third parties react to a surprise
+  attack (`DiplomacyManager:720-738`). What is genuinely still missing is the
+  Doctrine *itself*: there is no `LeaderDoctrines.ts`, no charter field on a
+  civ, no per-civ thresholds anywhere — every number above is one global table
+  for all fourteen leaders. That is the remaining work, and it is what this
+  document proposes.
 
 === What changes for the player (the global gameplay effect)
 
@@ -204,7 +214,7 @@ export interface LeaderCharter {
 
   alliance: {
     offers: boolean;          // proposes alliances
-    acceptsWillingnessBonus: number;   // added to calculateWillingness
+    acceptsWillingnessBonus: number;   // added to the acceptance score (ProposalScoring)
     /** Chance per 5-turn check to betray a pact of N turns standing. */
     betraysAfterTurns: number | null;
     betrayalChance: number;   // 0-100
@@ -215,14 +225,14 @@ export interface LeaderCharter {
   tribute: { demands: boolean; atRatio: number; afterTurns: number;
              /** Amount multiplier, and +25% per refusal (Stalin). */ scale: number; escalates: boolean; };
 
-  /** Gold and technology flows. Most are TODO.txt:4-8, unwired today. */
+  /** Gold and technology flows — all wired today (see TODO/DONE.txt). */
   trade: { offersTreatyAfterTurns: number; goldPerTurn: number;
            giftGoldWhenPoor: number; sellsTechForGold: number; stealsTech: boolean; };
 
   /** New offer types this leader may send. */
   offers: DiplomatAction[];   // e.g. ['demand_non_aggression'] for Napoleon
 
-  /** Lines. Replace the fixed strings at :702/:709/:742/:753 and getRejectReason :955. */
+  /** Lines. Replace `AI_OFFER_MESSAGES` (DiplomacyManager.ts:165-178) and `rejectionReason` (ProposalScoring.ts:436-443). */
   tone: { greeting: string; demand: string; peace: string; refuse: string; betray: string; };
 }
 
@@ -255,52 +265,77 @@ is the contract between the design and the implementation.
 | Charter field | Replaces | Where
 
 | `doW.conquestRatio`
-| `conquestThreshold` = 1.6 / 2.0 / ∞ by archetype
-| `DiplomacyManager.ts:720-723`
+| no `conquestThreshold` any more — a war of conquest is scored as
+`max(0, ratio − warTargetMargin(year)) × 25 × appetite`, with
+`appetite = warAppetite(wear) × temperament(warmongering)` (0 for
+warmongering ≤ 4)
+| `AIDiplomacyPolicy.ts:174-180,478-503`
 
 | `doW.hostileRatio`
-| the hard-coded `1.5` in `classicDoW`
-| `DiplomacyManager.ts:727`
+| no `classicDoW` either; the surviving fixed ratio is the
+`theirStrength > ownStrength * 1.8` test in `shouldHonourMutualDefence`,
+and the war margin itself shrinks with the calendar
+| `AIDiplomacyPolicy.ts:231,174-180`
 
 | `doW.maxOpenWars`, `onlyOpportunists`
-| *nothing* — a leader can open N wars at once, today
-| —
+| exists today: `maxConcurrentWars(weights, year)` (warmongering-driven,
++1/+2 fronts late game) gates every declaration in `mayDeclareWar`
+| `AIDiplomacyPolicy.ts:155-166,201-219`
 
 | `peace.atWeakeningRatio`, `afterTurns`
-| `theirStrength > ownStrength * 1.3 && turnsSince > 5`
-| `DiplomacyManager.ts:702`
+| the losing side pushes ceasefire `20 × peaceAppetite(wear)` and peace
+`12 × peaceAppetite(wear)`, and any war past 12 turns adds
+`turnsSince − 12` points to peace each turn
+| `AIDiplomacyPolicy.ts:283-301`
 
 | `peace.terms`, `minimumWarScore`
-| unconditional `makePeace`; the counter-offer's gold is computed and then dropped
-| `DiplomacyManager.ts:709`, `:461-463`, `:843-849`
+| `makePeace(a, b)` still takes no terms, and no `warScore` exists anywhere
+in `src/`; a counter-offer can at least name tribute gold
+| `DiplomacyManager.ts:787`, `:3060-3068`
 
 | `alliance.offers`
-| `personality.diplomacy >= 6` (a trait used as a boolean)
-| `DiplomacyManager.ts:748`
+| an alliance is a scored candidate: +30 for a shared enemy, +12 when they
+keep their word (`respect > 40`), +6 if a defence pact already exists, over
+an act threshold of 6
+| `AIDiplomacyPolicy.ts:447-455,242-254`
 
 | `alliance.betraysAfterTurns`, `betrayalChance`
-| `turnsSince > 20 && aggression >= 7 && rand < 8`, and `hostile && rand < 40`
-| `DiplomacyManager.ts:764-765`
+| `break_alliance` is scored, not rolled: fear > 35, grievance > 20, needing
+the ally, `− loyalty × 0.4`, plus restlessness after 15 turns scaled by
+warmongering — no random backstab anywhere
+| `AIDiplomacyPolicy.ts:506-527`
 
 | `alliance.acceptsWillingnessBonus`, `trade.*`
-| `calculateWillingness` reads **no personality at all** — this is the single biggest hook
-| `DiplomacyManager.ts:869-932`
+| `calculateWillingness` is gone: `ProposalScoring` multiplies goodwill by a
+per-action `GOODWILL_WEIGHT` and sets the bar with `thresholdFor(weights)`,
+so personality is already in the arithmetic — the Charter would retune those
+numbers per civ
+| `ProposalScoring.ts:31-50,147-151`
 
 | `trade.stealsTech`, `sellsTechForGold`
-| `offer_tech_exchange` exists, is unreachable from any UI or AI decision, and skips the "unknown to the receiver" check
-| `DiplomacyManager.ts:518-541`; `GameEngine.ts:5391-5431`
+| `offer_tech_exchange`, `offer_tech_for_gold` and `gift_technology` are all
+reachable (negotiation screen, diplomat menu, AI policy) and the pickers are
+already filtered to `theyHaveWeLack` / `weHaveTheyLack`; what is missing is a
+per-civ appetite for selling
+| `GameModals.tsx:2047-2095`; `DiplomatAbilities.ts:113-138`;
+`AIDiplomacyPolicy.ts:326-445`
 
 | `tone.*`
-| five fixed strings + `getRejectReason`'s four fixed strings
-| `DiplomacyManager.ts:702,709,742,753`, `:955-962`
+| one fixed line per AI action, plus `rejectionReason()`'s four fixed
+refusals (`getRejectReason` no longer exists)
+| `DiplomacyManager.ts:165-178`; `ProposalScoring.ts:436-443`
 
 | *(new)* target-side attitude term
-| attitude ignores the target entirely
-| `DiplomacyManager.ts:175-231`
+| attitude is a stored directed ledger now, but every impact is scaled by the
+*holder's* personality (`weightsFor(holderCivId)`), so a target's own traits
+still never enter the reputation it has
+| `DiplomacyManager.ts:550-568,616-628`
 
 | *(new)* `notoriety`
-| `declareWar` has no third-party consequence — the world is passive
-| `DiplomacyManager.ts:235-270`
+| third parties already react — every contacted observer takes a
+`surprise_attack` hit weighted by whether it fears the aggressor — but there
+is still no standing per-civ score the world reads
+| `DiplomacyManager.ts:720-738`
 |===
 
 == The fourteen Doctrines
@@ -647,8 +682,8 @@ maths is completely in the player's hands.
 *If you play the Indians.* You will never be attacked, you will be the most
 trusted civ in the game, and you will be unable to take a single city without
 paying a diplomatic price that the game does not itemise. `stealsTech: true`
-means your diplomats are a real tool, not a ceremony — this is `TODO.txt:4-5`
-wired to one leader.
+means your diplomats are a real tool, not a ceremony — the feature it rests on
+is no longer an open TODO (`TODO/DONE.txt`).
 
 *Counter-play.* There isn't one, by design. That is the point: the nonviolent
 Doctrine is not weak, it is *expensive to violate*. A player who wants to
@@ -737,11 +772,11 @@ Charter notes:
 === Russians — Joseph Stalin — *The Five-Year Plan Doctrine*
 
 *Effect on gameplay.* The only leader with a *memory*. Refusing a Stalin tribute
-demand costs 8 attitude, permanently — `reputationModifier` decay of 1/turn is
-switched off for him, and that is the only reason the demand is a real decision
-instead of a free roll (`DiplomacyManager.ts:628-635` recovers both signs toward
-0 today, and nothing ever grants positive reputation, so the positive branch is
-dead code). His demand *escalates by 25% per refusal*, so the second demand is
+demand costs 8 attitude, permanently — his charter never lets that price decay.
+The engine today has only the pair-wide refusal counter (`offersRefused`,
+cleared by the next accepted offer, `DiplomacyManager.ts:1228-1232`) and
+grievance decaying 0.5 a turn (`:2133`); there is no per-leader refusal price
+at all. His demand *escalates by 25% per refusal*, so the second demand is
 1.25× the first and the third is 1.56×. He demands tribute at 1.8× — the lowest
 of the autocrats — and declares war at 1.5× but only while he is already at
 peace, so the table sees him attack exactly once, completely, and then stop
@@ -826,11 +861,11 @@ notoriety: number;   // 0-100, starts at 0
 |===
 | Event | Δ | Note
 
-| Declare war from peace | +12 | `SURPRISE_ATTACK_PENALTY` already costs the *victim* −20 pair reputation
+| Declare war from peace | +12 | the `surprise_attack` impact already costs the *victim* −35 goodwill (`DiplomaticImpacts.ts:24`)
 | Declare war from an alliance | +25 | the worst thing you can do
-| Declare war from a ceasefire | +30 | breaks the 5-turn cooldown rule
+| Declare war from a ceasefire | +30 | costs the victim −30 goodwill, or −10 once the ceasefire is more than 5 turns old
 | Refuse a tribute demand | +4 | the first real cost for a free action in the game
-| Cancel a treaty | +3 | today this costs the pair −5 and nothing else
+| Cancel a treaty | +3 | today this costs the pair −6 and nothing else
 | Tribute paid | −6 | makes extorting expensive
 | Alliance honoured (defender joins your war) | −10 | rewards the *merchant* doctrines
 | Peace made | −2 |
@@ -850,8 +885,8 @@ Consequences, all keyed off the leader you are dealing with:
 
 == The map-agnostic guarantee
 
-Because the player may pick any civ on any of the twelve map types
-(`GameSetupModal.tsx:279-291`), three rules make that safe.
+Because the player may pick any civ on any of the thirteen map types
+(`GameSetupModal.tsx:1320-1339`), three rules make that safe.
 
 === Rule 1 — the Charter reads no terrain
 
@@ -864,7 +899,7 @@ from *trade treaties* rather than from ships.
 === Rule 2 — no Signature may require a terrain or a unit class
 
 A Signature that references mountains, ocean or a specific tile is a civ that is
-dead on four of the twelve maps. Every Signature in the fourteen above is
+dead on four of the thirteen maps. Every Signature in the fourteen above is
 positional (attacking, defending, at war, at peace, rich, poor) or diplomatic
 (a pact, an offer, a price). This is a hard rule, and it is the reason
 `AI_VS_AI_NAVAL` and `CLOSEUP_1V1` are both playable with the Germans and the
@@ -872,10 +907,10 @@ Zulus.
 
 === Rule 3 — the stress map types must stay legal
 
-Four of the twelve map types attack the whole premise of a Doctrine, and each
+Four of the thirteen map types attack the whole premise of a Doctrine, and each
 one gets an explicit charter clause:
 
-[cols="2,3"]
+[cols="1,3,3"]
 |===
 | Map type | What it breaks | Charter clause
 
@@ -927,36 +962,39 @@ Fourteen civs × six representative map types, run through
 | A Doctrine cannot end its own wars (the Huns clause)
 |===
 
-== Five bugs in the current diplomacy layer that this design has to fix anyway
+== Five bugs in the current diplomacy layer — four are already gone
 
-Found while mapping the system; all five change how the leaders feel, and all
-five sit in the Charter's path.
+Found while mapping the system; all five changed how the leaders feel, and all
+five sat in the Charter's path. The opinion-ledger work has since closed four
+of them, so the list is kept as a record, with what is genuinely still open
+marked as such.
 
-. **Reputation is stored on the shared pair record** (`applyReputationPenalty`,
-   `:941-946`), but `getAttitude` reads it as `score += rel.reputationModifier`
-   (`:194`) in *both* directions. A civ's own −20 surprise-attack penalty
-   therefore lowers its attitude toward its own victim — the aggressor dislikes
-   its victim less the more unjust the war was. Reputation must become directed
-   (`reputationToward[civId]`) before any Charter is trustworthy.
-. **"Contempt" is a friendly shift** (`:211`):
-   `if (ownStrength > theirStrength * 2) score += 5;` — being three times the
-   size of your neighbour makes them *like you more*. The comment says "more
-   aggressive but not hostile"; the sign is backwards. This is why a player who
-   out-grows everyone currently gets a world full of friends.
-. **The ceasefire cooldown gates the penalty, not the war** (`:250-256`). A civ
-   may legally declare war the turn after signing a ceasefire and pay nothing,
-   because the check lives inside the penalty branch. That makes a ceasefire free
-   to break, which makes the whole treaty layer decorative.
-. **Refusing an offer costs nothing.** There is no insult tracking anywhere
-   (`getRejectReason` is the only consequence, `:955-962`). Every diplomatic
-   interaction is therefore free-riding, and the Stalin escalation rule in this
-   document is the first feature to need a refusal cost.
-. **There is no war weariness.** `peaceTurns` is a score field only
-   (`VictoryManager.ts:155`); nothing in the engine wants peace. A war can only
-   end by strength ratio or by turn 15, which is exactly the stalemate recorded
-   in `doc/AI_VS_AI_ANALYSIS.adoc`. `peace.terms` and `minimumWarScore` need a
-   `warScore` to compare against, and `warScore` is where "Stalin's war" vs.
-   "Caesar's war" becomes a number the player can see in the diplomacy screen.
+. **Reputation on the shared pair record — FIXED.** `applyReputationPenalty`
+  and `rel.reputationModifier` are no longer part of live code: the only
+  surviving reference is the v3 → v4 save migration (`GameEngine.ts:9269-9305`),
+  and attitude is now `getAttitudeScore`, which reads the *directed* goodwill
+  of the holder (`DiplomacyManager.ts:564-568`). A pair's standing can no
+  longer be read backwards off both sides at once.
+. **"Contempt" as a friendly shift — FIXED.** There is no attitude
+  recompute left to get backwards: `score += 5` for out-sizing a neighbour
+  belonged to the deleted `getAttitude` arithmetic. Strength now enters an
+  opinion only through acts — fear of a threat, `tribute_extorted`, and the
+  third-party `surprise_attack` term.
+. **The ceasefire cooldown gated the penalty, not the war — FIXED.** War
+  declarations are gated in `mayDeclareWar` (`AIDiplomacyPolicy.ts:201-219`):
+  a signed peace must be 8 rounds old (`:215-217`), alongside war capacity,
+  the team's one-front rule and war wear.
+. **Refusing an offer cost nothing — FIXED.** `recordRefusal`
+  (`DiplomacyManager.ts:1195`) remembers each refusal, `ProposalScoring`
+  charges −5 points per refusal on the next score, and the refusal itself
+  writes a grievance.
+. **No war weariness — HALF FIXED, and the open half is the real work.** War
+  wear exists and drives the AI: `getWarExhaustion` (`DiplomacyManager.ts:519`),
+  written every turn at `:2199-2206` and read by the policy at `:1069` and
+  `:2429`. What is still missing is the *score*: `makePeace(a, b)` takes no
+  terms, and there is no `warScore` anywhere in `src/` for `peace.terms` or
+  `minimumWarScore` to compare against. That is the piece this design still
+  has to build.
 
 == UI surface
 
@@ -978,9 +1016,10 @@ five sit in the Charter's path.
 * **Negotiations block** (`:886-931`): buttons the target's Charter forbids are
   shown disabled with a reason, e.g. *Mutual Defence — Shaka signs nothing.* That
   single change is what makes fourteen different leaders legible.
-* **Diplomat context menu** (`UnitActionsModal.tsx:215-258`): the five fixed
-  actions become the leader's `offers` list, plus tech exchange and gold gift
-  (`TODO.txt:4,6`), both of which exist in the engine and are unreachable today.
+* **Diplomat context menu** (`UnitActionsModal.tsx:18-55`): the fixed action
+  list becomes the leader's `offers` list — tech exchange and gold gift are
+  already wired and reachable (`TODO/DONE.txt` lists both as done), so only the
+  per-leader *appetite* for them is new.
 * **History panel** (`:970-1012`): three event types gain a leader's colour, so
   the log reads as a political history rather than a log of status changes.
 
@@ -990,30 +1029,36 @@ Each step is independently shippable and independently testable.
 
 . **Move the doctrine data in, without changing behaviour.** New
   `src/data/LeaderDoctrines.ts` with all fourteen entries, keyed by civ name.
-  `GameEngine.createCivilizations` (`:1026-1053`) reads the doctrine instead of
-  `getCivProductionProfile(i)`, so the profile follows the civ rather than the
-  slot. This alone fixes the index bug and makes the choice real. Tests:
+  `GameEngine.createCivilizations` (`GameEngine.ts:1298`) reads the doctrine
+  instead of the slot-indexed `getCivProductionProfile(i)` (`:1404`), so the
+  profile follows the civ rather than
+  the slot. This alone fixes the index bug and makes the choice real. Tests:
   `tests/ai/leaderDoctrines.test.ts` — every civ has an entry, every entry has a
   valid archetype and 1–10 traits, no duplicate doctrine names.
-. **Charter part 1 — thresholds.** Replace the hard-coded numbers in
-  `processAIDiplomacy` with charter reads, keeping the current values as the
+. **Charter part 1 — thresholds.** Replace the global numbers in
+  `AIDiplomacyPolicy.scoreCandidates` / `mayDeclareWar` with charter reads,
+  keeping the current values as the
   default when a field is absent. No behaviour change for a civ without a
   charter. Tests: existing `tests/ai/DiplomacyManager.test.ts` and
   `tests/diplomacyOffers.test.ts` must pass **unchanged** — that is the proof
   the refactor is inert.
-. **Charter part 2 — the attitude model.** Directed reputation, fix the contempt
-  sign, add the target-side term. Tests: a new table-driven test over the whole
+. **Charter part 2 — the attitude model.** Directed reputation and the
+  contempt-sign bug are already gone with the opinion ledger; what is left is
+  the target-side term. Tests: a new table-driven test over the whole
   attitude matrix.
-. **Charter part 3 — willingness and tone.** `calculateWillingness` gains a
-  per-leader bonus; `getRejectReason` and the five offer messages come from
+. **Charter part 3 — willingness and tone.** `ProposalScoring` gains a
+  per-leader bonus on `GOODWILL_WEIGHT` and a per-leader threshold;
+  `rejectionReason()` and the `AI_OFFER_MESSAGES` offer lines come from
   `tone`. Tests: acceptance thresholds per leader.
 . **`notoriety` + the ledger.** New per-civ field, the ten event deltas, the
   `≥40` / `≥60` consequences, save/load. Tests: a session where a hegemon
   provokes a coalition.
-. **Offers the engine already has but nobody can reach:** tech exchange
-  (`:518-541`), and the missing validation from `TODO.txt:4` ("only if the tech
-   is unknown to the receiver", "only when two units meet"). Add `offer_gold` and
-   `request_gold` (`TODO.txt:6,8`) with the refusal cost they require.
+. **Offers the engine already has — mostly reachable now.** Tech exchange sits
+  on the negotiation screen and the diplomat menu, its pickers are already
+  filtered to `theyHaveWeLack` / `weHaveTheyLack`, and `gift_gold` /
+  `request_gold` ship with the refusal cost they need (all of it recorded as
+  done in `TODO/DONE.txt`). What a charter adds here is per-leader *appetite*:
+  who sells knowledge, who gives it away, who threatens for it.
 . **The two new offer types** — `demand_non_aggression` (Napoleon's ultimatum)
   and the Pax offer (Alexander), both expressed as existing
   `DiplomacyProposal`s with a `goldAmount`, so no new plumbing.

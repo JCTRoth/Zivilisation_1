@@ -12,6 +12,11 @@ somewhere — and where the AI's *arithmetic* was wrong rather than its model, t
 is fixed too (see <<The AI's own arithmetic was wrong in seven places>>, all
 pinned by `tests/ai/aiArithmetic.test.ts`).
 
+(Where the engine has since moved on from one of these diagnoses, a *fixed
+since* note points at today's code — the implemented set is collected under the
+status line in <<What I'd change>>. The measurements themselves are the runs of
+the day and stand as recorded.)
+
 == Method
 
 Two ad-hoc harnesses drove `GameEngine` directly on `AI_VS_AI` 40×40 with 4
@@ -35,26 +40,31 @@ civs hoarding gold (median 278, max 3 269), 0/6 games reaching a conclusion.
 
 [source]
 ----
-tiles    -> commerce   = max(tileTrade, CITY_CENTER_COMMERCE = 2) + Σ tradeRoutes
+tiles    -> commerce   = max(tileTrade, CITY_CENTER_COMMERCE = 4) + Σ tradeRoutes
           -> effective = commerce × (1 − government.commercePenalty)
-          -> corruption= floor(effective × rate)          (CityUtils)
+          -> corruption= floor(effective × rate)          (CityUtils; rate = government
+                                                           corruptionRate × distance
+                                                           (cap 1.5) × building multipliers)
           -> after     = max(0, effective − corruption)
-tax      = floor(after × taxRate / 100) × TRADE_GOLD_MULTIPLIER (2)
+tax      = (after × taxRate / 100) × TRADE_GOLD_MULTIPLIER (3)   [fractional, rounded up at booking; see D2]
 science  = round(after × scienceRate / 100) + buildingScience + specialistScience
 luxury   = floor(after × luxuryRate / 100)
 disorder = unhappiness > happiness   -> tax, science, commerce = 0
 upkeep   = Σ unit.maintenance (0–6, no free support) + Σ building.upkeep (0–4)
-gold < 0 -> max tax -> disband units -> forgive to ABSOLUTE_MIN_GOLD (8)
+           + (cities − FREE_CITY_SUPPORT = 3) × CITY_UPKEEP_PER_CITY
+gold < 0 -> max tax -> sell cheapest upkeep buildings -> disband units (≤3/turn)
+           -> forgive to ABSOLUTE_MIN_GOLD (8), booked as debt repaid 1 g/turn
 ----
 
 Defined in: `src/game/engine/EconomicManager.ts`, `src/utils/CityUtils.ts`.
 
-Gold is spent on exactly two things: unit upkeep, and rushing shields at 2 gold
-per shield. There is no city upkeep, no inflation, no interest.
+Gold is spent on upkeep (units, buildings and — since the city-upkeep item
+below — every city past the first three) and on rushing shields at 2 gold per
+shield (`PURCHASE_GOLD_PER_SHIELD`). There is no inflation, no interest.
 
 === Where gold comes from (measured, 111 rounds, 4 civs)
 
-[cols="1,1,1,1,1,1", options="header"]
+[cols="1,1,1,1,1,1,1", options="header"]
 |===
 |Civ |Cities |Tax income |Building sales |Upkeep paid |Rushes |Ends with
 
@@ -65,9 +75,14 @@ per shield. There is no city upkeep, no inflation, no interest.
 |===
 
 The ledger does not close: the dead American civ earned 6 gold in tax and
-finished with 271. The only faucets large enough are trade agreements minting 2
+finished with 271. The only faucets large enough were trade agreements minting 2
 gold/turn to *both* sides out of nothing (`DiplomacyManager.ts:1158-1164`) and
 the 8-gold forgiveness reset (`EconomicManager.ts:1607`).
+(fixed since: both faucets are shut — a trade agreement now sets
+`tradeGoldPerTurn = 0` and pays through the ×2 `TREATY_ROUTE_TRADE_MULTIPLIER`
+on real route trade (`DiplomacyManager.ts:1003`, `GameConstants.ts:449`,
+`EconomicManager.ts:318`), and the forgiveness books the deficit as debt repaid
+1 g/turn (`EconomicManager.ts:1984-2019`).)
 
 == What the measurements say
 
@@ -75,7 +90,7 @@ the 8-gold forgiveness reset (`EconomicManager.ts:1607`).
 |===
 |Quantity |Measured |Comment
 
-|Gross commerce per city |2.25 |17 of 20 samples were exactly the `CITY_CENTER_COMMERCE` floor
+|Gross commerce per city |2.25 |17 of 20 samples were exactly the `CITY_CENTER_COMMERCE` floor (2 when these samples were taken; the constant is 4 today)
 |After-corruption commerce |2.25 |corruption was 0 — every city sat within 4 tiles of its capital
 |Tax income per city |1.3 g/turn |one warrior costs 1
 |Net gold per civ |−0.85 g/turn |income 1.30 vs upkeep 2.15
@@ -88,11 +103,15 @@ the 8-gold forgiveness reset (`EconomicManager.ts:1607`).
 
 === D1 — A city's commerce never grows with its population
 
-One citizen works one tile, the centre is free (`EconomicManager.ts:664-666`).
+One citizen works one tile, the centre is free (`EconomicManager.ts:873-879`).
 Unimproved grassland is 2 food / 0 trade, so food = 2+2P against 2P eaten: the
 surplus is pinned at 2 at *every* city size, and `MIN_CITY_FOOD_SURPLUS = 1`
-(`EconomicManager.ts:104`) pulls citizens back onto food tiles the moment they
+(`EconomicManager.ts:130`) pulls citizens back onto food tiles the moment they
 would otherwise work a trade tile.
+(the appetite ramp added since — 2 food a citizen up to pop 5, +0.2 per citizen
+above, `citizenFoodDemand` at `EconomicManager.ts:157-161` — makes the bill
+*rise* with size instead; the flat `2P` eaten this paragraph measures is the
+rule as it stood then.)
 
 The only mechanism that scales a city's commerce with population is **a road on
 every worked tile** (+1 trade each) — 2 settler-turns per tile, and precisely
@@ -105,8 +124,14 @@ Design ceiling ≈ 6 gold/city on a full road grid. Measured reality: 2.25.
 
 `tax = floor(afterCorruption × taxRate/100) × 2`. A 2-commerce city pays **0 gold
 below a 50 % tax rate and 0 luxury at any rate** — the code says so itself
-(`AICityManager.ts:305`: "at commerce 2 (an unroaded city) `floor(2 × 0.30)` is 0
+(`AICityManager.ts:365`: "at commerce 2 (an unroaded city) `floor(2 × 0.30)` is 0
 happiness at ANY rate").
+
+(fixed since: the tax line is fractional and rounded up only at booking —
+`cityOutputs` / `taxGoldWithCarry`, `EconomicManager.ts:349-397` — so a
+2-commerce city now pays at any rate. The luxury half of the finding is intact:
+luxury is still floored against integer unhappiness, which is what the
+`AICityManager.ts:365` comment still documents.)
 
 So Democracy's 10 % cap is not "low tax", it is *no tax*. Measured: one civ held
 a city for 111 rounds and collected exactly 0 gold from it.
@@ -130,6 +155,14 @@ palace or stock exchange. Consequences:
 * the Courthouse is the only corruption lever in the game;
 * the practical cap is 60 % at 10 tiles — five cities away in a straight line.
 
+(fixed since: recommendation 4 landed — the base is the government's
+`corruptionRate` (`CityUtils.ts:52-53`), the distance multiplier is capped at
+1.5 instead of 2.0 (`src/data/CorruptionConstants.ts:22`), each building's
+declared `corruptionReduction` multiplies the rate and the multipliers compound
+(`CityUtils.ts:63-76`), so the practical cap at 10 tiles is now 45 % under
+Despotism and 7.5 % under Democracy. `GovernmentManager.ts:141,162` scores the
+same number the engine charges.)
+
 === D5 — Gold has faucets but no sinks
 
 * a trade agreement mints 2 gold/turn for both sides (`DiplomacyManager.ts:1158`);
@@ -141,12 +174,30 @@ palace or stock exchange. Consequences:
 * nothing ever removes gold except unit upkeep and rushes, and plunder is capped
   at 100, so a rich civ is never worth conquering for its money.
 
+(fixed since, item by item: the agreement faucet is shut — `tradeGoldPerTurn`
+is forced to 0 and the treaty pays ×2 on route trade instead
+(`DiplomacyManager.ts:1003`, `GameConstants.ts:449`, `EconomicManager.ts:318`);
+the building sale still refunds half (`GameEngine.ts:8885`, refund at
+`:8937-8944`) but is now only one lever among several; the forgiveness still
+tops every civ up to 8 gold with no human/AI branch, but books the amount as
+debt repaid 1 g/turn and emits `ECONOMY_FORGIVEN` (`EconomicManager.ts:1984-2019`)
+— `AI_ECONOMY.adoc` has since been updated to say so; and gold now also leaves
+through city upkeep, `(cities − 3) × 1`
+(`EconomicManager.totalUpkeep`, `GameConstants.ts:435,438`).)
+
 === D6 — Two different shield↔gold exchange rates
 
 `rushCityProduction` charges 2 gold per remaining shield for everything;
 `purchaseCityProduction` charges 2 for units but **1 gold per shield for
-buildings and wonders** (`ProductionManager.ts:400`). The TODO note "buying units
+buildings and wonders** (`ProductionManager.ts:400` at the time; the charge sits
+at `ProductionManager.ts:418` today). The TODO note "buying units
 directly should not be 50% cheaper" is this bug, pointed at the wrong half.
+
+(fixed since: one rate everywhere — `PURCHASE_GOLD_PER_SHIELD = 2`
+(`GameConstants.ts:472`) is used by `purchaseCityProduction`
+(`ProductionManager.ts:418`) and by `rushCityProduction`
+(`GameEngine.ts:8849`), so buildings and wonders no longer cost half. The TODO
+note itself has moved to `TODO/DONE.txt:522`, marked DONE.)
 
 === D7 — The army budget is mis-measured twice
 
@@ -159,11 +210,25 @@ most expensive unit the civ already owns, so the first tank it builds prices its
 whole army at 4 gold forever. Two implementations of the same cap disagree, and
 `AutoProduction` takes the smaller of the two.
 
+(fixed since, both halves: `sustainableUnits` no longer subtracts anything — it
+divides the economy's own `affordableUnitUpkeep` headroom by the price of the
+unit being planned (`EconomicManager.ts:472-485`), and
+`planningUnitMaintenance` prices the planned type first, falling back to the
+most expensive owned unit only when the caller names no type
+(`AIEconomicManager.ts:336-352`). The two models still disagree by design —
+`AutoProduction.isUnitCapExhausted` takes the smaller, now as a gold-denominated
+gate rather than a headcount (`AutoProduction.ts:2268-2293`).)
+
 === D8 — Trade routes are inert
 
 A caravan is 50 shields, consumed, needs the `trade` tech, and routes cap at
 3/city — but 0 routes were ever established in 111 rounds. The ship-based trade
-route in TODO.txt was the right instinct: it removes the walking cost.
+route in `TODO/TODO.txt` was the right instinct: it removes the walking cost.
+
+(fixed since: the caravan chain now completes and delivers — 10/4/2/0 routes on
+four 320-round seeds — see *What I'd change* → *What was implemented*, "Trade
+routes are live, but slow". The cap itself is still 3/city,
+`GameEngine.ts:102`.)
 
 == [[ai-arithmetic]] The AI's own arithmetic was wrong in seven places
 
@@ -226,13 +291,17 @@ it changes what the AI believes is true.
 Ordered by impact ÷ effort. Items 1–3 are pure bug fixes with no balance change;
 4–9 are balance and need a `GAME_RULES.adoc` update in the same commit.
 
-**Status: implemented** (2026-10-12) — every item is in the tree, in its own
-commit with the `GAME_RULES.adoc` update the repo's balance rule requires, and
-each pinned by `tests/economyRules.test.ts`. The AI-arithmetic fixes in the
-previous section are implemented and tested too.
+**Status: implemented** (2026-10-12) — items **1–4** and **6–8** are in the
+tree, in their own commit with the `GAME_RULES.adoc` update the repo's balance
+rule requires, and each pinned by `tests/economyRules.test.ts`; **5** and **9**
+are partial, as the probe below says. Item 9 did *not* raise `MAX_TRADE_ROUTES`
+— it is still **3** (`GameEngine.ts:102`, not the proposed 5; re-verified
+2026-11-07). The AI-arithmetic fixes in the previous section are implemented
+and tested too.
 
 Two are **partial**, and the probe says so: **5** (roads on worked tiles) landed
-in the works chooser but city commerce is still the 2-trade floor because the
+in the works chooser but city commerce is still pinned at the
+`CITY_CENTER_COMMERCE` floor (4 since the R19 change below) because the
 works programme's entry condition under-reports, and **9** (trade routes) has
 the new payout, the route cap and the research hook, but delivery was still zero
 — the cause turned out to be plumbing rather than balance, see
@@ -243,14 +312,14 @@ the new payout, the route cap and the research hook, but delivery was still zero
 |# |Change |Where |Why
 
 |1 |Pay the rate split fractionally; keep the integer for display only, accumulate the remainder on the civ |`EconomicManager.cityOutputs` |Kills "0 gold below 50 % tax"; makes Democracy and every luxury rate meaningful
-|2 |One exchange rate: 2 gold per shield everywhere (or 1.5 everywhere) |`ProductionManager.ts:400`, `GameEngine.ts:6709` |Removes the half-price building loophole
-|3 |Delete the `− cityCount` free support; price units at the maintenance of the unit being queued, not the max owned; keep one implementation of the cap |`EconomicManager.ts:322-358`, `AIEconomicManager.ts:220-230` |The cap currently under-builds armies and then disbands them
-|4 |Make `corruptionRate` and `corruptionReduction` real: base = government rate, each building multiplies by (1 − declared reduction), distance multiplier capped at 1.5 |`CityUtils.ts:34-42` |Turns the government tree and the AI's revolution scoring into real choices
+|2 |One exchange rate: 2 gold per shield everywhere (or 1.5 everywhere) |`ProductionManager.ts:418`, `GameEngine.ts:8849` |Removes the half-price building loophole
+|3 |Delete the `− cityCount` free support; price units at the maintenance of the unit being queued, not the max owned; keep one implementation of the cap |`EconomicManager.ts:472-520` (`sustainableUnits`), `AIEconomicManager.ts:336-352` (`planningUnitMaintenance`) |The cap currently under-builds armies and then disbands them
+|4 |Make `corruptionRate` and `corruptionReduction` real: base = government rate, each building multiplies by (1 − declared reduction), distance multiplier capped at 1.5 |`CityUtils.ts:34-79` (`calculateCorruption`), `src/data/CorruptionConstants.ts` |Turns the government tree and the AI's revolution scoring into real choices
 |5 |Scope settler works to own city radius +1; make roads on worked tiles the first job |`AIManager.chooseImprovementForSettler` |A roaded worked tile = +2 gold/turn forever for 2 settler-turns — the best investment in the game
-|6 |Close the faucets: trade agreements stop minting gold (commerce bonus or one-off payment instead); forgiveness becomes a tracked loan repaying 1 g/turn, with an `ECONOMY_FORGIVEN` event in the progression export |`DiplomacyManager.ts:1158`, `EconomicManager.ts:1607` |419 invisible disbands per game are the symptom; the treasury must stop being free money
+|6 |Close the faucets: trade agreements stop minting gold (commerce bonus or one-off payment instead); forgiveness becomes a tracked loan repaying 1 g/turn, with an `ECONOMY_FORGIVEN` event in the progression export |`DiplomacyManager.ts:1003`, `EconomicManager.ts:1984-2019` |419 invisible disbands per game are the symptom; the treasury must stop being free money
 |7 |Add a gold sink that grows with empire size: city upkeep (e.g. 1 gold per city beyond the first 3) |`EconomicManager.totalUpkeep` |Expansion has no gold cost at all today
-|8 |Re-price the citizen: restore the documented appetite ramp `2 + 0.2×max(0, population−5)` and add the Aqueduct housing cap at 10 |`EconomicManager.ts:117`, `TurnManager.ts:1232` |Growth becomes an investment rather than a treadmill that starves the treasury
-|9 |Make trade routes pay: auto-deliver caravans along a road/river network, or raise the lump payout so 50 shields amortise in ~25 turns; raise `MAX_TRADE_ROUTES` to 5 |`GameEngine.ts:3173`, `GameConstants.ts:3` |The system currently produces nothing
+|8 |Re-price the citizen: restore the documented appetite ramp `2 + 0.2×max(0, population−5)` and add the Aqueduct housing cap at 10 |`EconomicManager.ts:148-161` (`citizenFoodDemand`), `TurnManager.ts:1403-1417` (cap constant `AQUEDUCT_HOUSING_CAP`, `EconomicManager.ts:171`) |Growth becomes an investment rather than a treadmill that starves the treasury
+|9 |Make trade routes pay: auto-deliver caravans along a road/river network, or raise the lump payout so 50 shields amortise in ~25 turns; raise `MAX_TRADE_ROUTES` to 5 |`GameEngine.ts:4472` (`establishTradeRoute`); the cap lives in `GameEngine.ts:102` (still 3) |The system currently produces nothing
 |===
 
 === Expected effect on the measured baseline
@@ -393,9 +462,12 @@ Still open, both stated plainly:
   is now transit time, not any gate**: a caravan moves 1 tile a turn across a
   40x40 map, so a 14-tile route is 14 turns of open ground (the near-city move
   bonus covers only the last leg, and roads cut it to ~5 once the works
-  programme lands). The ship-based auto-delivery in TODO.txt is the real answer
-  for pairs further apart than that.
-  the real fix and is not implemented.
+  programme lands). The ship-based auto-delivery in `TODO/TODO.txt` is the real
+  answer for pairs further apart than that — the real fix, and at the time of
+  this writing not implemented.
+  (fixed since: a trade ship now opens its route by itself —
+  `GameEngine.autoEstablishTradeShipRoute`, `GameEngine.ts:3759` — and the
+  spec is filed as DONE in `TODO/DONE.txt`.)
 * **City commerce is still the floor for most cities.** R19 pays for the empire
   anyway, but a roaded city should still earn roughly twice an unroaded one.
 
@@ -405,6 +477,8 @@ Still open, both stated plainly:
 each lever independently (see also `doc/CARAVAN_GOVERNOR.adoc`). Its baseline row
 reproduces the measured batch: **0 routes from 8 caravans built, 80 % idle
 settler turns, and the `trade` chain not finishing inside the horizon.**
+(The simulator itself was never committed — only `scripts/economy_sim.py` is in
+the tree; the gate measurements below were read off the engine runs.)
 
 Three of the four fixes are now in and pinned by
 `tests/ai/tradePipelineGates.test.ts`:
@@ -586,7 +660,9 @@ and needs no balance constant changed.
 Pinned by `tests/standingArmyBudget.test.ts`: queue priced into the cap, debt
 priced into the budget, one unit retired per round, the emergency intake
 capped at three, escort and caravan protections honoured, and no churn for an
-army that fits. Four of its eight tests fail when the concept is reverted.
+army that fits. As of the original run four of its tests failed when the
+concept was reverted; the file has **nine** cases today, all passing on the
+current tree (re-verified 2026-11-07).
 
 == Doc drift worth fixing in the same pass
 
@@ -613,7 +689,9 @@ node scripts/run-ai-batch.mjs 4 400 4 /tmp/batch-4civ.json
 python3 scripts/economy_sim.py
 
 # the three gates a caravan has to pass (research, survival, work)
-python3 scripts/trade_pipeline_sim.py
+# `scripts/trade_pipeline_sim.py` was written for this analysis and is NOT in
+# the tree — only `scripts/economy_sim.py` is committed; the gate results above
+# came from headless engine runs (see doc/CARAVAN_GOVERNOR.adoc).
 ----
 
 Related: link:BALANCE_ANALYSIS.adoc[Balance & Behaviour Analysis],

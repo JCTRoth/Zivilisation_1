@@ -14,9 +14,9 @@ The `GoToManager` class has been created to centralize all "Go To" movement func
 * Returns success status and calculated path array
 
 === 2. *Path Management*
-* `setUnitPath(unitId, path)` - Sets a Go To path for a unit and syncs with RoundManager
+* `setUnitPath(unitId, path)` - Sets a Go To path for a unit and syncs it into `TurnManager` (through the legacy `roundManager` field)
 * `getUnitPath(unitId)` - Retrieves the current path for a unit
-* `clearUnitPath(unitId)` - Clears the path and syncs with RoundManager
+* `clearUnitPath(unitId)` - Clears the path and syncs the removal into `TurnManager`
 * `getAllUnitPaths()` - Returns all active unit paths
 * `hasPath(unitId)` - Checks if a unit has an active Go To path
 
@@ -61,10 +61,19 @@ The following sections have been updated to use GoToManager:
 ** Uses `goToManager.executePathWithAnimation()` for smooth animated movement
 ** Includes fallback to old method if GoToManager unavailable
 
-=== RoundManager
-* RoundManager maintains its own path storage for compatibility
-* GoToManager syncs paths with RoundManager automatically
-* RoundManager still processes automated movements at turn start
+=== TurnManager (the `roundManager` property)
+* `src/game/engine/RoundManager.ts` **no longer exists** — it was merged into
+  `src/game/engine/TurnManager.ts`. The property keeps its old *name*
+  (`GameEngine.roundManager: TurnManager`, `GameEngine.ts:330`, assigned at
+  `:434`), and `GoToManager`'s own collaborator field is likewise called
+  `roundManager` but typed `TurnManager` (`GoToManager.ts:25,28`).
+* TurnManager maintains its own path storage for compatibility with the old
+  RoundManager API (`setUnitPath` / `getUnitPath` / `clearUnitPath` /
+  `getAllUnitPaths` / `cleanupDestroyedUnits`, `TurnManager.ts:182-196`).
+* GoToManager syncs paths with TurnManager automatically
+  (`GoToManager.setUnitPath` → `this.roundManager.setUnitPath`).
+* TurnManager still processes automated movements at turn start
+  (`processAutomatedMovements`, `TurnManager.ts:1614`).
 
 === GoTo Camera Rule (black-screen refocus)
 After a route has been assigned (`assignUnitPath` in GameCanvas), the camera
@@ -168,7 +177,7 @@ if (pathResult.success) {
 * `/src/game/engine/GoToManager.ts` - Main implementation
 * `/src/game/engine/GameEngine.ts` - Integration point
 * `/src/components/game/GameCanvas.tsx` - Primary user interface
-* `/src/game/engine/RoundManager.ts` - Turn management integration
+* `/src/game/engine/TurnManager.ts` - Turn management integration (the former `RoundManager.ts` was merged into it)
 * `/src/game/engine/Pathfinding.ts` - Underlying pathfinding algorithm
 * `/src/utils/ViewportBlackCoverage.ts` - Black-screen measurement for the GoTo camera rule
 * `/src/utils/CameraUtils.ts` - `nudgeCameraToKeepPointInView` edge-follow geometry

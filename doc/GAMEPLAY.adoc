@@ -12,7 +12,7 @@ costs, the full 54-technology tree, and the economy/combat/research formulas.
 
 == Game Overview
 
-Build a lasting empire from 4000 BC to 2100 AD through urban development, technological advancement, diplomacy, exploration, and warfare. Compete against 2-7 other civilizations led by famous historical figures.
+Build a lasting empire from 4000 BC to 2100 AD through urban development, technological advancement, diplomacy, exploration, and warfare. Compete against 1-6 other civilizations (2-7 in total) led by famous historical figures.
 
 == Civilizations
 
@@ -81,7 +81,8 @@ link:GAME_RULES.adoc[Game Rules Reference] for the exact score formula.
 * Cities grow by accumulating food surplus
 * The threshold is `(population + 1) × 10`, so size 1 needs 20 food, size 2 needs 30
 * Each citizen eats 2 food; each of your settlers eats 1 (2 under Republic/Democracy)
-* *There is no housing cap.* An Aqueduct does not gate city size.
+* *Housing cap:* a city without an *Aqueduct* stops growing at size 10. The
+  food keeps banking, so growth lands the turn the Aqueduct completes.
 * Starvation (food box below zero) costs 1 population, even while the city is in disorder
 * At population 0 the city is destroyed
 
@@ -118,9 +119,9 @@ link:GAME_RULES.adoc[Game Rules Reference] for the exact score formula.
 *The actual tree*
 There are *54* technologies, 8 of them available from the start: Pottery,
 Bronze Working, Alphabet, The Wheel, Masonry, Sailing, Ceremonial Burial and
-Horseback Riding. There is no Feudalism, Chivalry, Steam Engine,
-Rocketry or Nuclear Fission in this codebase. (Correction: *Invention* and
-*Nuclear Fission* do exist — see the Game Rules table.)
+Horseback Riding. There is no Feudalism, Chivalry, Steam Engine or Rocketry
+in the live tree. *Invention* (cost 120, requires Engineering) and *Nuclear
+Fission* do exist — Invention is what unlocks Leonardo's Workshop.
 
 The full tree with costs, prerequisites and what each one actually unlocks is in
 link:GAME_RULES.adoc[Game Rules Reference]. The mechanics are in
@@ -130,13 +131,15 @@ link:TECH_COMPARISON.adoc[Technology Comparison].
 
 === Military Units
 
-*33 unit types*, each with *2 hit points*. Stats are `attack / defense /
-movement`. The complete table is in
+*36 unit types*. Stats are `attack / defense / movement`. Combat runs on
+*health 0–100*: the loser of a round takes *25 damage* (units also carry a
+legacy `hitPoints: 2` field shown in the UI; combat does not use it). The
+complete table is in
 link:GAME_RULES.adoc[Game Rules Reference]; a few to know:
 
 * *Settler* (0/1/1) - Founds and joins cities, builds improvements, sight 3
 * *Warrior* (1/1/1) - Basic military unit
-* *Scout* (0.5/1/2) - Cannot attack. Moves 2, sight 2. Can sneak into an undefended enemy city with a 30% chance
+* *Scout* (0.5/1/2) - Light scout that *can* attack at 0.5. Moves 2, sight 2. Can sneak into an undefended enemy city with a 30% chance
 * *Archer* (3/2/1) - Ranged infantry
 * *Phalanx* (1/2/1) - Defensive infantry (requires Bronze Working)
 * *Legion* (3/1/1) - Roman heavy infantry (requires Iron Working)
@@ -162,7 +165,7 @@ shields and carries 3 units.
 * Terrain defence: forest, river, lake, jungle, swamp ×1.5; hills ×2; mountains ×3
 * Fortified units: ×1.5
 * *Only the loser takes damage* — 25 HP, or death outright if the attacker outgunned the defender or the defender was already at 25 HP
-* Cities with walls: `max(1, population) × 3`
+* Cities with walls: `max(1, population) × 1.5`
 * Catapult, Cannon, Artillery and all air units ignore city walls
 * Garrison units die *one per round*; the city only falls once the garrison is empty
 * A city at population 1 is razed; otherwise it is captured at population −1
@@ -198,12 +201,12 @@ shields and carries 3 units.
 A city centre gets a floor of *2 food / 1 production / 1 trade*, plus +1
 trade if the city sits on a river.
 
-*Special resources* add to the terrain yield: Gems and Gold are +4 trade,
-Oil is +4 production, an Oasis is +3 food, Coal and Horses are +2 production,
-Seal/Fish/Game are +2 food.
+*Special resources* add to the terrain yield: Gems are +4 trade and Gold +6
+trade, Oil is +4 production, an Oasis is +3 food, Coal and Horses are +2
+production, Seal/Fish/Game are +2 food.
 
 *Terrain Improvements*
-* *Irrigation* - +1 food; converts forest→plains, jungle→grassland, swamp→grassland. Needs orthogonally adjacent fresh water. 5 worker-turns on open ground, *15* in forest/jungle/swamp
+* *Irrigation* - +1 food; converts forest→plains, jungle→grassland, swamp→grassland. Needs fresh water (river or lake) within *5 orthogonal steps*, or an already irrigated tile. 5 worker-turns on open ground, *15* in forest/jungle/swamp
 * *Road* - Movement cost ×1/3, and *+1 trade on grassland, plains and desert only* — not "any trade-producing terrain"
 * *Railroad* - Movement cost *0.05* (not 0), and +0.5 to *all three* yields. Requires the Railroad technology *and* an existing road
 * *Mines* - *+3 production on hills, +1 on mountains* (not +1 for both). Converts grassland and plains to forest
@@ -289,7 +292,9 @@ There is no tolerance: every citizen is unhappy, and content has to be bought.
 
 * Changing government triggers a *revolution*: 3 turns of *Anarchy*, during
    which all your tax/science/luxury rates are forced to 0.
-* A *Courthouse* halves corruption regardless of government.
+* A *Courthouse* cuts the corruption *rate* by 20% (it multiplies the rate by
+   0.8) regardless of government, and compounds with the other corruption
+   buildings.
 * Your capital is never corrupt. Corruption grows with distance from it.
 * There is no senate, no "prevent war declaration", no espionage, and no
    per-government unit cost. Do not plan around those.
@@ -395,7 +400,7 @@ effect model is in link:WONDERS.adoc[Wonders].
 *Economic*
 * *Marketplace* (80, Currency) - +1 trade, halves corruption
 * *Bank* (120, Banking) - +2 trade, halves corruption (requires Marketplace)
-* *Stock Exchange* (160, Banking) - +3 trade, 80% corruption reduction (requires Bank)
+* *Stock Exchange* (160, Banking) - +3 trade, cuts the corruption rate a further 20% (×0.8) (requires Bank)
 * *Mass Transit* (160, Mass Production) - +2 happiness, −1 pollution
 
 *Science*
@@ -412,10 +417,10 @@ effect model is in link:WONDERS.adoc[Wonders].
 *Infrastructure*
 * *Granary* (60, Pottery) - keeps half the food box on growth. It does *not*
    lower the growth threshold.
-* *Aqueduct* (120, Construction) - +2 health, +1 growth bonus. There is *no
-   size-10 cap* for it to lift.
-* *City Walls* (120, Masonry) - ×3 city defence (requires Masonry)
-* *Courthouse* (80, Code of Laws) - halves corruption, +1 happiness
+* *Aqueduct* (120, Construction) - +2 health, +1 growth bonus, and it *lifts
+   the size-10 housing cap* — without one a city stops growing at 10.
+* *City Walls* (120, Masonry) - ×1.5 city defence (requires Masonry)
+* *Courthouse* (80, Code of Laws) - corruption rate ×0.8 (a 20% cut), +1 happiness
 * *Hospital* (120, Engineering) - +2 health, +1 happiness
 * *Harbor* (30, Masonry) - required for any ship or a Fisher Boat
 * *Recycling Center* (200, Mass Production) - −3 pollution, +1 production
@@ -447,9 +452,9 @@ There is no Future Tech term.
 === Mid Game (1000 BC - 1000 AD)
 . Libraries everywhere: +1 science each
 . Currency → Trade → Banking; Trade unlocks Caravans, whose trade routes pay *both* gold and science
-. Courthouses halve corruption, which bites as soon as your cities drift from the capital
+. Courthouses cut the corruption rate by 20% each, which bites as soon as your cities drift from the capital
 . Monarchy, then Republic — but Republic taxes each settler a shield, so not while expanding
-. Oracle, Pyramids and Great Wall are 300-shield wonders from the Masonry/Ceremonial Burial era
+. Oracle (200), Colossus (200), Hanging Gardens (300) and Pyramids (400) are all reachable in the Masonry/Ceremonial Burial era — there is no Great Wall in this game
 
 === Late Game (1000-2100 AD)
 . The settler shield tax makes Democracy bad for a wide empire — prefer Monarchy or Communism
@@ -460,25 +465,31 @@ There is no Future Tech term.
 === City Placement
 * *Rivers* - the city centre gets +1 trade
 * *Coast* - required for any ship, or a Fisher Boat with a Harbor
-* *Resources* - Gems and Gold are +4 trade, Oil is +4 production, an Oasis is +3 food
+* *Resources* - Gems are +4 trade, Gold +6 trade, Oil is +4 production, an Oasis is +3 food
 * *Defense* - mountains ×3, hills ×2, forest ×1.5, a Fortress ×2 on top
 * *Spacing* - you may build adjacent, but overlapping radii mean competing for the same 20 tiles
 
 === Technology Priority
-*Moonshot (the only technology win)*: The Wheel → Mathematics → Philosophy →
-Astronomy → Navigation → Banking → Industrialization → Science Theory →
-Electricity → Combustion → Flight → Computers → Space Flight → Moonshot
+*Moonshot (the only technology win)*: Alphabet → Writing → Literacy →
+Philosophy → The Wheel → Mathematics → Masonry → University → Scientific
+Theory → Electricity → Electronics → Engineering → Combustion → Flight →
+Computers → Space Flight → Moonshot. Moonshot only becomes researchable once
+one of the space-station wonders (International Space Station, Tiangong or Mir)
+exists.
 
-*Conquest*: Bronze Working → Mathematics → Metallurgy → Gunpowder, then
-Iron Working → Metallurgy → Steel
+*Conquest*: Bronze Working → Iron Working → The Wheel → Mathematics →
+Metallurgy → Gunpowder, then Steel
 
-*Expansion*: Pottery → Writing → Literacy → Philosophy → Monotheism → Theology
-→ Democracy, with Currency → Trade for trade routes
+*Expansion*: Pottery → Alphabet → Writing → Literacy → Philosophy →
+Ceremonial Burial → Bronze Working → Polytheism → Monotheism → Theology →
+Democracy, with Currency → Trade for trade routes
 
-*Naval*: Sailing → Map Making → Navigation, plus Masonry early for the Harbor
+*Naval*: Sailing → Map Making → Alphabet → Writing → Literacy → Philosophy →
+The Wheel → Mathematics → Astronomy → Navigation, plus Masonry early for the
+Harbor
 
-There is no Conscription, Rocketry, Steam Engine, Invention, Chivalry, Feudalism
-or Economics in this codebase.
+The live tech tree has no Conscription, Rocketry, Steam Engine, Chivalry,
+Feudalism or Economics — but it does have *Invention* and *Nuclear Fission*.
 
 == Historical Accuracy
 
@@ -486,7 +497,7 @@ This clone aims to faithfully recreate the original Civilization I experience
 while modernizing the interface for contemporary browsers. It is a *recreation in
 spirit*, not a rules-accurate port: several unit stats, the technology tree and
 the wonder list diverge from the 1991 original, and some mechanics Civ I had
-(veterans, housing caps, score victory) are absent. Where the code and the
+(a score victory, a buildable spaceship) are absent. Where the code and the
 1991 original disagree, the code wins — see
 link:GAME_RULES.adoc[Game Rules Reference].
 

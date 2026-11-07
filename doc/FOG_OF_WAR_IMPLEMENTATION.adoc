@@ -16,9 +16,13 @@ interface PlayerTurnStorage {
   explored: boolean[];         // Permanently explored tiles
   lastKnownUnits: Map<string, Unit>;   // Last seen enemy units
   lastKnownCities: Map<string, City>;  // Last seen enemy cities
+  enemyLocations: Map<number, EnemyLocation[]>; // Per-enemy civ sightings
+  scoutZones: Array<{ minCol: number; maxCol: number; minRow: number; maxRow: number }>;
+                                                 // Scout assignment zones
   turnData: Record<string, any>;       // Custom data storage
 }
 ----
+(`GameEngine.ts:265-274`)
 
 === 2. Fog of War Mechanics
 
@@ -34,46 +38,67 @@ interface PlayerTurnStorage {
 * All cities visible
 * No visibility restrictions
 
+*Spectator exception (`isSpectatorGame`):* Dev Mode is forced on for every game nobody
+sits at — all `AI_VS_AI*` map types and any setup with an empty `humanPlayerIds`. The
+observer (the human watching) gets the full board from the store, but the engine's five
+fog entry points (`isVisibleToPlayer`, `isExploredByPlayer`, `getVisibleUnits`,
+`getVisibleCities`, `updatePlayerVisibility`) only honour `devMode` when
+`!isSpectatorGame(gameSettings)`. Inside a spectator game every AI therefore plays on its
+**own** per-player fog, exactly as in a normal game: it cannot path through unexplored
+ground or see enemy units it has not spotted.
+
 === 3. Visibility Calculation
 
 Visibility is calculated from:
-* *Unit Sight Range*: Each unit type has configurable sight range (default: 1, scouts: 2, naval: 2-3)
-* *City Sight Range*: Cities provide 2-tile sight range
+* *Unit Sight Range*: `UNIT_PROPS[type].sightRange` per unit type (the table in
+  `src/data/UnitConstants.ts` holds 1, 2 and 3), **floored at 2** in the
+  recalculation — `Math.max(2, sightRange || 2)` in
+  `GameEngine.updatePlayerVisibility`, so a "1" unit still sees a two-tile
+  ring — plus the Silk Road wonder's +1 vision bonus.
+* *City Sight Range*: Cities provide 2-tile sight range (`GameEngine.ts:700`)
 * *Exploration*: Once explored, terrain remains visible on map but enemy units only show when in sight range
 
 === 4. API Methods
 
 ==== `initializePlayerStorage(civilizationId: number)`
 Initializes storage for a civilization with empty visibility/explored arrays.
+**Private** (`GameEngine.ts:529`) — callers outside the engine go through
+`getPlayerStorage` instead. It runs when civilizations are created
+(`GameEngine.ts:1492`), for the barbarian seat (`:495`) and per saved civ on
+load (`:9346`).
 
-==== `getPlayerStorage(civilizationId: number): PlayerTurnStorage`
-Retrieves storage for a specific civilization.
+==== `getPlayerStorage(civilizationId: number): PlayerTurnStorage | undefined`
+Retrieves storage for a specific civilization (`GameEngine.ts:548`). Returns
+`undefined` for a civilization that has no storage yet — always null-check.
 
 ==== `setPlayerVisibility(civilizationId, col, row, visible, explored)`
 Updates visibility state for a single tile.
 
 ==== `isVisibleToPlayer(civilizationId, col, row): boolean`
-Checks if a tile is currently visible (respects dev mode).
+Checks if a tile is currently visible (respects dev mode — *except* in a spectator
+game, where the AI's own fog applies).
 
 ==== `isExploredByPlayer(civilizationId, col, row): boolean`
-Checks if a tile has been explored (respects dev mode).
+Checks if a tile has been explored (respects dev mode — *except* in a spectator game).
 
 ==== `getVisibleUnits(civilizationId): Unit[]`
 Returns units visible to a player:
 * Normal mode: Own units + enemy units in visible areas
 * Dev mode: All units
+* Spectator game: back to the normal-mode filter (AIs keep their fog)
 
 ==== `getVisibleCities(civilizationId): City[]`
 Returns cities visible to a player:
 * Normal mode: Own cities + enemy cities in explored areas
 * Dev mode: All cities
+* Spectator game: back to the normal-mode filter (AIs keep their fog)
 
 ==== `updatePlayerVisibility(civilizationId: number)`
 Recalculates visibility based on current unit/city positions:
 * Resets current visibility (fog of war)
 * Keeps explored tiles permanently
 * Calculates sight range for all units and cities
-* Dev mode: Reveals everything
+* Dev mode: Reveals everything (not in a spectator game — there each civ keeps its fog)
 
 === 5. Integration Points
 
@@ -81,15 +106,22 @@ Recalculates visibility based on current unit/city positions:
 * `playerStorage: Map<number, PlayerTurnStorage>` - Storage map
 * `devMode: boolean` - Developer mode flag
 * Storage initialized when civilizations are created
-* Visibility updated on unit movement, city founding, turn changes
+* Visibility *changes* as units move (`revealArea` marks `visibility` +
+  `explored`, and is called after every move), and is recomputed wholesale by
+  `GameEngine.updateVisibility()` (`GameEngine.ts:2094`), which loops every
+  civilization through `updatePlayerVisibility()`.
 
 *GameSetupModal:*
 * Dev mode checkbox on page 2
 * Passed as `devMode` in settings to `gameEngine.initialize()`
 
-*Turn Manager:*
-* Calls `updatePlayerVisibility()` when turn starts
-* Ensures each player sees correct fog of war
+*Where `updateVisibility()` is called:*
+* `GameEngine.initialize()` (`GameEngine.ts:1202`) and `GameEngine.newGame()`
+  (`:7490`) — the two places that rebuild the whole world.
+* **Not** from `TurnManager`: `TurnManager.ts` contains no
+  `updateVisibility` / `updatePlayerVisibility` call at all. Per-turn fog
+  updates during play come from `revealArea()` on movement, plus the store's
+  own `actions.updateVisibility()` for the render arrays.
 
 *Rendering (MapRenderer/MiniMap):*
 * Should filter units using `getVisibleUnits(activePlayer)`
@@ -117,7 +149,8 @@ const visibleUnits = gameEngine.getVisibleUnits(playerCivId);
 // Get visible cities for rendering
 const visibleCities = gameEngine.getVisibleCities(playerCivId);
 
-// Update visibility after unit moves
+// Recalculate one civilization's fog — during a game this happens for
+// every civ inside gameEngine.updateVisibility(), not per move
 gameEngine.updatePlayerVisibility(playerCivId);
 ----
 
@@ -134,9 +167,11 @@ gameEngine.updatePlayerVisibility(playerCivId);
 ** Show all in dev mode
 ** Filter units by visibility
 
-. *Update Turn Manager* to:
-** Call `updatePlayerVisibility(civilizationId)` when each turn starts
-** Ensure visibility recalculates before player sees the map
+. ~~*Update Turn Manager*~~ — **already covered, and not by TurnManager.**
+  `updatePlayerVisibility(civilizationId)` is recalculated by
+  `GameEngine.updateVisibility()` (which loops every civ), called from
+  `initialize()` and `newGame()`; `TurnManager` does not and need not call it.
+  Nothing to do here.
 
 . *Add Visual Indicators:*
 ** Greyed out fog of war overlay

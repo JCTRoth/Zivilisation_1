@@ -36,7 +36,7 @@ the diplomacy hall always have art (prompts in
 |Menu and game-over play nothing; one gameplay track ships.
 
 |*Sound effects* — 44 cues total
-|**29 cues with a recording, 21 synth-only** (+1 orphaned file)
+|**23 cues with a recording, 21 synth-only** (+1 orphaned file)
 |Every missing cue falls back to its synthesized notes; no console errors.
 
 |Leaders (14/14), wonders (24/24), file-backed SFX rows, favicons, emoji font
@@ -50,12 +50,14 @@ The loader probes `/assets/units/unit_<key>.png` for every unit
 (`src/utils/UnitIconLoader.ts`). The folder is currently **empty** — every
 probe 404s and falls through.
 
-`tools/tile-generator/install_generated_assets.mjs` previously moved the full
-sprite set into `public/assets/_generated_backup/units/` (105 files = 35
-units × base + `_2` + `_3`). Only `travelling_bazaar` (a renamed caravan
-clan) was never generated.
+`tools/tile-generator/install_generated_assets.mjs` is written to keep a copy
+of everything it replaces in `public/assets/_generated_backup/units/` so
+`--restore` can undo an install (105 files = 35 units × base + `_2` + `_3`).
+**That backup directory does not exist on disk any more** (checked
+2026-11-07), so there is nothing to copy or restore back from. Only
+`travelling_bazaar` (a renamed caravan clan) was never generated.
 
-.ships no sprite today (files were last in `_generated_backup/units/`)
+.ships no sprite today (the generated set is not on disk)
 |===
 |Sprite missing |Unit keys affected
 
@@ -103,8 +105,10 @@ frigate.
 
 Fix options:
 
-* `node tools/tile-generator/install_generated_assets.mjs <folder>` (or copy
-  the set back from `public/assets/_generated_backup/units/`) restores 35 of 36.
+* `node tools/tile-generator/install_generated_assets.mjs <folder>` installs
+  the generated set (35 of 36). The "copy it back from
+  `public/assets/_generated_backup/units/`" shortcut no longer works — that
+  folder is gone, and `--restore` has nothing to put back.
 * Generate one `travelling_bazaar` sprite (or alias it to the caravan art).
 * Long-term: crop per-unit artwork into `src/assets/units/<key>.svg` and add
   a `UnitIconConfig` row (`tests/unitIconConfig.test.ts` verifies it).

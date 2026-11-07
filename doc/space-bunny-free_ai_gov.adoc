@@ -1,13 +1,13 @@
 = AI Governor Architecture — building blocks instead of hardcoded cascades
 :author: space-bunny-free (opencode-go/space-bunny-free)
-:source: AI architecture review of src/game/engine/AI/*, AutoProduction.ts, AIManager.ts
+:source: AI architecture review of src/game/engine/AI/*, AutoProduction.ts, src/game/engine/AI/AIManager.ts
 :status: proposal
 
-Scope: `src/game/engine/AI/*`, `src/game/engine/AutoProduction.ts`, `src/game/engine/AIManager.ts`
+Scope: `src/game/engine/AI/*`, `src/game/engine/AutoProduction.ts`, `src/game/engine/AI/AIManager.ts`
 
-Related: `TODO.txt:52-70` (AI-vs-AI stalemate), `TODO.txt:310-327` (city + money
-management), `TODO.txt:59-62` and `TODO.txt:285-288` (naval),
-`AI_SESSION_ANALYSIS.adoc`, `doc/AI_VS_AI_ANALYSIS.adoc`, `doc/AI_ECONOMY.adoc`,
+Related: `TODO/TODO.txt:40-44` (multi-front pincer), `TODO/DONE.txt` (city +
+money management and the naval work — all closed there),
+`doc/AI_MICRO_ERRORS_REPORT.adoc`, `doc/AI_VS_AI_ANALYSIS.adoc`, `doc/AI_ECONOMY.adoc`,
 `doc/AI_PRODUCTION.adoc`, `doc/DIPLOMACY_SYSTEM.adoc`
 
 == The goal, restated
@@ -16,14 +16,16 @@ Today the AI *cannot* be situationally flexible — not because the individual
 decisions are bad, but because the architecture forbids it:
 
 * a civ's strategy is a *fixed enum chosen by civ index* at game start
-  (`GameEngine.ts:1050` → `getCivProductionProfile`), and
+  (`GameEngine.ts:1404` → `getCivProductionProfile`), and
 * that fixed enum is what everything downstream reads
-  (`AITypes.ts:148` `resolveAICivStrategy` returns `civ.productionProfile` *first*).
+  (`AITypes.ts:156-160` `resolveAICivStrategy` returns `civ.productionProfile` *first*).
 
 Consequence: `AIStrategySelector.evaluateStrategy` computes a situational strategy
-every turn, writes it to `aiState.strategyProfile`, and *nothing ever reads it*.
-The situational layer exists but is inert. Any "governor" bolted on top inherits
-that dead wiring.
+every turn, `runAITurn` writes it to `aiState.strategyProfile` when it differs
+(`AIManager.ts:842-846`), and the only reader is the fallback behind
+`civ.productionProfile` (`AITypes.ts:160`) — a field `GameEngine.ts:1442` always
+sets. The situational layer exists but is inert. Any "governor" bolted on top
+inherits that dead wiring.
 
 The target: a civ assembles its behaviour from small swappable blocks chosen by
 situational analysis, so *naval AI* is not a mode you write — it is what you get
@@ -39,20 +41,20 @@ every global goal without any code knowing that case exists.
 | Fact | Location
 
 | Every civ gets a fixed `productionProfile` at init
-| `GameEngine.ts:1050-1051`
+| `GameEngine.ts:1397-1442`
 
 | `resolveAICivStrategy` prefers it over evaluated state
-| `AITypes.ts:148-153`
+| `AITypes.ts:156-160`
 
 | Read by research, production, city management, reserve policy
-| `AIManager.ts:262,579`; `AutoProduction.ts:774`; `TurnManager.ts:457,1165`; `AIEconomicManager.ts:128`; `AICityManager.ts:176`
+| `AIManager.ts:873,1479,2580,2645,2828,7586,7810`; `AutoProduction.ts:1615`; `TurnManager.ts:543,1574`; `AIEconomicManager.ts:374`; `AICityManager.ts:318`
 
 | `aiState.strategyProfile` is therefore never consumed
-| —
+| read only as the fallback behind `civ.productionProfile` (`AITypes.ts:160`), which `GameEngine.ts:1442` always sets
 |===
 
 Secondary bug in the same area: `lastStrategyEvaluation` is written *only when the
-strategy changes* (`AIManager.ts:256`). So `roundNumber - lastStrategyEvaluation >= 10`
+strategy changes* (`AIManager.ts:846`). So `roundNumber - lastStrategyEvaluation >= 10`
 is permanently true and the selector re-runs *every single turn*. The field is a
 change-log masquerading as a throttle.
 
@@ -63,30 +65,33 @@ change-log masquerading as a throttle.
 | Cascade | Lines | Role
 
 | `AIManager.chooseAITarget`
-| `AIManager.ts:1692-2265` (~573)
+| `AIManager.ts:5437-6182` (~745)
 | decides what every unit does
 
 | `AutoProduction.determineProductionItem`
-| `AutoProduction.ts:237-706` (~469)
+| `AutoProduction.ts:610-1456` (~847)
 | decides what every city builds
 |===
 
 `chooseAITarget` is ~20 mutually exclusive branches in a hardcoded priority order.
-Naval is three branches at the top (`AIManager.ts:1716-1725`). There is no
+Naval and amphibious handling sits at the top of the ladder — invasion-mission
+reservation, fisher and trade ships, then `chooseNavalTarget`
+(`AIManager.ts:5449-5501`). There is no
 arbitration, no scoring, no composition — just an ordered `if` ladder. This is
 the single place where flexibility has to be won, and also the least composable
 code in the project.
 
 === 2.3 AIManager is the wrong shape
 
-`AIManager.ts` is *4454 lines*; the ten sibling AI modules total *3869*. It owns
+`AIManager.ts` is *11,403 lines*; the other thirty modules in
+`src/game/engine/AI/` total *14,169* (25,572 across the whole folder). It owns
 turn orchestration, diplomacy, army grouping, colony missions, invasion missions,
 naval targeting, fishing, settlement search, road building, scout zones, threat
 alerts, oscillation detection, path glue and target selection.
 
 Naval capability is three hand-written state machines — `ColonyMission`
-(`AIManager.ts:69-76`), `InvasionMission` (`AIManager.ts:93-102`),
-`chooseNavalTarget` (`AIManager.ts:1525`). Good code, but not a *doctrine*: there
+(`AIManager.ts:260`), `InvasionMission` (`AIManager.ts:284`),
+`chooseNavalTarget` (`AIManager.ts:4509`). Good code, but not a *doctrine*: there
 is no naval threat assessment, no sea lanes, no escort, no amphibious defence.
 
 === 2.4 "Governor" currently means one thing, and only for cities
@@ -94,24 +99,31 @@ is no naval threat assessment, no sea lanes, no escort, no amphibious defence.
 `AICityManager` is genuinely good — food-first as a law, `userAssignedTiles`
 respected, engine-API-only writes. But:
 
-* `AI_GOVERNOR_PROFILE` (`AICityManager.ts:142-151`) is a *single hardcoded
-  object*; the `strategy` argument only reaches `pickSpecialistType` and the
-  granary check.
-* `GOVERNOR_PROFILES` (`AICityManager.ts:94-139`) is a well-shaped parameterised
-  policy that the AI side does not use.
+* `AI_GOVERNOR_PROFILE` (`AICityManager.ts:194-203`) is a *single hardcoded
+  object* and is still the default profile for every AI city; the
+  `strategy` argument only reaches `pickSpecialistType` (`:741`) and the
+  granary check (`:514`).
+* `GOVERNOR_PROFILES` (`AICityManager.ts:146-191`) is a well-shaped
+  parameterised policy — but the AI borrows a single entry of it: a big city
+  with a real trade grid gets `GOVERNOR_PROFILES.commerce` (`:273`), every
+  other AI city falls back to `AI_GOVERNOR_PROFILE`. Human cities take
+  `GOVERNOR_PROFILES[city.governor]` (`:320`).
 
 That second shape is the one we want everywhere.
 
 === 2.5 Money management is rate-plumbing, not policy
 
-`AIEconomicManager.adjustRatesForAI` (`AIEconomicManager.ts:136-213`) ramps
+`AIEconomicManager.adjustRatesForAI` (`AIEconomicManager.ts:382-521`, called
+from `:97`) ramps
 tax/luxury/science with a `MAX_DELTA` guard. That is anti-oscillation, not
 budgeting. There is no reserve target that *drives behaviour*, no war chest for a
 specific planned unit, no build-vs-bank decision, no project costing.
 
-Tellingly, `EconomicManager.AI_MIN_GOLD_RESERVE` (`EconomicManager.ts:94`) is
-declared and *never assigned*, so `AutoProduction.evaluateGoldSpending` silently
-falls back to the literal `8`. This is exactly `TODO.txt:321`.
+`EconomicManager.AI_MIN_GOLD_RESERVE` (`EconomicManager.ts:219`) used to be
+declared and never assigned, so `AutoProduction.evaluateGoldSpending` fell back
+to the literal `8`. It now has an initialiser (`= ABSOLUTE_MIN_GOLD`, the same 8)
+and is read at `AutoProduction.ts:3883` — a reserve *constant*, still not a
+reserve *policy*.
 
 === 2.6 There is almost no per-civ AI memory
 
@@ -121,26 +133,27 @@ Persistent AI state is six loosely-typed keys in `storage.turnData`: `aiState`,
 belief model per enemy civ, no outcome history.
 
 *Live bug found while surveying:* `ScoutMemory` is a *single shared instance for
-all civs* (`GameEngine.ts:173,247`) keyed only by enemy civ id, with a global
+all civs* (`GameEngine.ts:335,437`) keyed only by enemy civ id, with a global
 `currentRound`. The human player's "scout memory" therefore contains discoveries
 the AI made. That is a fog-of-war correctness bug, not an architecture one — fix
 it in step 1.
 
 === 2.7 Commitment is implemented six different times
 
-* `_aiCommittedTarget` + 4-round TTL (`AIManager.ts:1844-1858`)
-* `OFFENSIVE_PLAN_MAX_AGE_ROUNDS = 20` (`AIManager.ts:57`)
-* `OSCILLATION_WINDOW = 6` / `OSCILLATION_THRESHOLD = 3` (`AIManager.ts:49-50`)
-* `RETALIATION_WINDOW_ROUNDS = 15` (`AIManager.ts:60`)
-* `AggressionState` 3-round TTL (`AIManager.ts:3779`)
-* `ArmyGroup.formedRound` + `RALLY_TIMEOUT_ROUNDS = 6` (`AICoordinator.ts:34`)
+* `_aiCommittedTarget` + 4-round TTL (`AIManager.ts:5651-5663`)
+* `OFFENSIVE_PLAN_MAX_AGE_ROUNDS = 20` (`AIManager.ts:248`)
+* `OSCILLATION_WINDOW = 6` / `OSCILLATION_THRESHOLD = 3` (`AIManager.ts:240-241`)
+* `RETALIATION_WINDOW_ROUNDS = 15` (`AIManager.ts:251`)
+* `AggressionState` 3-round TTL (`AIManager.ts:10144-10151`)
+* `ArmyGroup.formedRound` + `RALLY_TIMEOUT_ROUNDS = 6` (`AICoordinator.ts:36`)
 * plus the `colonyMission` / `invasionMission` stage machines
 
 One mechanism (hysteresis + commitment on goals) replaces all of them.
 
 === 2.8 There is no measurement gate
 
-`tests/ai/longRunSimulation.test.ts` has 7 assertions. The CSV/JSONL export
+`tests/ai/longRunSimulation.test.ts` is a *single* test case (7 `expect`s).
+The CSV/JSONL export
 (`doc/GAME_PROGRESSION_EXPORT.adoc`) is rich and `scripts/run-naval-session.mjs` is
 a real harness — but nothing diffs AI behaviour before/after a refactor. A change
 of this size *without* a golden-run diff is flying blind.
@@ -222,7 +235,8 @@ interface AIBoard {
 Why this is the highest-value single artefact:
 
 * every goal becomes `evaluate(board: AIBoard) → GoalScore` — a *pure function on
-  plain data*. The 398 existing AI tests mostly need `GameEngine` mocks; these
+  plain data*. The 1,122 existing AI tests (93 files in `tests/ai/`) mostly need
+  `GameEngine` mocks; these
   would need a literal.
 * one dump per turn (JSONL) turns AI debugging from log-scraping into a table.
 * no hidden coupling, so goals can be deleted, reordered or added freely.
@@ -247,7 +261,7 @@ interface Goal {
 }
 ----
 
-Proposed set, grouped by the axes `TODO.txt` asks for:
+Proposed set, grouped by the axes `TODO/TODO.txt:45-50` asks for:
 
 [cols="1,3"]
 |===
@@ -263,7 +277,7 @@ Proposed set, grouped by the axes `TODO.txt` asks for:
 | `build_market`, `build_granary`, `tax_policy`, `save_for(unit)`, `save_for(wonder)`, `build_caravan_trade`
 
 | science
-| `research_mil`, `research_sci`, `research_naval` (replaces the baked-in naval penalty at `AIResearch.ts:289-292`)
+| `research_mil`, `research_sci`, `research_naval` (replaces the baked-in naval penalty at `AIResearch.ts:398-401`, with the landlock filter at `:300-302`)
 
 | land military
 | `garrison_minimum`, `defend_city`, `defend_reach`, `build_army`, `field_army`, `siege_city`, `capture_city`
@@ -319,7 +333,7 @@ interface Plan {
 *Existing:* `ArmyGroupPlan` (`AICoordinator`), `FerryInvasionPlan`
 (`InvasionMission`), `FerryColonyPlan` (`ColonyMission`).
 *New:* `NavalScreenPlan` (patrol sectors), `BlockadePlan`,
-`AmphibiousDefensePlan`, `NavalRaidPlan`, `PincerPlan` (closes `TODO.txt:63-64`).
+`AmphibiousDefensePlan`, `NavalRaidPlan`, `PincerPlan` (closes `TODO/TODO.txt:40-44`).
 
 A plan, once created, *owns* its participants' actions until it completes or
 aborts. That single rule deletes the "army forms but never attacks" class of bug
@@ -345,14 +359,16 @@ Three concrete conversions:
   fixes "invaded by a small group": it scores any hostile stack by
   `threat − myDefence` and outranks "go explore", which today only happens by
   accident of branch order.
-. *Production as scored actions.* Replace the 469-line ladder with
+. *Production as scored actions.* Replace the ~847-line ladder with
   `ProduceUnit(role)` / `BuildThing(type)` candidates fed by doctrine goals. Unit
   *roles* (`defender`, `attacker`, `transport`, `warship`, …) resolve to the best
-  available unit *for the current era and situation*, which fixes
-  `TODO.txt:65-66` ("army composition by era") properly instead of via the
-  hardcoded `['riflemen','musketeer',…]` lists (`AutoProduction.ts:877,1378`).
-  Harbour/ferry/warship needs then *emerge* from `transport_army` instead of the
-  `shouldBuildNavy` special case (`AutoProduction.ts:1096`).
+  available unit *for the current era and situation* — the army-composition-by-era
+  gap the old TODO list used to carry. There is no hardcoded era ladder left to
+  bypass: `AutoProduction.buildableLandCombat` (`:1724`) filters `UNIT_PROPS`
+  through `canBuildUnit`, and its own comment (`:1717-1723`) says as much.
+  Harbour/ferry/warship needs then *emerge* from `transport_army`
+  instead of the
+  `shouldBuildNavy` special case (`AutoProduction.ts:2220`).
 . *City tiles.* Keep the food-first law verbatim; replace the hardcoded
   `AI_GOVERNOR_PROFILE` with a per-city goal vector derived from the civ doctrine
   and the city's own situation — a coastal city under naval threat stops valuing
@@ -412,7 +428,7 @@ Every phase is independently shippable and gated on a behaviour diff.
 | 5
 | Production as scored actions + unit roles.
 | med
-| city-production diff; closes `TODO.txt:65-66`
+| city-production diff; army composition by era (no hardcoded unit list left)
 
 | 6
 | *Naval doctrine.* Sea-lane graph, naval + amphibious threat in `assessCityThreat`, `NavalScreenPlan` / `BlockadePlan` / `AmphibiousDefensePlan`, escort.
@@ -420,12 +436,12 @@ Every phase is independently shippable and gated on a behaviour diff.
 | `run-naval-session.mjs` metrics: invasions planned→boarded→landed, sea-lane denial
 
 | 7
-| *Money as a goal.* `save_for(unit/building/wonder)`, treasury policy, build-vs-bank. Delete the dead `AI_MIN_GOLD_RESERVE` field.
+| *Money as a goal.* `save_for(unit/building/wonder)`, treasury policy, build-vs-bank. Turn `AI_MIN_GOLD_RESERVE` (now `= ABSOLUTE_MIN_GOLD`, `EconomicManager.ts:219`) from a floor constant into a policy the build-vs-bank decision reads.
 | med
-| gold curve, disband count; closes `TODO.txt:321`
+| gold curve, disband count; the related AI budget work is logged as done in `TODO/DONE.txt`
 
 | 8
-| Multi-front pincer (`TODO.txt:63-64`); optional learning from `history`.
+| Multi-front pincer (`TODO/TODO.txt:40-44`); optional learning from `history`.
 | high
 | —
 |===
@@ -452,8 +468,8 @@ investing in phases 4-8.
   subsume `_aiCommittedTarget`, the plan-age cap, oscillation detection, the
   retaliation window, the aggression TTL and the rally timeout. Less code, less
   thrash, one place to tune.
-. *Testability.* Goals are pure functions over a plain object. Most of the 398 AI
-  tests could stop mocking `GameEngine`. New AI features get cheap tests.
+. *Testability.* Goals are pure functions over a plain object. Most of the 1,122 AI
+  tests (93 files in `tests/ai/`) could stop mocking `GameEngine`. New AI features get cheap tests.
 . *Explainability.* One log line per goal per turn. Given the existing JSONL
   pipeline this is close to free and worth more than the architecture itself.
 . *Real locality.* Naval can be deleted without touching land logic; city economy
@@ -486,8 +502,9 @@ investing in phases 4-8.
   scout re-picking a blocked tile, 7 993 failed moves in one session. A perfect
   doctrine layer on broken primitives still loses games and still looks dumb.
   *Primitives first, doctrine second* — do not let this project become a way to
-  avoid fixing movement. `TODO.txt:52-58` (verify wars produce sustained
-  offensives) should be answered *before* phase 3.
+  avoid fixing movement. The War/Military module still open in
+  `TODO/TODO.txt:45-50` (do wars produce sustained offensives?) should be
+  answered *before* phase 3.
 . *The fog-of-war temptation.* Ground truth is one property access away and would
   make the AI feel great while destroying the game. Non-negotiable test (§L0).
 . *Save/load and size.* `turnData` is persisted wholesale; a fat board bloats saves
@@ -496,7 +513,7 @@ investing in phases 4-8.
 . *Explainability can be over-trusted.* A goal score of 0.62 tells you nothing
   about whether the number is right. Scores are a debugging aid, not a proof.
 . *Refactor-before-measure is how this project already got into trouble.*
-  `AI_SESSION_ANALYSIS.adoc` is a list of symptoms found by running sessions and
+  `doc/AI_MICRO_ERRORS_REPORT.adoc` is a list of symptoms found by running sessions and
   reading logs. Phase 0 is not overhead; it is the thing that makes phases 1-8
   survivable.
 

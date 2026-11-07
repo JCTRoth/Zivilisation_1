@@ -2,11 +2,11 @@
 
 > *Engine:* `src/game/engine/AI/TeamCoordinator.ts` (new),
 > `src/game/engine/AI/AIManager.ts`, `src/game/engine/diplomacy/AIDiplomacyPolicy.ts`,
-> `src/game/engine/DiplomacyManager.ts`, `src/game/engine/AIAggression.ts`
+> `src/game/engine/DiplomacyManager.ts`, `src/game/engine/AI/AIAggression.ts`
 > *Hooks:* `TurnManager.advanceTurn` (per-round), `GameEngine.submit` (player commands)
 > *UI:* `GameModals.tsx` (team commands, war plan, observations chip),
 > `StatisticsModal.tsx` (Teams tab)
-> *Tests:* `tests/teams/` (91 tests, 12 files)
+> *Tests:* `tests/teams/` (93 tests, 12 files)
 > *Verification:* `scripts/run-team-batch.mjs`
 > *Status:* Phases 0–6 shipped 2026-11-01.
 
@@ -68,8 +68,9 @@ member from opening an independent second front while the team is at war.
 seam — `TEAM_COORDINATE_ATTACK` / `TEAM_DEFEND_CITY` with full turn/ownership/
 team authorization), Team War Plan panel, "Team" chip in the Observations feed.
 Statistics modal: Teams tab (totals, per-member ledgers, knowledge spread,
-exploration %, war plan, defense missions) — FFA-inert. 25 i18n keys × 6
-languages.
+exploration %, war plan, defense missions) — FFA-inert. 34 i18n keys × 6
+languages (24 `gm.diplo.team.*`, `gm.diplo.observations.team`, and the 9
+`stats.tabTeams` / `stats.teams*` labels).
 
 |6 — Verification
 |`scripts/run-team-batch.mjs` (see §3).
@@ -77,12 +78,12 @@ languages.
 
 == 2. Test coverage
 
-`tests/teams/` — 91 tests across 12 files. The team-coordination additions:
+`tests/teams/` — 93 tests across 12 files. The team-coordination additions:
 
 * `teamScouting.test.ts` (11) — claim partition (nearest-Chebyshev, ties by id),
   land/water mobility split, single-explorer/FFA/dev-mode inertness, POI
   dedup and age pruning.
-* `teamAttack.test.ts` (13) — primary selection, shared knowledge (a member
+* `teamAttack.test.ts` (15) — primary selection, shared knowledge (a member
   that never saw the city still gets it), retaliation steering, stability and
   rotation, peace/FFA/dev inertness, player pin (override, illegal pins, pin
   retirement), `planBulkAttack` focus bonus and its strength-gate veto.
@@ -94,7 +95,7 @@ languages.
   hostile actions, war-focus discipline (`mayDeclareWar`), teammate gift vs
   non-teammate sale (`aiTechDealTerms`).
 
-Full suite at time of writing: **233 test files / 2803 tests**, `tsc` clean,
+Full suite at time of writing: **247 test files / 2929 tests**, `tsc` clean,
 eslint clean, production build OK.
 
 == 3. Verification batch
@@ -177,7 +178,7 @@ defense directives (incl. player requests), per-round diagnostics.
 fallbacks), `teamFocus` injection into `collectKnownTargets` / plan keep /
 `planBulkAttack`, `findTeammateDefenseAssignment` in the defense chain.
 
-|`src/game/engine/AIAggression.ts`
+|`src/game/engine/AI/AIAggression.ts`
 |`TEAM_FOCUS_BONUS` in `planBulkAttack` scoring.
 
 |`src/game/engine/diplomacy/AIDiplomacyPolicy.ts`

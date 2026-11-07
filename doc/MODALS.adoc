@@ -118,6 +118,10 @@ live in `doc/dialogs/`.
 
 |Trade route / starved / disorder / disbanded |store notices |engine events |—
 
+|Bribe result |`bribe-result` |`UNIT_BRIBED` / `BRIBE_REPORTED` / `BRIBE_REFUSED` |—
+
+|Chronicle card (story) |`story` |dawn, barbarian conquest, nomad migration |—
+
 |Audience (leader received) |`audience` |diplomat "Meet with Leader" / AI offer |—
 
 |Espionage report |canvas-local |diplomat steal / embassy / sabotage |—
@@ -128,7 +132,8 @@ live in `doc/dialogs/`.
 
 |Unit ORDERS menu |canvas-local |right-click own unit |—
 
-|Unit stack picker |canvas-local |click stacked own units |— |===
+|Unit stack picker |canvas-local |click stacked own units |—
+|===
 
 == Overview
 
@@ -138,41 +143,49 @@ The app has three independent places that decide "a dialog is open". They do
 not share a scheduler — only system A is visible to the engine's auto-end gate.
 
 *A — store-driven `uiState.activeDialog`* :: The union type lives in
-`types/game.ts`: `tech | diplomacy | audience | help | pause | city-production |
-city-details | rates | government | statistics | wonders | village |
-upkeep-disbanded | city-starved | city-disorder | trade-route-result |
-research-required | auto-end-offer | wonder-completed | wonder-conflict |
-combat-report | city-founded | city-lost | null`. The five dead ids
+`types/game.ts` (L878): `tech | diplomacy | audience | help | pause |
+city-production | city-details | rates | government | statistics | wonders |
+village | upkeep-disbanded | city-starved | city-disorder |
+trade-route-result | bribe-result | research-required | auto-end-offer |
+wonder-completed | wonder-conflict | combat-report | city-founded | city-lost
+| story | null` — 25 ids plus `null`. The five dead ids
 (`city`, `game-menu`, `city-purchase`, `city-citizens`, `hex-details`) were
 removed with their renderers.
 `actions.showDialog(name)` / `actions.hideDialog()` are plain reducers in
-`src/stores/GameStore.ts` (L603, L633). Almost every renderer lives in
-`src/components/ui/GameModals.tsx`, which subscribes to `uiState.activeDialog`
-and mounts one component per id (the return block at L2181–L2217). A few ids
+`src/stores/GameStore.ts` (L827, L857). Most renderers live in
+`src/components/ui/GameModals.tsx`, which subscribes to
+`uiState.activeDialog` and mounts one component per id (the render block at
+L3240–L3320); thirteen of them have been split into their own files under
+`src/components/ui/gamemodals/` (`CityModal`, `RatesModal`,
+`GovernmentModal`, `StatisticsModal`, `WondersOverview`, `WonderCompleted`,
+`WonderConflict`, `VillageModal`, `CombatReportModal`, `CityEventModal`,
+`StoryModal`, `AudienceModal`, `EspionageReportModal`). A few ids
 are opened through purpose-built actions instead of `showDialog` —
 `showVillageResult`, `showUpkeepDisbanded`, `showCityStarved`,
-`showCityDisorder`, `showTradeRouteResult`, `queueWonderDialog`,
-`openDiplomacy`, `showIncomingDiplomacyOffer` (`GameStore.ts` L641–L750) — but
+`showCityDisorder`, `showTradeRouteResult`, `showBribeResult`,
+`queueWonderDialog`, `queueStory`, `openDiplomacy`,
+`showIncomingDiplomacyOffer` (`GameStore.ts` L883–L1127) — but
 they all land on the same single `activeDialog` slot, so *only one store
 dialog can be on screen at a time*.
 +
 Two engine-side gates read the id: `EngineEventHandlers.isDecisionScreenOpen`
-(L1161) defers auto-end while anything but `help` / `tech` is open, and
-`GameModals.NON_BLOCKING_DIALOGS` (L128) decides
+(`EngineEventHandlers.ts` L2174) defers auto-end while anything but
+`help` / `tech` is open, and `GameModals.NON_BLOCKING_DIALOGS`
+(`GameModals.tsx` L158) decides
 whether closing that id re-runs the auto-end check (see
 `doc/auto-end-turn.adoc`).
 
 *B — local state in `src/App.tsx`* :: Plain `useState` booleans that never
-touch the store: `showGameSetup` (L60), `showSettings` (L59),
-`showEndTurnConfirm` (L61), `confirmNewGame` / `confirmQuit` (L62–L63), plus
+touch the store: `showGameSetup` (L67), `showSettings` (L66),
+`showEndTurnConfirm` (L68), `confirmNewGame` / `confirmQuit` (L69–L70), plus
 `gameResult` (read from the store) driving `PauseScreen` and
-`GameResultOverlay`. The `GameMenuSheet` (`activeMenu`, L56) and the DOM
-`showToast` helper (L101) live here too. Because these are not `activeDialog`,
+`GameResultOverlay`. The `GameMenuSheet` (`activeMenu`, L63) and the DOM
+`showToast` helper (L108) live here too. Because these are not `activeDialog`,
 the engine cannot see them.
 
 *C — canvas-local state in `src/components/game/GameCanvas.tsx`* :: `contextMenu`
-(L139) drives the ORDERS unit menu, `stackModal` (L163) drives the unit-stack
-picker. Both are rendered inside the canvas component (L3195, L3205) and are
+(L249) drives the ORDERS unit menu, `stackModal` (L273) drives the unit-stack
+picker. Both are rendered inside the canvas component (L3820, L3830) and are
 dismissed by state reset, never by `hideDialog`. A third piece of state,
 `onExamineHex`, points back into `App` — see the dead rows below.
 
@@ -185,7 +198,7 @@ hero (artwork placeholder + eyebrow + title + lede)
   → .gm-actions (fixed action bar)
 ----
 +
-Styling comes from `src/styles/gameModalShell.css` (625 lines) and is
+Styling comes from `src/styles/gameModalShell.css` (853 lines) and is
 namespaced `.gm-*`: `.gm`, `.gm-modal`, `.gm-body`, `.gm-close`, `.gm-hero`
 (with `.gm-hero--cover`), `.gm-art` / `.gm-art--lg` / `.gm-art--plain`,
 `.gm-art-glyph`, `.gm-art-tag`, `.gm-eyebrow`, `.gm-title`, `.gm-lede`,
@@ -197,7 +210,7 @@ namespaced `.gm-*`: `.gm`, `.gm-modal`, `.gm-body`, `.gm-close`, `.gm-hero`
 Two props make every screen read as the same family:
 
 * `tone` — `info | danger | success | gold | solemn | neutral`
-  (`ModalTone`, `ModalShell.tsx` L10). The tone sets `--gm-accent` and
+  (`ModalTone`, `ModalShell.tsx` L11). The tone sets `--gm-accent` and
   `--gm-tint` on `.gm-body[data-tone=…]`
   (`gameModalShell.css` L62–L66), which drives the hero wash, the eyebrow and
   the section markers.
@@ -216,7 +229,7 @@ Buttons inside a shell modal use the game-wide `.touch-btn` family from
   (`.notification-center[role=status]`, `.notification-item--{type}`). Nearly
   every engine event that is not a modal lands here via
   `notify()` in `src/utils/NotificationUtils.ts`.
-* `App.showToast()` (L101) is a *separate*, DOM-injected toast
+* `App.showToast()` (L108) is a *separate*, DOM-injected toast
   (`.app-toast`) used only for save / load / export feedback.
 * Loading and error screens are plain full-page returns in `App.tsx`
   (L1249, L1278).
@@ -232,7 +245,7 @@ Buttons inside a shell modal use the game-wide `.touch-btn` family from
 
 | `tech`
 | A
-| `F2` (`App.tsx` L1153); WORLD ▸ Tech Tree (`App.tsx` L1370); side-panel research indicator (`ResearchIndicator.tsx` L94); research-complete ▸ "Choose New Research Path" (`GameModals.tsx` L537); research-required ▸ "Choose Technology" (`GameModals.tsx` L2188).
+| `F2` (`App.tsx` L1153); WORLD ▸ Tech Tree (`App.tsx` L1370); side-panel research indicator (`ResearchIndicator.tsx` L94); research-complete ▸ "Choose New Research Path" (`GameModals.tsx`, `renderResearchComplete` L421); research-required ▸ "Choose Technology" (`GameModals.tsx` L3246).
 | Any player turn; defers auto-end while no research is selected.
 | Fullscreen dark modal `dialogClassName="tech-tree-modal"`, title "Technology Tree", lazy `TechTreeView` SVG graph with research path + progress.
 | Click a node → `handleSelectTech` (path saved, first reachable tech started); ✕ / Esc.
@@ -240,7 +253,7 @@ Buttons inside a shell modal use the game-wide `.touch-btn` family from
 
 | research-complete
 | A
-| *Not an `activeDialog` id.* `TECH_RESEARCHED` for the human → `notifyTechResearched` (`EngineEventHandlers.ts` L1257) sets `lastResearchedTech` (`GameStore.ts` L1038); `renderResearchComplete` (`GameModals.tsx` L498) renders `<Modal show>` whenever that field is set.
+| *Not an `activeDialog` id.* `TECH_RESEARCHED` for the human → `notifyTechResearched` (`EngineEventHandlers.ts` L2268) sets `lastResearchedTech` (`GameStore.ts` L1455); `renderResearchComplete` (`GameModals.tsx` L421) renders `<Modal show>` whenever that field is set.
 | On every technology the human finishes (research unlocks at `RESEARCH_UNLOCK_ROUND = 5`).
 | `dialogClassName="research-complete-modal"`, "🔬 Research Complete", tech icon + name + description.
 | "Continue Researching: <next in path>" or "Choose New Research Path"; ✕ → `dismissTechNotification`.
@@ -248,7 +261,7 @@ Buttons inside a shell modal use the game-wide `.touch-btn` family from
 
 | `research-required`
 | A
-| Two paths: (1) once per game when research unlocks with nothing selected — `shouldPromptForResearch` (`src/utils/ModalTriggers.ts`) → `showDialog("research-required")` (`App.tsx` L368); (2) the auto-end gate, once per "no research" gap (`EngineEventHandlers.ts` L1125).
+| Two paths: (1) once per game when research unlocks with nothing selected — `shouldPromptForResearch` (`src/utils/ModalTriggers.ts`) → `showDialog("research-required")` (`App.tsx` L368); (2) the auto-end gate, once per "no research" gap (`EngineEventHandlers.ts` L2138).
 | From turn 5 on, whenever `currentResearch` is empty while techs remain.
 | `dialogClassName="research-required-modal"`, title "🔬 No Research Selected", explains that science would be wasted.
 | "Decide Later" (dismiss), "🔬 Choose Technology" (opens `tech`).
@@ -256,7 +269,7 @@ Buttons inside a shell modal use the game-wide `.touch-btn` family from
 
 | `diplomacy`
 | A
-| `D` / `F4` (`App.tsx` L1053, L1161); WORLD ▸ Diplomacy (`App.tsx` L1366) → `openDiplomacy(null)`; a diplomat's action on the map (`GameCanvas.tsx` L2761) → `openDiplomacy(targetCivId)`; an AI offer → `showIncomingDiplomacyOffer` (`EngineEventHandlers.ts` L1538).
+| `D` / `F4` (`App.tsx` L1053, L1161); WORLD ▸ Diplomacy (`App.tsx` L1366) → `openDiplomacy(null)`; a diplomat's action on the map (`GameCanvas.tsx` L2761) → `openDiplomacy(targetCivId)`; an AI offer arrives as a toast (`onAIDiplomacyOffer`, `EngineEventHandlers.ts` L2643) — the `showIncomingDiplomacyOffer` action that would raise the in-dialog banner exists (`GameStore.ts` L1120) but has no caller today.
 | Any player turn, once at least one rival has been met.
 | `dialogClassName="diplomacy-modal"`, title "⚖️ Diplomatic Relations". Left: civ list with status icons. Right: leader portrait, attitude badge + meter, military-strength bar, treaty badges, "What they remember", counter-proposal banner, history log. Incoming-offer banner on top.
 | Per-status proposals (Ceasefire / Peace / Alliance / Demand Tribute / Declare War), "▾ Advanced Treaties" (Open Borders, Trade Agreement, Mutual Defense, Non-Aggression, Embargo, Tech Exchange), Accept/Reject counter-offer, Accept/Reject incoming offer, cancel a treaty.
@@ -273,7 +286,7 @@ Buttons inside a shell modal use the game-wide `.touch-btn` family from
 | `city-details` (`CityModal`)
 | A
 | Left-click own city with no garrison (`GameCanvas.tsx` L2141); selection cycling onto own city (`GameCanvas.tsx` L1944); ORDERS ▸ City Info (`GameCanvas.tsx` L2693); `Ctrl+1–9` (`GameEngine.ts` L6756); first-time idle-production prompt (`EngineEventHandlers.ts` L986); "Go to City" from starved / disorder / wonder-conflict (`GameModals.tsx` L207, L1992, L2124); unit-stack ▸ City details.
-| Any player turn. Auto-end defers while open; the governor runs on close (`GameModals.handleCloseDialog` L143).
+| Any player turn. Auto-end defers while open; the governor runs on close (`GameModals.handleCloseDialog` L160).
 | *Uses the shell* (`CityModal.tsx` L163): tone `gold`, `icon="🏛️"`, `artLabel="<city> from the walls"`, title = city name, `dialogClassName="city-details-modal …"`. Six tabs: Overview, Resources, Buildings, Citizens, Units, Trade Routes.
 | "Choose Production…", Close, tab switching, plus per-tab controls (governor, rush-buy, citizen reassignment, unit Select).
 | none directly (only via the buttons it shares with other screens)
@@ -334,6 +347,22 @@ Buttons inside a shell modal use the game-wide `.touch-btn` family from
 | OK.
 | none
 
+| `bribe-result`
+| A
+| `UNIT_BRIBED` / `BRIBE_REPORTED` / `BRIBE_REFUSED` with the player on either side → `showBribeResult` (`EngineEventHandlers.ts` L2572, L2605, L2632) → `GameStore.showBribeResult` (L933). Rendered by `renderBribeResult` (`GameModals.tsx` L494); `handleCloseDialog` clears the notice.
+| The moment a diplomat's bribe resolves (not in AI-vs-AI runs).
+| *Uses the shell*: three flavours driven by `bribeResult.kind` — `defected` (tone `danger`, icon 💰, "The purse bought a banner"), `reported` (tone `gold`, 🎭, "The coin was pocketed, and the lie was told"), `refused` (tone `info`, 🛑, "The commander turned away the gold"). Body: who bribed whom, the story line, and a "Diplomatic effect:" note.
+| Close (dismisses and clears).
+| none
+
+| `story`
+| A
+| `queueStory` (`GameStore.ts` L1081) from `GameEngine.initialize` (the `dawn` card), `NOMAD_MIGRATED` and a barbarian `CITY_CAPTURED` (`EngineEventHandlers.ts` L399, L1600); it takes `activeDialog` immediately unless another dialog is busy, and promotes when that one closes. Rendered by `<StoryModal show={uiState.activeDialog === 'story'}>` (`GameModals.tsx` L3308).
+| Opening of a game and the world's big news; one card at a time from `storyQueue`.
+| *Uses the shell* (`gamemodals/StoryModal.tsx`), `dialogClassName="story-modal"`, full-bleed `artLayout="cover"` hero stretched to `min(64vh, 560px)`, eyebrow / title / lede from `story.*` keys, optional artwork (glyph stage on error).
+| Continue — the card's only door; it closes and pops the queue.
+| `BLOCKING_DIALOGS` in `e2e/game.spec.ts` dismisses each card by its title (see `doc/STORY.adoc`)
+
 | `village` — Valuable Metals
 | A
 | `VILLAGE_RESULT` for the human (`EngineEventHandlers.ts` L240 → `showVillageResult`, id `village`); `VillageModal` dispatches on `villageResult.outcome`.
@@ -384,7 +413,7 @@ Buttons inside a shell modal use the game-wide `.touch-btn` family from
 
 | `wonder-completed`
 | A
-| `WONDER_COMPLETED` (any civ) → `queueWonderDialog` (`EngineEventHandlers.ts` L917). The queue in `GameStore.ts` L691 opens the first entry immediately and parks later ones behind it; `GameModals.handleWonderContinue` (L189) drains one per Continue. Suppressed in AI-vs-AI.
+| `WONDER_COMPLETED` (any civ) → `queueWonderDialog` (`EngineEventHandlers.ts` L1827). The queue in `GameStore.ts` L946 opens the first entry immediately and parks later ones behind it; `GameModals.handleWonderContinue` (L222) drains one per Continue. Suppressed in AI-vs-AI.
 | The turn any wonder is finished anywhere in the world.
 | *Uses the shell*: tone `gold`, `dialogClassName="wonder-completed-modal"`, eyebrow "A Wonder of the World · <year>", title = wonder icon + name, real artwork via `artSrc` + `WonderArtwork` (with credit line), "At a glance" stat grid (shields spent, era).
 | Continue (advances the queue).
@@ -392,7 +421,7 @@ Buttons inside a shell modal use the game-wide `.touch-btn` family from
 
 | `wonder-conflict`
 | A
-| `WONDER_PRODUCTION_CONFLICT` in a human city → `queueWonderDialog` (`EngineEventHandlers.ts` L952). Same queue.
+| `WONDER_PRODUCTION_CONFLICT` in a human city → `queueWonderDialog` (`EngineEventHandlers.ts` L1862). Same queue.
 | When your city completes a wonder another civ already owns.
 | *Uses the shell*: tone `danger`, `dialogClassName="wonder-conflict-modal"`, eyebrow "A Wonder Slips Away", title "<winner> — already completed", callout "Shields spent, nothing raised", "Who got there first".
 | Close, "Go to City" (closes, then opens `city-details` on the idle city).
@@ -466,10 +495,10 @@ Buttons inside a shell modal use the game-wide `.touch-btn` family from
 
 | game setup
 | B
-| `showGameSetup` starts `true` (`App.tsx` L60); reset to `true` by quit (`App.tsx` L750) and new-game reset (L794). Rendered as a full-screen takeover (`App.tsx` L1264) instead of the app shell.
+| `showGameSetup` starts `true` (`App.tsx` L67); reset to `true` by quit (`App.tsx` L813) and new-game reset (L857). Rendered as a full-screen early return instead of the app shell (`App.tsx` L1328-1336).
 | Before any game exists.
-| `GameSetupModal`, `dialogClassName="game-setup-dialog"`, `h2.modal-title` "🏛️ Zivilisation 1" + "Step N of 3"; steps: Choose Your Civilization → Fine-tune Your Challenge → Your Setup summary. The challenge step also holds the optional *Fixed Alliances* builder (toggle, team count, presets, per-slot team selectors, validation).
-| ← Previous, Next →, "🏛️ Start Game".
+| `GameSetupModal` is a **plain `<div className="setup-screen" role="dialog">`** (`GameSetupModal.tsx` L912) — not a react-bootstrap `Modal`, so there is no `game-setup-dialog` class and no `dialogClassName`. Header: `h2.modal-title` "🏛️ Zivilisation 1" plus the nameplate tag **"War Council"** (`setup.nameplateTag`) and two step dots (there is no "Step N of 3" string — `totalSteps = 2`, L778). Steps: *Choose Your Civilization* → *Fine-tune Your Challenge*, the second one carrying the *Your Setup* summary. The challenge step also holds the optional *Fixed Alliances* builder (toggle, team count, presets, per-slot team selectors, validation).
+| ← Previous, Next →, "🏛️ Start Game" (shown on the final step).
 | `h2.modal-title` contains `Zivilisation 1`; `Choose Your Civilization`; `.setup-civ-card`; `.setup-footer__selected-value`; `Fine-tune Your Challenge`; `← Previous`; `Next →`; `.setup-summary-title` = `Your Setup`; `.setup-summary`; `select.setup-setting__control`; button `🏛️ Start Game`
 
 | ConfirmDialog — New Game
@@ -492,7 +521,7 @@ Buttons inside a shell modal use the game-wide `.touch-btn` family from
 | B
 | GAME ▸ Settings (`App.tsx` L1343); `F3` (`App.tsx` L1157).
 | Any time.
-| *Uses the shell*: tone `neutral`, `dialogClassName`-free, eyebrow "Game Menu · Options", title "Settings", sliders and toggles bound to `settings`.
+| *Uses the shell*: tone `neutral`, `dialogClassName="settings-modal"`, eyebrow "Game Menu · Options", title "Settings", sliders and toggles bound to `settings`.
 | Reset to Defaults, Apply & Close.
 | clicking `/Settings/` must surface a `.modal` (`e2e/game.spec.ts` L175)
 
@@ -506,7 +535,7 @@ Buttons inside a shell modal use the game-wide `.touch-btn` family from
 
 | End Turn (automatic flavour)
 | B
-| Engine `TURN_END_CONFIRMATION_NEEDED` → `window` event `showEndTurnConfirmation` (`EngineEventHandlers.ts` L1409) → listener at `App.tsx` L480 → `processEndTurn(true)`. Fires when the unit queue empties during UNIT_MOVEMENT with `autoEndTurn` on (or as a one-time prompt with it off).
+| Engine `TURN_END_CONFIRMATION_NEEDED` → `window` event `showEndTurnConfirmation` (`EngineEventHandlers.ts` L2180) → listener at `App.tsx` L555-566 → `processEndTurn(true)`. Fires when the unit queue empties during UNIT_MOVEMENT with `autoEndTurn` on (or as a one-time prompt with it off).
 | When every unit has spent its moves.
 | Same component with tone `success`, title "All Your Units Have Moved!", a `.gm-callout` headed "End Turn?" instead of the prose section.
 | Cancel, End Turn, skip-confirmation checkbox.
@@ -572,7 +601,7 @@ Buttons inside a shell modal use the game-wide `.touch-btn` family from
 
 | "examine hex"
 | C
-| *Dead.* `executeContextAction` still has `case "examineHex"` (`GameCanvas.tsx` L2823) which calls `onExamineHex` → `App.handleExamineHex` (`App.tsx` L754) — but that handler only writes `showHexDetail`, `detailHex` and `terrainData`, and *nothing renders them*. No button in `UnitActionsModal` dispatches `examineHex`.
+| *Dead.* `executeContextAction` still has `case "examineHex"` (`GameCanvas.tsx` L3380) which calls `onExamineHex` → `App.handleExamineHex` (`App.tsx` L817) — but that handler only writes `showHexDetail`, `detailHex` and `terrainData`, and *nothing renders them*. No button in `UnitActionsModal` dispatches `examineHex`.
 | —
 | nothing.
 | —
@@ -584,13 +613,13 @@ Buttons inside a shell modal use the game-wide `.touch-btn` family from
 | store
 | `actions.addNotification(...)` / `notify(type, message, civId)` from anywhere; auto-dismiss timer inside `GameStore.ts` L755.
 | Continuous; filtered to the human player (and dropped entirely in AI-vs-AI runs).
-| `.notification-center[role=status][aria-live=polite]`, `.notification-item--{success|error|warning|info}` with icon and message.
+| `.notification-center[role=status][aria-live=polite]`, `.notification-item--{success\|error\|warning\|info}` with icon and message.
 | Click a toast to dismiss it.
 | none
 
 | App DOM toasts
 | B
-| `App.showToast()` (`App.tsx` L101) — save, load, progression export only.
+| `App.showToast()` (`App.tsx` L108) — save, load, progression export only.
 | Menu actions.
 | `.app-toast` appended directly to `<body>`, 3 s lifetime, `role="status"`.
 | none (auto-dismiss).
@@ -626,14 +655,17 @@ remains is only documentation debt:
 | Name | Status
 
 | `diplomacy-report`
-| Never existed in code — only named in `doc/auto-end-turn.adoc` L33 and `doc/save-load-system.adoc` L116. Worth deleting from those two lines.
+| Never existed in code — it used to be named in `doc/auto-end-turn.adoc` and
+  `doc/save-load-system.adoc`. Both documents were corrected on 2026-11-07 and
+  neither names it any more; the `e2e/game.spec.ts` diplomacy test records that
+  the "Diplomacy Report" modal was removed.
 |===
 
 Two *context-menu actions* are dead in the same way — a `case` exists in
 `GameCanvas.executeContextAction` but no button dispatches it:
-`examineHex` (L2823) and `centerView` (L2809). Their store state
-(`App.tsx` `showHexDetail` / `detailHex` / `terrainData`) is written and
-rendered by nobody.
+`examineHex` (L3380) and `centerView` (L3366). Their store state
+(`App.tsx` `showHexDetail` L65, plus the write-only `detailHex` / `terrainData`
+at L72–L76) is written by `handleExamineHex` (L817) and rendered by nobody.
 
 == Implemented since the first draft
 
@@ -659,7 +691,7 @@ emissions, verified against the router's `switch`.
 * **Why:** an AI declaring war on you is buried in a toast that auto-dismisses; the player may play several turns without noticing they are at war. Treaty expiry/anniversary has no event at all yet (`DiplomacyManager` has no expiry logic) and would need one first.
 
 === 2. Save / Load Feedback
-* **Trigger:** `GAME_SAVED` (`GameEngine.ts` L6921) and `GAME_LOADED` (L7224) are emitted but unhandled. The menu path compensates with `App.showToast`; the `Ctrl+S` / `Ctrl+L` shortcuts (`App.tsx` L1195–L1206) give *no feedback at all*.
+* **Trigger:** `GAME_SAVED` (`GameEngine.ts` L9166) and `GAME_LOADED` (L9502) are emitted but unhandled. The menu path compensates with `App.showToast`; the `Ctrl+S` / `Ctrl+L` shortcuts (`App.tsx` L1258 / L1264) give *no feedback at all*.
 * **Shows:** a small shell-styled confirmation: file name, turn, timestamp, byte size; on load, "restored turn N, M cities, K units" or a clear failure reason.
 * **Why:** the fastest way to lose a long game is not knowing whether the save landed.
 
@@ -730,14 +762,16 @@ emissions, verified against the router's `switch`.
 
 Everything in the table now sits on the shared shell except:
 
-* `src/components/ui/GameModals.tsx` — the *tech tree* and *diplomacy* screens
-  build their own `.gm-hero` markup inside a raw `<Modal>` (fullscreen /
-  heavily customised layout), and `renderCityProduction` wraps the legacy
-  production markup in the shell but leaves its inner `h6` + list structure
-  untouched.
+* `src/components/ui/GameModals.tsx` — the *tech tree* screen still builds
+  its own `.gm-hero` markup inside a raw `<Modal>` (fullscreen /
+  heavily customised layout, `renderTechTree` L359), and `renderCityProduction`
+  wraps the legacy production markup in the shell but leaves its inner `h6` +
+  list structure untouched. The *diplomacy* screen has since moved onto the
+  shell: `renderDiplomacy` returns a `GameModal` (L1284).
 * `src/components/ui/GameSetupModal.tsx` — uses the shell's *building blocks*
-  (it imports `gameModalShell.css` explicitly) but is still a raw `<Modal>`,
-  because the wizard is a full-screen flow rather than a dialog.
+  (it imports `gameModalShell.css` explicitly, L11) but is not a bootstrap
+  `Modal` at all: it is a plain `<div className="setup-screen" role="dialog">`
+  full-screen flow rather than a dialog (see the game-setup row above).
 * `src/components/ui/ConfirmDialog.tsx` — hand-builds the `.gm-hero` /
   `.gm-heading` / `.gm-actions` markup so it can keep `role="alertdialog"`;
   documented as intentional in its own header comment.
@@ -752,15 +786,20 @@ Dialog classes with *no* rule in `src/styles/`:
 * `research-required-modal`
 * `combat-report-modal`, `city-event-modal` (both inherit everything from the
   shell; no dialog-level overrides are needed yet)
+* `research-complete-modal`, `auto-end-offer-modal` — used as `dialogClassName`
+  / `className`, never styled (e2e latches onto the bare class)
+* `unit-stack-modal` — `unitStackModal.css` dresses the `.usm-*` internals
+  instead; the dialog class itself has no rule
+* `game-setup-dialog` — not a class at all any more; the setup screen is
+  `.setup-screen`
 
-Covered: `tech-tree-modal`, `research-complete-modal`, `city-production-modal`,
-`city-details-modal`, `auto-end-offer-modal` (all in `gameModals.css`),
+Covered: `tech-tree-modal`, `city-production-modal`,
+`city-details-modal` (all in `gameModals.css`),
 `diplomacy-modal` (`diplomacyModal.css`), `wonders-modal` /
 `wonder-completed-modal` / `wonder-conflict-modal` / `wonder-entry-modal`
 (`wonders.css`), `rates-modal`, `government-modal`, `statistics-modal`,
 `end-turn-modal`, `confirm-dialog`, `pause-screen`, `settings-modal`,
-`game-result-overlay`, `game-setup-dialog`, `unit-context-menu`,
-`unit-stack-modal` (`unitStackModal.css`).
+`game-result-overlay`, `unit-context-menu`.
 
 === Dead code worth deleting
 
@@ -771,34 +810,11 @@ references.
 
 Still open:
 
-* `App.tsx` `showHexDetail` / `detailHex` / `terrainData` (L58–L71) and
-  `handleExamineHex` (L754) — written, read by the keyboard handler (L1116,
-  L1237), rendered by nobody.
-* `GameCanvas.executeContextAction` cases `examineHex` (L2823) and
-  `centerView` (L2809) — no button dispatches either.
-* The `diplomacy-report` id still named in `doc/auto-end-turn.adoc` L33 and
-  `doc/save-load-system.adoc` L116.
-* Orphaned CSS left behind by the restyle: `.auto-end-offer-hero/-title/-lead/
-  -actions/-fineprint` and `.research-complete-icon` in `gameModals.css`,
-  `.tech-tree-modal-body` (the class was replaced by `.gm-body`).
-
-== Related tests
-
-* Dialog ids `city`, `city-citizens`, `hex-details` — in the union and in
-  `CITY_DIALOGS`, with no renderer and no trigger. Drop them from
-  `types/game.ts` L636, `GameStore.ts` L101–L105, `NON_BLOCKING_DIALOGS`
-  (`GameModals.tsx` L128) and `isDecisionScreenOpen`
-  (`EngineEventHandlers.ts` L1166); then fix `doc/auto-end-turn.adoc` L31.
-* `game-menu` and `city-purchase` — live renderers, dead triggers. Either wire
-  them to a menu entry or delete `renderGameMenu` / `renderCityPurchase` and
-  the ids with them.
-* `App.tsx` `showHexDetail` / `detailHex` / `terrainData` (L58–L71) and
-  `handleExamineHex` (L754) — written, read by the keyboard handler (L1116,
-  L1237), rendered by nobody.
-* `GameCanvas.executeContextAction` cases `examineHex` (L2823) and
-  `centerView` (L2809) — no button dispatches either.
-* The `diplomacy-report` id still named in `doc/auto-end-turn.adoc` L33 and
-  `doc/save-load-system.adoc` L116.
+* `App.tsx` `showHexDetail` (L65) and the write-only `detailHex` /
+  `terrainData` (L72–L76), written by `handleExamineHex` (L817) — read only
+  by the keyboard handler's dependency list, rendered by nobody.
+* `GameCanvas.executeContextAction` cases `examineHex` (L3380) and
+  `centerView` (L3366) — no button dispatches either.
 
 == Related tests
 

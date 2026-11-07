@@ -7,16 +7,19 @@ The AI now uses the SettlementEvaluator to intelligently choose optimal location
 
 === Changes Made
 
-==== 1. GameEngine.ts
+==== 1. AIManager.ts (`src/game/engine/AI/AIManager.ts`)
 *Import Added:*
 [source,typescript]
 ----
-import { SettlementEvaluator } from './SettlementEvaluator';
+import { SettlementEvaluator, MIN_CITY_CENTER_DISTANCE } from '../SettlementEvaluator';
 ----
 
-*New Method: `findBestSettlementForSettler(unit)`*
+(`GameEngine.ts` imports only `MIN_CITY_CENTER_DISTANCE` from the evaluator —
+the settler logic itself lives in `AIManager`.)
+
+*New private method: `findBestSettlementForSettler(unit)`*
 * Uses SettlementEvaluator to find optimal city locations
-* Evaluates locations within a 10x10 area around the settler
+* Evaluates locations within an 11x11 area (±5 tiles, 121 tiles) around the settler
 * Considers:
 ** Tile yields (food, shields, gold)
 ** Water access
@@ -24,17 +27,19 @@ import { SettlementEvaluator } from './SettlementEvaluator';
 ** Terrain passability
 ** Visibility/exploration status
 ** Pathfinding to location
-* Uses "Balanced Growth" strategy (food priority for early expansion)
+* Uses the civ's own profile weights (`getSettlementWeightsForStrategy`:
+  `balancedGrowthWeights` / `productionPowerhouseWeights` / `tradeCommerceWeights`)
 * Automatically founds city if settler is already at optimal location
 
-*Modified: `chooseAITarget(unit)`*
+*Method: `chooseAITarget(unit)` (AIManager)*
 * Added special handling for settlers at the start
 * When unit type is 'settlers':
 ** Calls `findBestSettlementForSettler()`
 ** If best location found, returns it as target
 ** If no location found, falls back to exploration behavior
 
-*Modified: `runAITurn(civilizationId)` - AI Turn Loop*
+*Method: `runAITurn(civilizationId)` - AI Turn Loop (AIManager, the only
+implementation — the legacy `GameEngine.runAITurn` was removed)*
 * Added check after target selection for settlers
 * If settler has reached target location:
 ** Calls `foundCityWithSettler(unit.id)`
@@ -55,8 +60,9 @@ Check: Is unit a settler?
 findBestSettlementForSettler()
   ↓
 SettlementEvaluator.findBestSettlementLocation()
-  - Evaluate 10x10 area around settler
-  - Score each location based on:
+  - Evaluate 11x11 area (±5 tiles) around settler
+  - Score each location based on (weights from the civ's profile; the
+    balanced preset shown):
     * Food yield (weight: 2.0)
     * Shields yield (weight: 1.0)
     * Gold yield (weight: 0.5)
@@ -85,7 +91,7 @@ City founded, settler consumed
 [AI] Processing unit u_settler_123 (settlers) at (10,10) with 1 moves remaining
 [AI] Settler detected at (10, 10), using SettlementEvaluator
 [AI-SETTLER] Evaluating settlement locations for settler at (10, 10)
-[AI-SETTLER] Using strategy: Balanced Growth with weights: {food_weight: 2.0, shields_weight: 1.0, gold_weight: 0.5}
+[AI-SETTLER] Using strategy: balanced_growth with weights: {food_weight: 2.0, shields_weight: 1.0, gold_weight: 0.5}
 [SettlementEvaluator] findBestSettlementLocation: Starting search from (10, 10)
 [SettlementEvaluator] findBestSettlementLocation: Evaluated 121 locations, 45 were valid
 [SettlementEvaluator] findBestSettlementLocation: Best location: (12, 11) with score 28.5
@@ -102,16 +108,23 @@ City founded, settler consumed
 
 === Settlement Evaluation Criteria
 
-==== Balanced Growth Strategy
-The AI uses the "Balanced Growth" preset which prioritizes:
-* **Food (weight 2.0)**: Fast population growth
-* **Shields (weight 1.0)**: Moderate production capability
-* **Gold (weight 0.5)**: Basic economy
+==== Weight presets (chosen per civ profile)
+The AI picks its weights from the civ's production profile
+(`AIManager.getSettlementWeightsForStrategy`):
+
+* **Balanced Growth** (`balancedGrowthWeights`, `early_expansion` +
+  `balanced_growth`): **Food (weight 2.0)**, **Shields (1.0)**, **Gold (0.5)**
+* **Production Powerhouse** (`productionPowerhouseWeights`, `military_expansion`
+  + `defensive_turtle`)
+* **Trade & Commerce** (`tradeCommerceWeights`, `science_focus` + `wonder_rush`)
 * **Water Access**: +2 bonus for coastal locations
 
 ==== City Spacing Rules
-* **Minimum 3 tiles**: From any other city (configurable)
-* **2x2 exclusion zone**: Around own civilization's cities
+* **Minimum 5 tiles**: from any other city — the AI passes
+  `MIN_CITY_CENTER_DISTANCE` (5), so two own cities never share a workable
+  5x5 area (the evaluator's `3` default parameter is unused by the AI)
+* **9x9 exclusion box**: `overlapsOwnCityArea` scans ±4 tiles around every own
+  city (a 9x9 box), not a 2x2 zone
 * **Penalty system**: Reduces score for tiles near existing cities
 
 ==== Visibility Requirements
@@ -199,7 +212,7 @@ const weights = SettlementEvaluator.productionPowerhouseWeights(); // Instead of
 
 // Adjust minimum city distance
 weights,
-5, // minDistanceFromOtherCities (default: 3)
+MIN_CITY_CENTER_DISTANCE, // the AI passes 5; the evaluator's `3` default is unused
 ----
 
 == Integration with Other Systems
@@ -221,7 +234,7 @@ weights,
 
 == Performance Considerations
 
-* *Evaluation Area*: 10x10 grid (121 tiles max)
+* *Evaluation Area*: 11x11 grid (±5 tiles, 121 tiles max)
 * *Per Turn*: Only evaluates when settler has moves
 * *Caching*: Location scores not cached (re-evaluated each turn)
 * *Pathfinding*: Uses existing efficient A* implementation

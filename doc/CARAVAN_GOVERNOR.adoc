@@ -6,22 +6,30 @@ redesign that follows from it.
 
 == 1. What the measured game says
 
-The whole system produces **zero trade routes**. A 150-round probe on
-`AI_VS_AI` (4 civs, seed 7) measured:
+The probe that motivated this redesign found **zero trade routes**: a 150-round
+run on `AI_VS_AI` (4 civs, seed 7) measured:
 
 [cols="1,1,2", options="header"]
 |===
-|Stage |Count |Where it dies
+|Stage |Count |Where it died (at the time)
 
-|Caravans produced |**0** |`AutoProduction.shouldBuildCaravan` is gated on `canAffordAnotherUnit` (a gold test) even though a caravan costs 0 gold/turn, and on `canBuildUnit(civ,'caravan')` → the `trade` tech
+|Caravans produced |**0** |`AutoProduction.shouldBuildCaravan` was gated on `canAffordAnotherUnit` (a gold test) even though a caravan costs 0 gold/turn, and on `canBuildUnit(civ,'caravan')` → the `trade` tech
 |Research hook |fires |`caravanRelevanceForCiv` now pushes `bronze_working → currency → trade`
 |Deliveries |0 |nothing to deliver
 |Improved tiles |24 |(fixed separately — the works corps)
 |===
 
-So the governor is not the current bottleneck; production is. But the governor
-has structural problems of its own that would cap the delivery rate even with a
-steady supply of caravans, and those are what this document analyses.
+**The gold gate has since been removed**: `shouldBuildCaravan` no longer asks
+`canAffordAnotherUnit` — it checks the `trade` tech (still required), route
+room (`MAX_CARAVAN_TRADE_ROUTES` + nomad bonus), the shield/citizen cost
+(pop ≥ 2, per-city and civ-wide caravan caps) and city safety. With the gate
+open, 320 rounds on `AI_VS_AI` established **10 / 4 / 2 / 0 routes on seeds
+7 / 19 / 51 / 33** (see link:ECONOMY_ANALYSIS.adoc[Economy Analysis]) — the
+limiting factor is now transit time, not the gate.
+
+Even so, the governor has structural problems of its own that would cap the
+delivery rate with a steady supply of caravans, and those are what this document
+analyses.
 
 == 2. The governor as it stands — five concepts
 
@@ -114,7 +122,7 @@ Added, as first-class concepts:
 |Concept |What it is |Why
 
 |`MissionPhase`
-|`outbound → delivering → delivered` with explicit `abortReason`, replacing the bare `'wait' | 'scout' | 'idle'` kind
+|`outbound → delivering → delivered` with explicit `abortReason`, replacing the bare `'wait' \| 'scout' \| 'idle'` kind
 |A lifecycle is what a deadline, an escort wait and an abort reason need to hang from
 
 |`RouteValuation`
@@ -146,7 +154,7 @@ Added, as first-class concepts:
 
 All of the above is now in `src/game/engine/AI/CaravanGovernor.ts`, with the new
 balance numbers in `src/data/GameConstants.ts` and the behaviour pinned by
-`tests/caravanGovernor.test.ts` (21 cases) and `tests/ai/tradeAndWorks.test.ts`.
+`tests/caravanGovernor.test.ts` (73 cases) and `tests/ai/tradeAndWorks.test.ts`.
 
 [cols="1,2,2", options="header"]
 |===

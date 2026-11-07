@@ -345,27 +345,62 @@ Deliberately deferred:
 
 == 10. Tests
 
-`tests/teams/` contains the focused suite:
+`tests/teams/` contains the focused suite — 12 files, 93 test cases:
 
 [cols="2,3", options="header"]
 |===
 |File |Coverage
 
-|`TeamManager.test.ts`
-|Validation, normalisation, membership, team survival, reset, fallback.
+|`TeamManager.test.ts` (13)
+|Assignment validation, normalisation, membership and teammate queries,
+denormalised team id, survival, names, reset, free-for-all fallback.
 
-|`teamDiplomacy.test.ts`
-|Forced teammate alliance, team-wide war/peace/ceasefire, team strength,
-stale-war repair, AI policy and diplomat menus.
+|`teamDiplomacy.test.ts` (10)
+|Forced teammate alliance and embassy, refused teammate war, team-wide
+war/peace/ceasefire expansion, team strength and war-front counting,
+stale-war repair, AI policy and diplomat menus with teammates.
 
-|`teamCombat.test.ts`
+|`teamCombat.test.ts` (3)
 |Combat refusal between teammates, enemy-team distinction, teammate SDI.
 
-|`teamVictory.test.ts`
-|Team victory/defeat, spectator behaviour, team moonshot, FFA fallback.
+|`teamVictory.test.ts` (7)
+|Team victory/defeat, spectator behaviour, team moonshot, FFA fallback,
+"still alive on one unit", all-AI games not ending early.
 
-|`teamSaveLoad.test.ts`
-|Version 5 round-trip, stale teammate war repair, v4 → free-for-all.
+|`teamSaveLoad.test.ts` (4)
+|Version 5 round-trip, stale teammate war repair, vision re-share on load,
+v4 → free-for-all.
+
+|`teamAttack.test.ts` (15)
+|War-plan primary target (known enemy city, proximity, retaliation memory,
+plan stability), team focus bonus and strength veto, player "coordinate
+attack" pins, `TEAM_PLAN_CHANGED` reporting, FFA/dev-mode guards.
+
+|`teamDefense.test.ts` (10)
+|Mutual-defense directives for a threatened teammate city, garrison and
+landmass rules, player "defend city" requests with ten-round expiry,
+FFA/dev-mode guards.
+
+|`teamCombatAlert.test.ts` (2)
+|Ally combat alerts routed to the human seat; free-for-all keeps the old
+routing.
+
+|`teamEconomy.test.ts` (12)
+|Team solidarity in `scoreCandidates` (knowledge gifts, gold bootstrap,
+teammate trade), war-focus discipline in `mayDeclareWar`, teammate knowledge
+never charged in `aiTechDealTerms`.
+
+|`teamScouting.test.ts` (11)
+|Frontier cell claims and nearest-scout assignment, `shouldYield`,
+land/water mobility split, team POI registry publishing and pruning.
+
+|`teamVision.test.ts` (4)
+|Shared sight, explored ground and diplomatic contact; `revealArea` shares
+to teammates only; free-for-all shares nothing.
+
+|`teamVisionStore.test.ts` (2)
+|UI fog lights a teammate's units for the viewing player; free-for-all
+unchanged.
 |===
 
 The suite runs with the rest of `npm test`; `npm run type-check` covers the

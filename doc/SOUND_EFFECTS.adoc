@@ -4,7 +4,7 @@
 > *Music:* `src/utils/Music.ts` — the state-driven BGM layer, see <<music,Background Music>>
 > *Call sites:* `src/utils/EngineEventHandlers.ts`, `src/components/ui/gamemodals/EspionageReportModal.tsx`, `src/components/game/GameCanvas.tsx`, `src/components/game/UnitActionsModal.tsx`, `src/components/ui/GameModals.tsx`
 > *Setting:* `settings.enableSoundEffects` and `settings.enableBackgroundMusic` (Settings → *Enable sound effects* / *Background music*)
-> *Assets:* `public/assets/sfx/` — seven mp3 recordings, two further project originals (`city-founded.opus`, `mech-inf-move.opus`) and sixteen Warzone 2100 ogg recordings, see <<adding-a-recording,Adding a Recording>> and <<warzone-attribution,Warzone 2100 Attribution>>; music streams from `public/assets/music/`
+> *Assets:* `public/assets/sfx/` — seven mp3 recordings, four project-original `.opus` recordings (`city-founded.opus`, `mech-inf-move.opus`, `archer_selected.opus`, `horse_unit_moves.opus`) and sixteen Warzone 2100 ogg recordings, see <<adding-a-recording,Adding a Recording>> and <<warzone-attribution,Warzone 2100 Attribution>>; music streams from `public/assets/music/`
 > *Tests:* `tests/sfx.test.ts` (transport), `tests/soundEngine.test.ts` (policy), `tests/sfxWiring.test.ts` (which event plays what), `tests/music.test.ts` (the BGM layer)
 
 ---
@@ -32,10 +32,13 @@
 == Overview
 
 Every cue has a **synthesized fallback** — oscillator beeps built at play time —
-so the game makes a sound even with nothing on disk. Twenty cues also ship a
-**recording**, which takes over from the notes the moment its row exists in
+so the game makes a sound even with nothing on disk. Twenty-three cues also ship
+a **recording**, which takes over from the notes the moment its row exists in
 `CUE_FILES` (`src/utils/Sfx.ts`). The other twenty-one are synthesized only —
-the whole "news" row in the catalogue below, plus five early cues.
+the whole "news" row in the catalogue below (eleven cues) plus ten others:
+`stolenTechnology`, `coverBlown`, `uiSelect`, `unitSelected`,
+`unitReSelected`, `airUnitLaunch`, `impactStrike`, `unitDefeated`,
+`unitDisbanded` and `bribe`.
 
 A recording replaces the synthesis *one cue at a time*. Filling in a row makes
 that one cue play the file instead; every other cue keeps its oscillators.
@@ -60,7 +63,7 @@ Three rules hold for both paths:
 [[catalogue]]
 == Cue Catalogue
 
-Forty-one cues exist. *Recorded* marks a cue that ships a file today; the
+Forty-four cues exist. *Recorded* marks a cue that ships a file today; the
 *File* column gives the name it would use, which for a recorded cue is the path
 in `CUE_FILES` relative to `public/`.
 
@@ -80,12 +83,12 @@ in `CUE_FILES` relative to `public/`.
 | A **Mech. Inf.** combat round in which the player is involved and no unit
   died — a burst of automatic fire. *Mech. Inf. only*: it is the single unit in
   the game that carries machine guns, and every other land unit gets
-  `impactStrike` instead. Three recordings rotate: the first plays most of the
+  `impactStrike` instead. Two recordings rotate: the first plays most of the
   time.
 | `EngineEventHandlers.onCombat` (`COMBAT_HIT`, `COMBAT_VICTORY`,
   `COMBAT_DEFEAT` with no destruction)
 | yes
-| `sfx/warzone2100/machine-gun-strike-1.ogg` (+ `-2`, `-3` secondaries)
+| `sfx/warzone2100/machine-gun-strike-1.ogg` (+ `-2` secondary; there is no `-3` file)
 
 | `impactStrike`
 | Any other **land** combat round in which the player is involved and no unit
@@ -127,14 +130,23 @@ in `CUE_FILES` relative to `public/`.
 | yes
 | `sfx/mech-inf-move.opus`
 
+| `horseUnitMoves`
+| The player drives a **chariot, knights or cavalry** — the horse unit's own
+  hooves, rate-limited to once per unit per turn like the tank and the
+  mech. inf. (`playMovementCue` returns on the first matching type).
+| `EngineEventHandlers.onUnitMoved` → `playMovementCue`
+| yes
+| `sfx/horse_unit_moves.opus`
+
 | `airUnitLaunch`
 | One of the player's **air units leaves a base** — a city or a carrier.
   Moving between open tiles plays nothing, and so does the rest of a sortie.
-  Three jet recordings rotate: the takeoff most of the time, a scramble and a
-  return leg the rest.
+  **Synthesized only**: there is no `CUE_FILES` row, and `air-unit-launch.mp3`
+  sits on disk with nothing pointing at it any more (the jet recordings that
+  *do* have rows serve `airUnitInAirTargetSet` / `airUnitReturningToBase`).
 | `EngineEventHandlers.onUnitMoved` → `playMovementCue`
-| yes
-| `sfx/warzone2100/air-unit-launch-1.ogg` (+ `-2`, `-3` secondaries)
+| no
+| —
 
 | `cityAttacked`
 | A city the player is party to comes under **assault** by a gunpowder-era
@@ -214,27 +226,43 @@ in `CUE_FILES` relative to `public/`.
 | `sfx/stolen-technology.ogg`
 
 | `coverBlown`
-| The espionage report reaches its "cover blown" beat, one beat after
-  `stolenTechnology`.
-| `EspionageReportModal` (stage `cover-blown`)
+| **Currently unreachable.** The "cover blown" beat of the espionage report
+  plays `spyCatched` instead (`GameCanvas.buildEspionageStages`, stage
+  `cover-blown`), and no call site in `src/` plays this cue — it keeps its
+  notes and its commented `CUE_FILES` row for a future re-wire.
+| *(no call site)*
 | no
 | `sfx/cover-blown.ogg`
 
+| `bribe`
+| A **bribery attempt resolves** — the unit defects (`UNIT_BRIBED`), the
+  purse is reported (`BRIBE_REPORTED`) or the commander turns the gold down
+  (`BRIBE_REFUSED`). One voice for all three, played only when the player is
+  on one side of the deal (never in AI-vs-AI runs). `event` family,
+  0.8 s hold, synthesized.
+| `EngineEventHandlers.onUnitBribed` / `onBribeReported` / `onBribeRefused`
+| no
+| —
+
 | `uiSelect`
 | The radio click behind a player's decision: issuing a unit order, answering
-  a leader's audience, sending a diplomat off with terms.
+  a leader's audience, sending a diplomat off with terms. **Synthesized
+  today**: no `CUE_FILES` row, and `ui-select-1.ogg` is not in the Warzone
+  folder any more.
 | `UnitActionsModal.handleAction`, `GameModals.handleAudienceDecision`,
   `GameModals.handleDiplomacyAction`
-| yes
-| `sfx/warzone2100/ui-select-1.ogg`
+| no
+| —
 |===
 
 === The Warzone 2100 cues
 
-Seven more cues, one per new recording. Each has the same synthesized
-fallback contract as the rest of the table, and each recording serves exactly
-one cue — the full file-to-purpose assignment is pinned by
-`tests/soundEngine.test.ts`, and the licensing by
+The remaining cues that draw on the Warzone 2100 set — the ones not already
+in the catalogue above (`machineGunStrike`, `nuclearStrike` and
+`productionComplete` are Warzone-backed too, but they are listed there). Each
+has the same synthesized fallback contract as the rest of the table, and each
+recording serves exactly one cue — the full file-to-purpose assignment is
+pinned by `tests/soundEngine.test.ts`, and the licensing by
 <<warzone-attribution,Warzone 2100 Attribution>>.
 
 [cols="1,3,2,1,2", options="header"]
@@ -263,13 +291,22 @@ one cue — the full file-to-purpose assignment is pinned by
 | yes
 | `sfx/warzone2100/missile-launch-1.ogg`
 
+| `sdiIntercept`
+| An **SDI battery kills an incoming warhead** mid-air — the scramble, not
+  the boom. Told on either side of the laser: the shield's owner hears their
+  city is safe, the firer hears their warhead is gone.
+| `EngineEventHandlers.onNuclearIntercepted` (`NUCLEAR_INTERCEPTED`)
+| yes
+| `sfx/warzone2100/sdi-intercept-1.ogg`
+
 | `unitSelected`
 | The player **picks up one of their land units** — the reporting-in blip.
   Enemy units under the cursor are information, not a command, and play
-  nothing.
+  nothing. **Synthesized today**: no `CUE_FILES` row exists and
+  `unit-selected-1.ogg` is not in the folder any more.
 | `GameCanvas.handleClick`
-| yes
-| `sfx/warzone2100/unit-selected-1.ogg`
+| no
+| —
 
 | `submarineSelected`
 | The player **picks up a submarine** — a sonar acknowledgement instead of
@@ -285,6 +322,28 @@ one cue — the full file-to-purpose assignment is pinned by
   `EspionageReportModal`)
 | yes
 | `sfx/warzone2100/sabotage-success-1.ogg`
+
+| `spyCatched`
+| The report's **"cover blown"** beat — the spy did not get out cleanly.
+| `GameCanvas.buildEspionageStages` (stage `cover-blown`, played by
+  `EspionageReportModal`)
+| yes
+| `sfx/warzone2100/spy_catched.ogg`
+
+| `airUnitInAirTargetSet`
+| An air unit **already in the air is given a target** (0.5 s blip). The cue
+  is fully wired — `CUE_FILES` row, manifest entry, file volume — but no
+  call site in `src/` plays it yet.
+| *(no call site yet)*
+| yes
+| `sfx/warzone2100/air-unit-in-air-target-set.ogg`
+
+| `airUnitReturningToBase`
+| An air unit **heads back to base** after striking (0.5 s blip). Same state
+  as the row above: recorded and registered, no `playSfx` call site yet.
+| *(no call site yet)*
+| yes
+| `sfx/warzone2100/air-unit-returning-to-base.ogg`
 |===
 
 === The news cues
@@ -615,14 +674,16 @@ cue makes a noise. Three mechanisms, in order:
 
 | unit
 | 10 s
-| `tankMove`, `mechInfMove`, `airUnitLaunch` — everything a unit says on its
-  own besides answering a click. A three-tile drive and a column of armour
-  stay quiet.
+| `tankMove`, `mechInfMove`, `airUnitLaunch`, `horseUnitMoves`,
+  `airUnitInAirTargetSet`, `airUnitReturningToBase` — everything a unit says on
+  its own besides answering a click (and `unitPromoted`, the news cue that
+  borrows this family). A three-tile drive and a column of armour stay quiet.
 
 | attack
 | 4 s
 | `machineGunStrike`, `impactStrike`, `navalStrike`, `airStrike`,
-  `torpedoAttack`, `missileLaunch`, `nuclearStrike`, `unitDefeated` — every
+  `torpedoAttack`, `missileLaunch`, `sdiIntercept`, `nuclearStrike`,
+  `unitDefeated` — every
   weapon. Blows land round after round, and each one must be heard without
   machine-gunning.
 
@@ -697,7 +758,10 @@ which is why they fire rarely and only for the player.
   in kebab-case** — the table above gives the name for each cue, and the cue
   `cityCapturedModern` is the file `city-captured-modern.mp3`. The name is a
   convention, not a lookup: only the path you write into `CUE_FILES` matters
-  at runtime, and `tests/sfx.test.ts` asserts the convention holds.
+  at runtime, and `tests/sfx.test.ts` asserts the convention holds (it
+  normalises `_` to `-`, so the shipped underscore names —
+  `archer_selected.opus`, `horse_unit_moves.opus`, `spy_catched.ogg` — pass
+  too).
 
 . Edit `CUE_FILES` in `src/utils/Sfx.ts` and uncomment (or add) the row:
 +
@@ -783,9 +847,6 @@ The assignment — which original became which cue — is:
 | `short_machine_gun_fire_2.ogg`
 | `machine-gun-strike-2.ogg` — secondary burst
 
-| `short_machine_gun_fire_3.ogg`
-| `machine-gun-strike-3.ogg` — secondary burst
-
 | `warship_distroyer_shooting.ogg`
 | `naval-strike-1.ogg` — the surface broadside
 
@@ -804,36 +865,55 @@ The assignment — which original became which cue — is:
 | `submarine_unit_selected_2.ogg`
 | `submarine-selected-2.ogg` — secondary acknowledgement
 
-| `reporting.ogg`
-| `unit-selected-1.ogg` — reporting in
-
-| `walki_talki.ogg`
-| `ui-select-1.ogg` — the radio click
-
-| `jet_on_the_way.ogg`
-| `air-unit-launch-1.ogg` — the main takeoff
-
 | `interceptors_launched.ogg`
 | `sdi-intercept-1.ogg` — the SDI interception scramble (one file, one
   purpose; it is *not* a second `airUnitLaunch` recording)
 
 | `jet_returning_to_base.ogg`
-| `air-unit-launch-3.ogg` — secondary return leg
+| `air-unit-returning-to-base.ogg` — the return leg (cue
+  `airUnitReturningToBase`)
 
 | `power_down.ogg`
 | `sabotage-success-1.ogg` — the target goes dark
 
 | `power_spark_power_plant.ogg`
 | `production-complete-1.ogg` — the works whistle
+
+| not recorded
+| `air-unit-in-air-target-set.ogg` — cue `airUnitInAirTargetSet`
+
+| not recorded
+| `artillerie-selected-1.ogg` (+ `-2` secondary) — cue `artillerieSelected`
+
+| not recorded
+| `spy_catched.ogg` — cue `spyCatched`
 |===
+
+[WARNING]
+====
+`public/assets/sfx/warzone2100/README.txt` has drifted from the folder. It
+still lists `air-unit-launch-1.ogg`, `air-unit-launch-3.ogg`,
+`machine-gun-strike-3.ogg`, `ui-select-1.ogg` and `unit-selected-1.ogg` —
+none of which exist any more — and it does not mention
+`air-unit-in-air-target-set.ogg`, `air-unit-returning-to-base.ogg`,
+`artillerie-selected-1/2.ogg` or `spy_catched.ogg`. The **folder** is the
+truth: exactly 16 `.ogg` files — 13 of them the main row of a `CUE_FILES`
+entry, 3 of them the manifest secondary of one (`machine-gun-strike-2`,
+`submarine-selected-2`, `artillerie-selected-2`). Fix `README.txt` (and the
+provenance sentence in `LICENSE-THIRD-PARTY.txt`, which still lists only two
+project `.opus` files) the next time this directory is touched.
+====
 
 If you edit one of these files (re-cut, remix, filter it), the result stays
 GPLv2: keep it in the same directory, note the change and its date in
 `README.txt`, and the license follows the file automatically. The project's
 own recordings are **not** covered by the GPLv2: the seven `*.mp3` files
-directly under `public/assets/sfx/`, plus `city-founded.opus` and
-`mech-inf-move.opus` (see <<swapped-recording-names,the two late recordings>>).
-They are original to this project and carry no third-party terms.
+directly under `public/assets/sfx/`, plus the four project-original `*.opus`
+files (`city-founded.opus`, `mech-inf-move.opus`, `archer_selected.opus`,
+`horse_unit_moves.opus`) — see <<swapped-recording-names,the two late
+recordings>> for the first two. They are original to this project and carry
+no third-party terms. (`LICENSE-THIRD-PARTY.txt` still names only the first
+two `.opus` files — same drift as `README.txt` above.)
 
 ---
 
@@ -874,6 +954,17 @@ the method name, not the number, and do not treat a stale number as a bug.
   launch).
 | `EngineEventHandlers.onNuclearMeltdown` (`EngineEventHandlers.ts:1120`)
 
+| `sdiIntercept`
+| An SDI battery destroys an incoming warhead — the shield's owner or the
+  firer hears it.
+| `EngineEventHandlers.onNuclearIntercepted` (`NUCLEAR_INTERCEPTED`,
+  `EngineEventHandlers.ts:1322`)
+
+| `bribe`
+| A bribe resolves with the player on either side of the deal.
+| `EngineEventHandlers.onUnitBribed` / `onBribeReported` / `onBribeRefused`
+  (`EngineEventHandlers.ts:2571`, `:2604`, `:2631`)
+
 | `cityAttacked`
 | A city the player is party to comes under assault.
 | `EngineEventHandlers.onCityAttacked` (`EngineEventHandlers.ts:1231`)
@@ -897,16 +988,27 @@ the method name, not the number, and do not treat a stale number as a bug.
 
 | `tankMove`
 | The player drives a tank (once per tank per turn).
-| `EngineEventHandlers.playMovementCue` (`EngineEventHandlers.ts:500`)
+| `EngineEventHandlers.playMovementCue` (`EngineEventHandlers.ts:673`)
 
 | `mechInfMove`
 | The player drives mech. inf. (once per unit per turn).
-| `EngineEventHandlers.playMovementCue` (`EngineEventHandlers.ts:500`)
+| `EngineEventHandlers.playMovementCue` (`EngineEventHandlers.ts:673`)
 
 | `airUnitLaunch`
 | One of the player's aircraft leaves a city or a carrier (once per unit per
   turn).
-| `EngineEventHandlers.playMovementCue` (`EngineEventHandlers.ts:500`)
+| `EngineEventHandlers.playMovementCue` (`EngineEventHandlers.ts:673`)
+
+| `horseUnitMoves`
+| The player drives a chariot, knights or cavalry (once per unit per turn).
+| `EngineEventHandlers.playMovementCue` → `playOncePerTurn('horseUnitMoves', …)`
+  (`EngineEventHandlers.ts:678`)
+
+| `airUnitInAirTargetSet`, `airUnitReturningToBase`
+| Registered in `CUE_FILES` + `SOUND_MANIFEST`, but **nothing in `src/`
+  calls them yet** — no `playSfx('airUnitInAirTargetSet')` /
+  `playSfx('airUnitReturningToBase')` exists, so they are silent in game.
+| *(none)*
 
 | `unitSelected` / `submarineSelected`
 | The player clicks one of their own units.
@@ -916,10 +1018,12 @@ the method name, not the number, and do not treat a stale number as a bug.
 | One of the player's units is disbanded.
 | `EngineEventHandlers.onUnitDisbanded` (`EngineEventHandlers.ts:975`)
 
-| `stolenTechnology`, `coverBlown`
-| The espionage report reaches the theft / cover-blown beat.
+| `stolenTechnology`, `spyCatched`
+| The espionage report reaches the theft beat (`stolen`) and the cover-blown
+  beat (`cover-blown`).
 | `EspionageReportModal` (`EspionageReportModal.tsx:59`), stages built in
-  `GameCanvas.buildEspionageStages`
+  `GameCanvas.buildEspionageStages` (`stolenTechnology` at `GameCanvas.tsx:1342`,
+  `spyCatched` at `:1472`)
 
 | `sabotageSuccess`
 | The espionage report reaches the sabotage beat.
@@ -1036,7 +1140,7 @@ sound design.
   bookkeeping is not sound design.
 
 | An AI unit moving
-| `tankMove` / `mechInfMove` / `airUnitLaunch` do not fire. The same rule as the
+| `tankMove` / `mechInfMove` / `horseUnitMoves` / `airUnitLaunch` do not fire. The same rule as the
   disband: an AI turn is dozens of moves, and its bookkeeping is not sound
   design.
 
@@ -1079,10 +1183,16 @@ sound design.
 |===
 | Cue | Master gain | Note
 
-| Every event fanfare (`stolenTechnology`, `coverBlown`, `cityCapturedClassic`,
-  `cityCapturedModern`, `cityFounded`, `wonderCompleted`, `uiSelect`)
+| Every cue with no `UNIT_CUE_GAIN` row (`stolenTechnology`, `coverBlown`,
+  `spyCatched`, `uiSelect`, `bribe`, `archerSelected`, `artillerieSelected`,
+  `horseUnitMoves`, `airUnitInAirTargetSet`, `airUnitReturningToBase`)
 | `0.18`
-| The reference level — `BASE_GAIN`.
+| The reference level — `BASE_GAIN` (multiplier 1).
+
+| `cityCapturedClassic`, `cityCapturedModern`, `cityFounded`
+| `0.85 × 0.18 = 0.153`
+| Top of the event range with `barracksBuilt` and `wonderCompleted`: founding
+  or taking a city is the player's own news and must not be missed.
 
 | `barracksBuilt`
 | `0.85 × 0.18 = 0.153`
@@ -1160,6 +1270,11 @@ sound design.
 | `0.85 × 0.18 = 0.153`
 | Top of the event range: it is the biggest thing that can happen, once a game.
 
+| `sdiIntercept`
+| `0.65 × 0.18 = 0.117`
+| An interception is news, but it is a save, not a celebration — the level of
+  a torpedo run.
+
 | `warDeclared`, `civEliminated`
 | `0.8 × 0.18 = 0.144`
 | Alarms, not celebrations — loud enough to stop the player, never triumphant.
@@ -1228,24 +1343,39 @@ at their own volume from `CUE_FILE_VOLUME`, falling back to
 | `0.45`
 | (The default.)
 
-| `airUnitLaunch`
-| `0.45`
-| Frequent — the takeoff is the main recording, scramble and return the
-  secondaries.
-
-| `unitSelected`, `submarineSelected`
+| `submarineSelected`
 | `0.5`
-| Audible over the map, under a fanfare.
+| Audible over the map, under a fanfare. (`unitSelected` shares the row in
+  the synth table but has **no** recording and no `CUE_FILE_VOLUME` entry, so
+  it never reaches this path.)
+
+| `archerSelected`, `artillerieSelected`, `horseUnitMoves`
+| `0.5`
+| The selection and horse-movement acknowledgements — same level as the
+  submarine ping.
+
+| `sdiIntercept`
+| `0.6`
+| News-level, under a conquest.
+
+| `spyCatched`
+| `0.55`
+| The alarm under the fanfare, one beat after the theft.
+
+| `airUnitInAirTargetSet`, `airUnitReturningToBase`
+| `0.45`
+| (The default.) Unit family, short blips — and no call site plays them yet.
 
 | `uiSelect`
-| `0.4`
-| A click: felt, not heard across the room.
+| *(no row)*
+| Falls back to `DEFAULT_FILE_VOLUME` (`0.45`) — and the cue has no recording,
+  so it never reaches `playFile` anyway.
 
 | `machineGunStrike`, `navalStrike`
 | `0.55`
 | A blow you feel in your teeth; the cooldown keeps it to one per 4 s.
-| `impactStrike` has no recording, so it has no row here — it plays through the
-  synthesizer at the gain above.
+  (`impactStrike` has no recording, so it has no row here — it plays through
+  the synthesizer at the gain above.)
 
 | `airStrike`
 | `0.5`
@@ -1272,7 +1402,10 @@ at their own volume from `CUE_FILE_VOLUME`, falling back to
 
 None of the eleven news cues appears in this table: they ship no recordings, so
 they never reach `playFile` and a row here would be dead config. Their loudness
-is the `UNIT_CUE_GAIN` ladder in the previous table.
+is the `UNIT_CUE_GAIN` ladder in the previous table. The same holds for
+`bribe`, `uiSelect`, `unitSelected`, `airUnitLaunch`, `coverBlown`,
+`stolenTechnology`, `unitDefeated`, `unitDisbanded` and `unitReSelected` — no
+recording, therefore no file-volume row.
 
 The two scales are independent, so a cue whose recording is mixed hot can be
 turned down without touching what it would sound like un-recorded.
@@ -1334,10 +1467,12 @@ Five rules govern the layer:
    track again, so `Start` begins in music rather than in a download.
 . **One bus, ducks on demand.** The element volume is the music bus:
    `settings.musicVolume` × the recording's own `trim` × the duck factor.
-   When one of the narratively loud cues plays — the news fanfares, the two
-   capture marches, the stolen secret, the blown cover, the sabotage, the
-   nuclear strike (`MUSIC_DUCKING_CUES` in `Sfx.ts`) — the bus drops to 30 %
-   of itself in 150 ms, holds for 1.8 s, and glides back over 0.7 s. Ordinary
+   When one of the narratively loud cues plays — the eleven `MUSIC_DUCKING_CUES`
+   in `Sfx.ts`: `stolenTechnology`, `spyCatched`, `sabotageSuccess`,
+   `warDeclared`, `peaceMade`, `wonderCompleted`, `cityLost`, `civEliminated`,
+   `cityCapturedClassic`, `cityCapturedModern`, `nuclearStrike` — the bus drops
+   to 30 % of itself in 150 ms, holds for 1.8 s, and glides back over 0.7 s.
+   (`coverBlown` is *not* in the set.) Ordinary
    combat is deliberately absent from that list: a war would duck every few
    seconds, which is a pumping bus, not a mix.
 . **The switch comes first.** With `enableBackgroundMusic` off, the track is

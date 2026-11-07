@@ -9,7 +9,7 @@ This document describes the implementation of the Scout unit and the EnemySearch
 
 *Unit Properties*:
 * *Name:* Scout
-* *Icon:* 👁️ (eye emoji)
+* *Icon:* 🔦 (flashlight emoji, `UnitConstants.ts:97`)
 * *Type:* military
 * *Movement:* 2 tiles per turn
 * *Attack:* 0.5 (half of warrior)
@@ -46,29 +46,33 @@ public static findNearestEnemy(
   getCityAt: (col: number, row: number) => any,
   isVisible: (col: number, row: number) => boolean,
   civilizationId: number,
-  maxRadius?: number
+  maxRadius?: number,
+  isFriendlyCiv?: (civId: number) => boolean
 ): SearchResult | null
 ----
 
-Returns the nearest enemy unit or city within visible range.
+Returns the nearest enemy unit or city within visible range. The optional
+`isFriendlyCiv` predicate treats locked teammate civs as friendly.
 
 ==== `findAllEnemiesInRadius()`
 [source,typescript]
 ----
 public static findAllEnemiesInRadius(
-  centerCol: number,
-  centerRow: number,
-  radius: number,
+  startCol: number,
+  startRow: number,
   mapWidth: number,
   mapHeight: number,
   getUnitAt: (col: number, row: number) => any,
   getCityAt: (col: number, row: number) => any,
   isVisible: (col: number, row: number) => boolean,
-  civilizationId: number
+  civilizationId: number,
+  maxRadius: number,
+  isFriendlyCiv?: (civId: number) => boolean
 ): SearchResult[]
 ----
 
-Returns all enemies within a specified radius, sorted by distance.
+Returns all enemies within `maxRadius` (the 9th argument) of the start tile,
+sorted by distance and priority.
 
 *Search Result Interface*:
 [source,typescript]
@@ -79,6 +83,7 @@ interface SearchResult {
   distance: number;      // Square distance from search origin
   targetType: 'unit' | 'city';  // Type of enemy found
   targetId: string;      // ID of the enemy unit/city
+  priority: number;      // Higher = more important target
 }
 ----
 
@@ -88,57 +93,63 @@ interface SearchResult {
 * Optimized for medium-size maps (70x50)
 * Detailed logging with statistics
 
-=== 3. AI Scout Behavior (`src/game/engine/GameEngine.ts`)
+=== 3. AI Scout Behavior (`src/game/engine/AI/AIManager.ts`)
 
-*Scout Reconnaissance Flow*:
+*Scout Reconnaissance Flow* (the scout handling in `chooseAITarget` starts at
+`AIManager.ts:5863+`):
 
+. *Defense override first*
+   ** Before scouting, the scout checks whether a friendly city nearby is
+      undefended while an enemy is close (`findScoutDefenseTarget`) and
+      garrisons it until the threat clears
+. *Village detour*
+   ** Before the enemy search, an unvisited village is collected if one is
+      reachable (`findNearestVillage`), then reconnaissance resumes
 . *Enemy Search Phase*
    ** Scout uses `EnemySearcher.findNearestEnemy()` to scan for enemies
    ** Searches only visible/explored tiles
-   ** When enemy found, stores location in `unit.enemyFound` and `unit.enemyLocation`
-
+   ** When an enemy is found, stores it in `unit.enemyFound` and
+      `unit.enemyLocation`
 . *Return to City Phase*
-   ** Scout identifies nearest own city using `findNearestOwnCity()`
+   ** Scout identifies nearest own city using `AIUtility.findNearestOwnCity()`
    ** Pathfinds back to the city
-   ** Upon arrival, scout fortifies and triggers warrior production
+   ** Upon arrival the scout **clears `enemyFound` / `enemyLocation` and
+      resumes reconnaissance** — there is no production switch and no
+      `city.enemyTarget`; the flags are cleared precisely so the scout does not
+      select its own city forever and starve the army's intelligence
 
-. *Warrior Deployment*
-   ** City production switched to Warrior
-   ** Enemy location stored in city's `enemyTarget` property
-   ** Warrior will be sent to stored enemy location upon completion
+*Helper methods*:
 
-*New Helper Methods*:
-
-==== `findNearestOwnCity(unit)`
-Finds the closest city owned by the unit's civilization using square distance calculation.
-
-==== `triggerWarriorProduction(city, enemyLocation)`
-* Sets city production to Warrior
-* Stores enemy location for future warrior deployment
-* Updates build queue
+==== `AIUtility.findNearestOwnCity(unitCol, unitRow, unitCivilizationId, cities, squareDistance?)`
+In `src/game/engine/AI/AIUtility.ts:359` — finds the closest city owned by the
+unit's civilization using square distance calculation. (`triggerWarriorProduction`
+does not exist anywhere in the codebase.)
 
 *AI Production Changes*:
-* Human cities: Build Warrior first (default)
-* AI cities: Build Scout first (reconnaissance priority)
+* Human cities: build a **Scout first** at population ≥ 1 when the civ has none
+  (`AutoProduction` branches at `:864-875` and `:943-956`) — before further
+  settlers
+* AI cities: `GameEngine.pickInitialAIProduction` queues a scout first when the
+  civ has none, then the cheapest defender for the first two cities, then a
+  warrior
 
 == Workflow
 
 === AI Turn Processing
-. AI founds city → City builds Scout (not Warrior)
+. AI founds city → `pickInitialAIProduction` queues a Scout (once), then a defender/warrior
 . Scout completes production → Deploys from city
 . Scout explores map using standard exploration AI
 . Scout uses EnemySearcher during each turn
 . When enemy detected:
-   ** Scout stores enemy location
+   ** Scout stores `unit.enemyFound` / `unit.enemyLocation`
    ** Scout pathfinds to nearest own city
-   ** Scout fortifies at city
-   ** City switches production to Warrior
-   ** Enemy location stored for warrior deployment
+   ** Scout clears both flags on arrival and resumes recon next turn
 
 === Key State Management
 * `unit.enemyFound` (boolean) - Flag indicating scout found enemy
 * `unit.enemyLocation` ({col, row}) - Stored enemy coordinates
-* `city.enemyTarget` ({col, row}) - Target for next warrior to attack
+
+(Cleared on arrival at the nearest own city; there is no `city.enemyTarget`.)
 
 == Technical Details
 
@@ -156,8 +167,9 @@ Finds the closest city owned by the unit's civilization using square distance ca
 
 === Logging Prefixes
 * `[AI-SCOUT]` - Scout behavior and decisions
-* `[AI-CITY]` - City production changes
 * `[EnemySearcher]` - Search progress and results
+
+(There is no `[AI-CITY]` prefix — scout behaviour logs under `[AI-SCOUT]`.)
 
 == Future Enhancements
 
@@ -173,7 +185,9 @@ Possible improvements:
 
 * `src/data/UnitConstants.ts` - Added Scout unit definition
 * `src/game/engine/EnemySearcher.ts` - New file, enemy search system
-* `src/game/engine/GameEngine.ts` - Scout AI behavior, helper methods, production logic
+* `src/game/engine/AI/AIManager.ts` - Scout AI behavior (`chooseAITarget`,
+  `AI-SCOUT` handling from :5863+)
+* `src/game/engine/AI/AIUtility.ts` - `findNearestOwnCity` helper
 
 == Testing Recommendations
 
@@ -182,8 +196,8 @@ Possible improvements:
 . Observe AI building Scout instead of Warrior
 . Watch scout exploration patterns
 . Monitor console for `[AI-SCOUT]` messages
-. Verify scout returns to city when enemy found
-. Confirm city switches to Warrior production
+. Verify scout returns to city when enemy found, then resumes recon
+   (flags cleared — no production switch)
 
 == Related Documentation
 

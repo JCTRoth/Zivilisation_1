@@ -27,18 +27,32 @@ Auto-end fires only when *all* of the following hold (`GameEngine.checkAndEndTur
    * it is flagged `areTurnsDone`
 3. The turn queue is empty (every unit processed / removed from the queue).
 4. No screen is open that must block it:
-   * *City-management dialogs* (`city-details`, `city-production`,
-     `city-purchase`, `city-citizens`) defer auto-end while open; the check is
-     re-run when the dialog closes (`GameModals.handleCloseDialog`).
-   * *Diplomacy dialogs* (`diplomacy`, `diplomacy-report`) defer auto-end
-     while open (a leader may be awaiting a response); the check is re-run when
-     they close.
+   * *Any open store dialog* defers auto-end while it is open — the guard is
+     `EngineEventHandlers.isDecisionScreenOpen`
+     (`EngineEventHandlers.ts:2174`): everything except the two ids in
+     `GameModals.NON_BLOCKING_DIALOGS` = `['help', 'tech']`
+     (`GameModals.tsx:158`). City management (`city-details`,
+     `city-production`), `diplomacy`, `village`, rates, government,
+     statistics, pause, `research-required`, … all defer; the check is re-run
+     when the dialog closes (`GameModals.handleCloseDialog`,
+     `GameModals.tsx:160`). Closing `tech` re-runs the check too (its id is
+     in the "non-blocking" list but is explicitly re-checked), closing `help`
+     does not.
+   * The ids `city-purchase`, `city-citizens`, `diplomacy-report` and
+     `hex-details` are **not** dialog ids — they are absent from the
+     `activeDialog` union in `types/game.ts:878` — so nothing defers "while
+     they are open" because they cannot be open.
    * A *combat animation* defers auto-end while playing; the check is re-run
-     ~2.4 s later when the cloud animation finishes (`onCombat` timeout).
-   * *Non-blocking dialogs* (WORLD menu, help, hex-details) do *not* block
-     auto-end. The *tech tree* and the *"No Research Selected"* prompt are
-     special-cased: they defer auto-end while no research is selected (see 5)
-     and closing them re-runs the check.
+     **1370 ms** later — `duration` 800 + `deathFadeDuration` 450 + 120 ms,
+     the `setTimeout` in `EngineEventHandlers.onCombat`
+     (`EngineEventHandlers.ts:1066,1078-1084`).
+   * The *WORLD* menu (and GAME / INFO) is not an `activeDialog` at all: it
+     is App state (`activeMenu`, `App.tsx:63`) rendered by `GameMenuSheet`,
+     so it never defers auto-end. Neither does the *tech tree* or *help* —
+     the only two ids that do not defer. The *"No Research Selected"* prompt
+     (`research-required`) is an ordinary blocking dialog: it defers while
+     open, and the research gate below defers the turn regardless of which
+     screens are up (see 5).
 5. A *technology is selected for research* — or nothing is left to research.
    While the human has no `currentResearch` and researchable techs remain, the
    turn is NOT auto-ended. Once per gap an informational *"No Research
@@ -113,5 +127,6 @@ queue before the auto-end check runs:
   sleeping, fortified; settler removal from queue; no duplicate production).
 * `tests/autoEndTurnScreen.test.ts` — deferral while a city dialog or combat
   animation is open, and re-check after closing.
-* `e2e/game.spec.ts` — "auto end turn checkbox is available" (checkbox visible
-  and checked by default).
+* `e2e/game.spec.ts` — "auto end turn checkbox is available" (checkbox
+  visible and **unchecked** by default — `settings.autoEndTurn` is `false` in
+  `GameStore.ts:265`, and the spec asserts `not.toBeChecked()`).

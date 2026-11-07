@@ -40,6 +40,8 @@ interaction*, with the root causes and fixes.
    turn's snapshot with extremes and no hysteresis: deficit → tax 100% (cities fall
    into disorder → commerce zeroed) → bankruptcy → luxury 100% (no income) → deficit.
    Armies could never form, and excess units were disbanded by the upkeep deficit.
+   (the method has since been renamed and moved — today it is
+   `AIEconomicManager.adjustRatesForAI`, `src/game/engine/AI/AIEconomicManager.ts:382`.)
 
 3. *No city sieges.* (a) Scouts returned home on *any* enemy contact, so enemy
    *cities* were never recorded in `enemyLocations` and the offensive plan had
@@ -54,10 +56,16 @@ interaction*, with the root causes and fixes.
 ** `GameEngine.setResearch`: gates on the civ's *own* techs + prerequisites (not the
    global `available && !researched`). The shared-tree flags remain for UI coloring.
 
-2. *Stable AI rate policy.* `EconomicManager.raiseTaxForAI` rewritten: priority
+2. *Stable AI rate policy.* `EconomicManager.raiseTaxForAI` rewritten (today
+   `AIEconomicManager.adjustRatesForAI`, `AIEconomicManager.ts:382`): priority
    luxury (avoid disorder) > tax (cover upkeep) > science (floor `AI_SCIENCE_FLOOR=20`,
    `AI_MIN_TAX=10`), moving *gradually* (≤10 pts/turn), never 100/0/0 extremes.
    Science only sacrificed when genuinely bankrupt (`gold < 0`).
+   (numbers as of 2026-08-16; re-verified 2026-11-07: `AI_SCIENCE_FLOOR` is still
+   20 (`AIEconomicManager.ts:25`), `AI_MIN_TAX` is now **35** (`:39`), and the
+   10-point step is the calm-weather case — the same routine widens it to 20/50/100
+   when the treasury is below reserve, in crisis or reconciling
+   (`AIEconomicManager.ts:443-458`).)
 
 3. *Aggression un-stalemated* (`AIManager`):
 ** Scouts keep exploring after spotting a lone enemy *unit*; they only report home
@@ -77,6 +85,10 @@ interaction*, with the root causes and fixes.
 
 == Tests
 
-* `tests/ai/aiAggression.test.ts` — per-civ `setResearch`, `raiseTaxForAI` stability,
-  and a 150-round headless AI-vs-AI run asserting both civs keep researching and fight.
+* `tests/ai/aiAggression.test.ts` — per-civ `setResearch`, `adjustRatesForAI`
+  stability (the test still refers to the old `raiseTaxForAI` name in its
+  comments), and a 150-round headless AI-vs-AI run asserting both civs keep
+  researching and fight.
 * Full suite green: `npx tsc --noEmit`, `npx vitest run` (388), `npx playwright test` (62).
+  (vitest count as of 2026-08-16; the suite is now 247 files / 2,929 tests —
+  2,927 green on 2026-11-07, with 2 failures in `tests/nomads.test.ts`.)

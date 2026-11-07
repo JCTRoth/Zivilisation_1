@@ -1,16 +1,19 @@
 = AI Economy & Budget Management
 
 How the AI keeps itself solvent (and, since 2026-09, above a hard **8-gold**
-reserve). All logic lives in `src/game/engine/EconomicManager.ts`, with the
+reserve). The economy maths lives in `src/game/engine/EconomicManager.ts`, the
+AI's rate policy in `src/game/engine/AI/AIEconomicManager.ts`, with the
 army-size cap shared with `src/game/engine/AutoProduction.ts`.
 
 The AI does **not** manage its rates like a player. Each turn
-`EconomicManager.processTurn()` runs `raiseTaxForAI()` first, then collects
-commerce, pays upkeep, and (only in a deep crisis) disbands units.
+`AIEconomicManager.preProcessTurn()` runs `adjustRatesForAI()` first (invoked
+from `TurnManager` before the economy is processed), then
+`EconomicManager.processTurn()` collects commerce, pays upkeep, and (only in a
+deep crisis) disbands units.
 
 ---
 
-== 1. Dynamic tax / science / luxury rebalancing — `raiseTaxForAI()`
+== 1. Dynamic tax / science / luxury rebalancing — `adjustRatesForAI()`
 
 Every turn the AI recomputes a target rate split and moves toward it gradually:
 
@@ -28,8 +31,8 @@ Every turn the AI recomputes a target rate split and moves toward it gradually:
 * **Gradual movement** — rates change at most `10` pts/turn normally, `50` in a
   mild crisis, `100` in a deep crisis. This deliberately avoids the old
   `0 ↔ 100` oscillation that caused disorder / bankruptcy cycles.
-* **Trade produces gold** — `TRADE_GOLD_MULTIPLIER` (2) makes each taxed point
-  of commerce yield 2 gold, so cities working trade tiles (roads, rivers,
+* **Trade produces gold** — `TRADE_GOLD_MULTIPLIER` (3) makes each taxed point
+  of commerce yield 3 gold, so cities working trade tiles (roads, rivers,
   resources) are genuinely profitable and accumulate wealth instead of
   scraping by. It is applied to the tax share of `cityOutputs` and to
   `maxTaxIncome` (the AI's affordability model), so it both boosts real gold
@@ -40,8 +43,10 @@ Every turn the AI recomputes a target rate split and moves toward it gradually:
 The AI always aims to keep **at least 8 gold** in the treasury:
 
 * `reserveTarget = max(AI_MIN_GOLD_RESERVE, upkeep * reserveTurns)`.
-* `reserveTurns` comes from `AI_RESERVE_TURNS` per strategy (military / defensive
-  hold a bigger war chest: 2 turns; science / wonder civs: 1).
+* `reserveTurns` comes from `AI_RESERVE_TURNS` per strategy
+  (`military_expansion` and `defensive_turtle` hold a 3-turn war chest; the
+  other four profiles — balanced growth, early expansion, wonder rush, science
+  focus — use 2).
 * If gold is **below** the reserve (and not in a real deficit), the AI adds a
   small `AI_RESERVE_REBUILD` (10% of the shortfall) to its tax target each turn,
   trimming science — it prioritizes rebuilding the cushion over research.
@@ -86,8 +91,10 @@ and the defender branch preempts the whole chain.
   (settlers, diplomats) to 6 (late naval).
 * **NONE units** (no home city — starting/hut units, settlers from a destroyed
   size-1 city) are free of upkeep.
-* **Cities** cost `CITY_MAINTENANCE` each.
-* `totalUpkeep = unitUpkeep + cityUpkeep`.
+* **Cities** cost `(cities − FREE_CITY_SUPPORT) × CITY_UPKEEP_PER_CITY` gold
+  each — the first 3 cities are free (`GameConstants`: `FREE_CITY_SUPPORT = 3`,
+  `CITY_UPKEEP_PER_CITY = 1`), so the bill starts with the fourth town.
+* `totalUpkeep = unitUpkeep + buildingUpkeep + cityUpkeep`.
 
 == 4. Deficit handling — `processTurn()`
 
@@ -106,13 +113,17 @@ and the defender branch preempts the whole chain.
   ** Scouts are kept last — they're the civ's eyes on the map and nearly
      free to run.
   ** Defeated units (health ≤ 0, awaiting death animation) are never disbanded.
-  ** Never below one garrison per city** (`maxDisbandable = units − cities`),
-     so a bankrupt civ isn't left defenceless.
-* **Catastrophic deficit** (`gold < −upkeep * 3`) triggers the same disband
-  routine for any civ (including a human after a catastrophe).
+  ** Never below one garrison per city: the disbander runs a **per-city
+     sole-defender pass** first (the last defender of any city survives it) and
+     only a second, forced pass removes those if the deficit cannot otherwise
+     be covered, so a bankrupt civ isn't left defenceless.
+* **Catastrophic deficit** — the same routine for **any** civ (there is no
+  human/AI branch): once the treasury is still negative after the emergency tax
+  raise and the per-city building liquidation, the disbander takes what is left.
 * After disbanding, the treasury is **forgiven back to the 8-gold floor**
-  (`gold = max(gold, 8)` for the AI, `0` for a human) so the civ gets a fresh
-  start instead of a permanent death spiral.
+  (`forgiveDeficit` restores `ABSOLUTE_MIN_GOLD` = 8 for **any** civ — there is
+  no human/AI branch — and books the shortfall as debt, repaid 1 g/turn out of
+  income) so the civ gets a fresh start instead of a permanent death spiral.
 * Verified: a 40-round AI-vs-AI simulation holds **both** civs at or above the
   8-gold floor with **zero** disband events (previously one civ ran to −12 and
   disbanded repeatedly).
@@ -143,8 +154,9 @@ The real fix is to never over-produce in the first place:
   `determineProductionItem` regardless of the cap — only queue *follow-ups* are
   capped, so immediate defense is never blocked.
 * `determineProductionItem()` also checks a **gold crisis**
-  (`gold < −upkeep`): in a crisis it only allows the minimum settler count (1),
-  so the civ doesn't add more upkeep it can't afford.
+  (`gold < −upkeep`): in a crisis it only allows the profile's minimum settler
+  count (`expansion.minSettlers`, 1–4 depending on the profile), so the civ
+  doesn't add more upkeep it can't afford.
 * **`economyBeforeArmy`** is the milder version of the same idea and lives in
   §2: a civ that has climbed back to the 8-gold reserve but still cannot net a
   positive surplus builds a settler for the roads *instead of* a soldier. Its

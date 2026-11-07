@@ -1,7 +1,7 @@
 import { SquareGrid } from '../SquareGrid';
 import { Constants, TERRAIN_PROPS, UNIT_PROPS } from '@/utils/Constants';
 import { CIVILIZATIONS, TECHNOLOGIES } from '@/data/GameData';
-import { SMALL_ISLAND_MAX_TILES, VERY_SMALL_ISLAND_MAX_TILES, RESEARCH_UNLOCK_ROUND, isAutoScenario, clampGameSpeedStep, SPEED_STEP_MOVE_DELAY_MS, SPEED_STEP_TURN_DELAY_MS, PURCHASE_GOLD_PER_SHIELD } from '@/data/GameConstants';
+import { SMALL_ISLAND_MAX_TILES, VERY_SMALL_ISLAND_MAX_TILES, RESEARCH_UNLOCK_ROUND, isAutoScenario, isSpectatorGame, clampGameSpeedStep, SPEED_STEP_MOVE_DELAY_MS, SPEED_STEP_TURN_DELAY_MS, PURCHASE_GOLD_PER_SHIELD } from '@/data/GameConstants';
 import { useGameStore } from '../../stores/GameStore';
 import { staticMapForMapType, SIZE_LOCKED_MAP_TYPES } from '@/data/maps';
 import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
@@ -578,8 +578,10 @@ export default class GameEngine {
    * Check if a tile is visible to a player
    */
   isVisibleToPlayer(civilizationId: number, col: number, row: number): boolean {
-    // Dev mode: everything is visible
-    if (this.devMode) return true;
+    // Dev mode: everything is visible — except in spectator (AI-vs-AI / all-AI)
+    // games, where the AIs must keep their own fog of war for decision-making.
+    // The human observer's full vision is handled by the store, not here.
+    if (this.devMode && !isSpectatorGame(this.gameSettings)) return true;
     
     const storage = this.playerStorage.get(civilizationId);
     if (!storage) return false;
@@ -592,8 +594,9 @@ export default class GameEngine {
    * Check if a tile has been explored by a player
    */
   isExploredByPlayer(civilizationId: number, col: number, row: number): boolean {
-    // Dev mode: everything is explored
-    if (this.devMode) return true;
+    // Dev mode: everything is explored — except in spectator (AI-vs-AI / all-AI)
+    // games, where the AIs must keep their own fog of war for decision-making.
+    if (this.devMode && !isSpectatorGame(this.gameSettings)) return true;
     
     const storage = this.playerStorage.get(civilizationId);
     if (!storage) return false;
@@ -606,8 +609,9 @@ export default class GameEngine {
    * Get all units visible to a player (respects fog of war)
    */
   getVisibleUnits(civilizationId: number): Unit[] {
-    // Dev mode: see all units
-    if (this.devMode) return this.units;
+    // Dev mode: see all units, except in spectator games where AIs must keep
+    // their own fog of war for decision-making.
+    if (this.devMode && !isSpectatorGame(this.gameSettings)) return this.units;
     
     return this.units.filter(unit => {
       // Always see own units
@@ -622,8 +626,9 @@ export default class GameEngine {
    * Get all cities visible to a player (respects fog of war)
    */
   getVisibleCities(civilizationId: number): City[] {
-    // Dev mode: see all cities
-    if (this.devMode) return this.cities;
+    // Dev mode: see all cities, except in spectator games where AIs must keep
+    // their own fog of war for decision-making.
+    if (this.devMode && !isSpectatorGame(this.gameSettings)) return this.cities;
     // International Space Station: the owner sees every city on the map.
     if (this.wonderEffects?.seesAllCities(civilizationId)) return this.cities;
 
@@ -645,8 +650,10 @@ export default class GameEngine {
     
 
     
-    // Dev mode: reveal everything
-    if (this.devMode) {
+    // Dev mode: reveal everything, except in spectator games where AIs must
+    // keep their own fog of war for decision-making. The spectator view is
+    // handled separately by the store's updateVisibility.
+    if (this.devMode && !isSpectatorGame(this.gameSettings)) {
       storage.visibility.fill(true);
       storage.explored.fill(true);
       this.recordContactsFromSight(civilizationId);

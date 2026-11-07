@@ -4,7 +4,7 @@
 :toclevels: 2
 :sectnums:
 
-This document describes the Save/Load game system and the Diplomacy Report leader portrait rendering implemented in Civilization I Browser Game.
+This document describes the Save/Load game system and the leader portrait rendering used by the diplomacy and audience dialogs in Civilization I Browser Game.
 
 == Save / Load System
 
@@ -15,23 +15,34 @@ The game supports saving and loading the complete game state. Save files are dow
 The Save/Load system follows a two-tier architecture:
 
 1. **Game Engine Layer** (`src/game/engine/GameEngine.ts`)::
-   Handles serialization and deserialization of the full game state to/from JSON. Uses `localStorage` as an intermediary staging area.
+   Handles serialization and deserialization of the full game state to/from
+   JSON (`getSaveJSON()` / `loadGame()`). `saveGame()` stages that JSON in
+   `localStorage` under the key `civ1_savegame`, which is also where
+   `loadGame()` reads from.
 
-2. **UI Layer** (`src/components/ui/GameModals.tsx`)::
-   Provides the user-facing Save/Load buttons, file download trigger, and file picker dialog in the Game Menu modal.
+2. **UI Layer** (`src/App.tsx`)::
+   `handleSaveGame()` (`App.tsx:658`) and `handleLoadGame()` (`App.tsx:697`)
+   provide the user-facing Save/Load buttons, the file download trigger, and
+   the file picker dialog. They are handed to the GAME menu as `onSaveGame` /
+   `onLoadGame` props (`GameMenuSheet.tsx`).
 
 === Save Game (File Download)
 
 When the user clicks **Save Game**, the following flow occurs:
 
-. `handleSaveGame()` calls `gameEngine.saveGame()` which serializes the complete game state to JSON and writes it to `localStorage` under the key `civ1_savegame`.
-. The JSON blob is read back from `localStorage`.
-. A file download is triggered via `DomUtils.downloadTextFile()` — the browser prompts the user to save a `.json` file.
+. `handleSaveGame()` calls `gameEngine.getSaveJSON()`, which serializes the
+  complete game state to JSON. (That is the same serializer `saveGame()` uses;
+  reading `localStorage` is only the fallback when `getSaveJSON` is missing.)
+. The JSON is wrapped in a `Blob` and downloaded through a temporary
+  `<a download>` element — the browser prompts the user to save a `.json` file.
+  Nothing is written to `localStorage` by this path.
 . The filename follows the pattern `civ1-save-turn-{turn}.json` (e.g., `civ1-save-turn-42.json`).
 
 The serialized save data includes:
 
-* `version` — Save format version (currently `5`; versions `1`–`5` load)
+* `version` — Save format version (currently `5`; the engine's `loadGame()`
+  accepts versions `1`–`5`, but the file picker accepts only `1`–`3` — see
+  <<save-load-limitations,Limitations>>)
 * `timestamp` — When the save was created
 * `gameSettings` — Game configuration (number of civilizations, map size, difficulty, etc.)
 * `currentTurn` — Current turn number
@@ -55,10 +66,14 @@ When the user clicks **Load Game**, the following flow occurs:
 . `handleLoadGame()` creates a hidden `<input type="file" accept=".json">` element and programmatically clicks it.
 . The browser's native file picker dialog opens, filtered to `.json` files.
 . When the user selects a file, its content is read via `file.text()`.
-. The JSON is validated — must have `version` in `1..5`.
+. The JSON is validated — must have `version` in `1..3`
+  (`App.tsx:715-720`). Anything else is rejected with
+  *"Invalid or incompatible save file."*
 . The valid JSON is stored in `localStorage` under `civ1_savegame`.
 . `gameEngine.loadGame()` is called, which:
 .. Reads the JSON from `localStorage`
+.. Re-checks the version — the engine itself accepts `1..5`
+   (`GameEngine.ts:9185`)
 .. Restores all engine properties (currentTurn, currentYear, activePlayer, map, units, cities, civilizations, technologies)
 .. Recreates the `SquareGrid` pathfinding grid
 .. Re-initializes subsystems (`playerStorage`, `scoutMemory`, `diplomacyManager`, `teamManager`, `victoryManager`)
@@ -70,7 +85,8 @@ When the user clicks **Load Game**, the following flow occurs:
 . A final store sync is performed in the UI layer to ensure all views are updated.
 . Fog of war visibility is recalculated via `actions.updateVisibility()`.
 
-If the user cancels the file picker, the Game Menu modal simply closes without any action.
+If the user cancels the file picker, no `change` event fires: nothing is
+loaded, and the hidden `<input>` is removed again after one second.
 
 On success, a notification *"Game loaded from {filename}"* is shown.
 
@@ -81,7 +97,14 @@ The following keyboard shortcuts are available (documented in the Help modal):
 * `Ctrl+S` — Save game
 * `Ctrl+L` — Load game
 
-These shortcuts are handled by the game's keyboard event router (see `UseGameEngine.ts`).
+They are handled in `App.tsx`'s `handleKeyDown` (the `ctrlKey && !altKey &&
+!shiftKey` switch at `App.tsx:1239`; `case "s"` at `:1258`, `case "l"` at
+`:1264`) — **not** in `src/hooks/UseGameEngine.ts`, which holds no keyboard
+code. Both shortcuts work
+on the `localStorage` slot instead of the file dialogs: `Ctrl+S` calls
+`gameEngine.saveGame()` (writes `civ1_savegame`, no download) and `Ctrl+L` calls
+`gameEngine.loadGame()` (reads `civ1_savegame`, no file picker), so they give no
+feedback toast either (see `doc/MODALS.adoc`, "Save / Load Feedback").
 
 === Save File Format
 
@@ -135,17 +158,39 @@ Versions 1–4 load as free-for-all. A version-5 save with
 `fixedAlliances: false` (or an invalid team assignment) also loads as
 free-for-all. See link:FIXED_ALLIANCES.adoc[Fixed Alliances].
 
+[IMPORTANT]
+====
+The engine and the menu are **not** in sync on versions. `GameEngine.loadGame()`
+accepts `1`–`5` (`GameEngine.ts:9185`), but the file picker in
+`handleLoadGame()` rejects everything except `1`, `2` and `3`
+(`App.tsx:715-720`) *before* the JSON ever reaches the engine. A save written
+by this build (`version: 5`) therefore **cannot be loaded back through
+GAME ▸ Load Game** — the picker answers *"Invalid or incompatible save
+file."* The only way to load a v4/v5 file today is to put its JSON into
+`localStorage.civ1_savegame` out of band (devtools, a script) and press
+`Ctrl+L`. Known limitation as of 2026-11-07.
+====
+
+[[save-load-limitations]]
 === Limitations
 
 * Only one save can exist in `localStorage` at a time (the `civ1_savegame` key is overwritten on each save). However, since saves are also downloaded as files, users can keep multiple save files on disk by renaming them.
+* Every turn also autosaves into a **separate** `localStorage` slot,
+  `civ1_autosave` (`App.tsx:486-488`), so the manual save is never clobbered
+  mid-game. Nothing reads that slot back today — it is write-only.
 * Save format version `5` is the current format; versions `1`–`4` load with
   free-for-all defaults. A save written by a *newer* format is rejected.
+  The file picker is narrower still: `1`–`3` only (see above).
 * No cloud save support (only local file download/upload).
 * Large maps with many units may produce save files of several megabytes.
 
-== Diplomacy Report — Leader Portraits
+== Leader Portraits
 
-The Diplomacy Report (`diplomacy-report` dialog) and the Diplomacy negotiation modal (`diplomacy` dialog) display leader portraits for each civilization.
+The Diplomacy negotiation modal (`diplomacy` dialog) and the Audience dialog
+(`audience`) display leader portraits for each civilization. There is no
+`diplomacy-report` dialog any more — it was removed from the code (the
+comment in `e2e/game.spec.ts` records the removal), and it used to be named
+in this document, `doc/auto-end-turn.adoc` and `doc/MODALS.adoc`.
 
 === Architecture
 
@@ -206,7 +251,7 @@ When rendering a leader portrait:
 3. It passes `config`, `mood`, `size`, and `leaderName` props to the `LeaderPortrait` component
 4. The component checks if `leaderName` matches a key in `LEADER_IMAGES` — if so, it renders the JPG image; otherwise it renders the procedural SVG
 
-The `leaderName` prop is the key that activates image mode. Without it, the component defaults to SVG rendering. Both the Diplomacy Report and the main Diplomacy modal now pass this prop.
+The `leaderName` prop is the key that activates image mode. Without it, the component defaults to SVG rendering. The main Diplomacy modal and the Audience dialog both pass this prop.
 
 === Mood-Based Visual Feedback
 
@@ -227,7 +272,8 @@ The following files were modified or created:
 |===
 | File | Change
 
-| `src/components/ui/GameModals.tsx` | Added `leaderName` prop to `LeaderPortrait` calls in Diplomacy modal and Diplomacy Report. Implemented file-based `handleSaveGame` (downloads `.json` save file) and `handleLoadGame` (opens file picker dialog). Previously these were stubs logging to console.
+| `src/App.tsx` | `handleSaveGame` (downloads the `.json` save file) and `handleLoadGame` (opens the file picker), handed to `GameMenuSheet` as `onSaveGame` / `onLoadGame`. Previously these were stubs logging to console.
+| `src/components/ui/GameModals.tsx` | Added `leaderName` prop to the `LeaderPortrait` calls in the Diplomacy modal (the Audience dialog passes it too).
 | `README.adoc` | Added Documentation section linking to `doc/save-load-system.adoc`.
 |===
 

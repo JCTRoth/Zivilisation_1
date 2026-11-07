@@ -45,7 +45,7 @@ moves, strategy changes, aggression scores, and per-civ combat records.
 == 4. Fixes applied
 
 === 4.1 [HIGH] `isUnitCapExhausted` — optimistic cap caused 92 disbands
-`AutoProduction.ts:1204-1220`
+`AutoProduction.ts:1204-1220` (the function now lives at `AutoProduction.ts:2268-2293`)
 
 The comment said *"take the MOST CONSERVATIVE credible cap"* but the code
 was `Math.max(cityCount, aiSustainableUnits ?? econSustainableUnits)` —
@@ -57,8 +57,14 @@ all game.
 
 Fix: when both models exist, take `Math.min` — the smaller, credible figure.
 
+(fixed since / superseded: the headcount comparison this fix patched no longer
+exists — `isUnitCapExhausted` is now a gold-denominated two-gate check
+(the economy's affordable upkeep first, then the AI's policy cap) at
+`AutoProduction.ts:2268-2293`, with the same "the smaller applies" contract in
+its comment. The `Math.min` at `AutoProduction.ts:1204-1220` has moved with it.)
+
 === 4.2 [HIGH] `computeAggression` — phantom 5× advantage on zero intelligence
-`AIAggression.ts:154-160`
+`AIAggression.ts:154-160` (now `AIAggression.ts:187-190`)
 
 When `enemyArmyStrength === 0` (no enemy spotted) the ratio defaulted to
 `5` — a guaranteed "army advantage" +15 on *zero information*. Combined
@@ -66,6 +72,9 @@ with +20 "cities secured" and +10 "no border pressure", the baseline hit
 45 before personality, averaging **88.5** against the 50 trigger.
 
 Fix: unknown enemy strength ⇒ neutral ratio `1.0`.
+
+(the neutral-ratio ternary sits at `AIAggression.ts:187-190` today; the
+comment above it still quotes the 88.5 measurement from this session.)
 
 === 4.3 [MEDIUM] `AIStrategySelector` — no hysteresis, 15 strategy flips
 `AIStrategySelector.ts`
@@ -76,6 +85,9 @@ every declaration / peace flip-flopped the strategy.
 
 Fix: a challenger must beat the current strategy by `STRATEGY_SWITCH_MARGIN`
 (6 points) before switching.
+
+(still in place — `STRATEGY_SWITCH_MARGIN = 6` at `AIStrategySelector.ts:30`,
+compared at `:106`.)
 
 == 5. Verified post-fix
 

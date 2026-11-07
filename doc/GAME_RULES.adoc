@@ -76,11 +76,16 @@ before anybody else
 . Log the round banner and push the turn/year to the store
 . `diplomacyManager.processTurn(roundNumber)` — reputation recovery, treaty
 income, mutual-defense joins
+. `teamCoordinator.processRound(roundNumber)` — per-team directives, once per
+round (a no-op in free-for-all games)
+. `nomadManager.processRound(roundNumber)` — spawn / parley / race / depart,
+once per round, single-human games only
+. Hand over to the next civilization — this part runs on **every** turn
+change, not only at the round boundary:
 . `victoryManager.evaluateEndOfTurn()` — the game may end right here
-. Hand over to the next civilization:
-. `resetUnitsForPlayer(next)`
 . `processTurnEvents(next)` — the whole economic pipeline, see below
-. `startTurn(next)`
+. `startTurn(next)`, which calls `resetUnitsForPlayer(next)` first — the unit
+reset lives there, after the pipeline, not before it
 
 === Unit reset
 
@@ -158,7 +163,7 @@ The year advances once per round, never per turn.
 |+1
 |===
 
-Roughly 250 rounds to reach 1850, ~370 to reach 2100.
+Roughly 250 rounds to reach 1000 AD, ~400 to reach 1850, ~650 to reach 2100.
 
 [NOTE]
 ====
@@ -265,6 +270,12 @@ Defined in `GameEngine.generateWorld` and `src/data/maps/index.ts`.
 The `AI_VS_AI*` types are *auto scenarios* (`isAutoScenario`) — they force
 Dev Mode on, disable the 250 ms AI think delay, and start already playing.
 `AEGEAN_CAMPAIGN` is a normal human game on a hand-authored world.
+
+Dev Mode in a spectator game lights the whole board **for the watcher only**: every
+civilization still computes its own fog of war, so the AIs play with the same limited
+information they would have in a normal game (`isSpectatorGame` gates the `devMode`
+short-circuit in `GameEngine.isVisibleToPlayer` / `isExploredByPlayer` /
+`getVisibleUnits` / `getVisibleCities` / `updatePlayerVisibility`).
 
 === Static maps
 
@@ -610,8 +621,9 @@ Worker-turns to build, by terrain. A dash means *cannot be built there*.
 
 |Irrigation
 |+1 food
-|Converts forest→plains, jungle→grassland, swamp→grassland. Needs orthogonally
-adjacent fresh water (river or lake), or an already-irrigated neighbour.
+|Converts forest→plains, jungle→grassland, swamp→grassland. Needs fresh water
+(river or lake) or an already-irrigated tile within **5 orthogonal steps**
+(`IRRIGATION_WATER_REACH`), not merely next door — a canal may be dug out to it.
 
 |Road
 |Movement cost × 1/3. +1 trade, but *only* on grassland, plains and desert
@@ -644,8 +656,15 @@ tile types above, not a percentage of the tile's trade.
 
 Defined in: `src/data/UnitConstants.ts`
 
-Every unit has **2 hit points**. A lost combat round costs 25 HP unless the round
-is decisive, so a normal combat is two rounds.
+`UNIT_TYPES` holds **36** unit types — every one of them with a full
+`UNIT_PROPERTIES` entry.
+
+Every unit fights from a **health pool of 0–100** (`unit.health`). A lost
+combat round costs 25 HP (`COMBAT_DAMAGE`) unless the round is decisive
+(overrun, or the defender is already at 25 HP or less), so a full-health unit
+that never wins a round is destroyed on its fourth lost round. The `hitPoints: 2`
+/ `maxHitPoints` fields on a unit are a legacy Civ1 display value — they are
+never decremented by combat (only the unit-stack and city panels read them).
 
 === Land military
 
@@ -936,6 +955,16 @@ it buys is the last leg: a caravan two tiles out walks in and onto the market
 tile in one turn instead of two, so a 10-tile route is 10 turns, not 11. Pinned
 by `tests/caravanCityMoveBonus.test.ts`.
 
+|Travelling Bazaar
+|0
+|**1**
+|2
+|100
+|**0**
+|Nomad-only. Built by the nomad camp out of its own chest
+(`requires: 'nomad_bazaar_only'`), so no player or AI production list ever
+offers one.
+
 |Ferry
 |0
 |0
@@ -951,6 +980,23 @@ by `tests/caravanCityMoveBonus.test.ts`.
 |20
 |1
 |Needs a Harbor building. See <<Fishing>>.
+
+|Transport
+|0
+|1
+|5
+|160
+|**2**
+|Requires Electronics. Carries **8** units — the late-game invasion hull.
+
+|Trade Ship
+|0
+|1
+|4
+|60
+|**2**
+|Requires Trade *and* a Harbor building. Sails a route between two harbour
+cities and pays gold at every arrival (`processTradeShipArrival`).
 |===
 
 === Air
@@ -985,10 +1031,6 @@ by `tests/caravanCityMoveBonus.test.ts`.
 |===
 
 Air units ignore city walls, do not trigger villages, and may fly over anything.
-
-=== Not implemented
-
-* **`transport`** is declared in `UNIT_TYPES` but has no properties entry.
 
 == Combat
 
@@ -1120,16 +1162,18 @@ under the roof; the healing pass runs before the fortified/sleeping early
 returns on purpose.
 
 Whenever a unit heals, the turn stamps `unit._healedRound`. The map draws a
-small 🩸 **blood drop** above its sprite for the rest of the round — but only
+small ⚕ **blood drop** above its sprite for the rest of the round — but only
 when the unit is **unstacked** (alone on its tile) or currently **selected** as
 the top unit, so crowded tiles stay readable
 (`MapRenderer.healMarkerVisible`).
 
 === Cities
 
-`cityDefense = max(1, population)`, **× 1.5 with city walls** — and walls apply
-to every attacker, because the engine never passes `ignoresWalls` (`CombatSystem`
-supports the flag; nothing sets it, so siege and air units do not bypass walls).
+`cityDefense = max(1, population)`, **× 1.5 with city walls** — but not against
+every attacker. `GameEngine.resolveCityCombat` passes
+`ignoresWalls: CombatSystem.ignoresCityWalls(attacker)`, and that predicate is
+true for the `siege` class (Catapult, Cannon, Artillery) and for every `air`
+unit, so those bypass the wall bonus while everyone else pays it.
 
 [cols="2,3", options="header"]
 |===
@@ -1145,6 +1189,10 @@ rule. The city only falls once the garrison is empty.
 |Fall
 |Population 1 or less → the city is *razed*. Otherwise population −1 and the
 city is captured.
+
+|Failed assault
+|When the attacker loses, an **unwalled** city of population > 1 has a **50 %**
+chance to lose a citizen as well. Walls shield the population from that.
 
 |Aftermath
 |Walls are always destroyed, plus 1 random non-Palace/non-wonder building per
@@ -1165,7 +1213,7 @@ population point lost. The whole garrison is wiped. Production is reset.
 * A dead unit is removed after a 1.5 s delay so the death animation can play.
   It is already invisible to every lookup.
 * Destroying a transport **sinks its whole cargo**.
-* Civilians (settler, worker, caravan, diplomat) cannot attack or capture cities.
+* Civilians (settler, diplomat, caravan) cannot attack or capture cities.
   A caravan may still *enter* an enemy city to deliver.
 * A Scout may enter an **undefended** enemy city with a 30 % chance. Failure
   rejects the move.
@@ -1254,10 +1302,10 @@ routeTrade   = max(1, round((homePop + destPop) / TRADE_ROUTE_POP_DIVISOR))
 
 `TRADE_ROUTE_DISTANCE_WEIGHT` is 4 and `TRADE_ROUTE_POP_DIVISOR` is 2. Distance
 **multiplies** the payout, where it used to add a fifth: two size-3 cities 8
-tiles apart now pay 96 gold rather than 14, which is what repays a 50-shield
-caravan and a twenty-turn walk. At the old numbers the system was strictly worse
-than building a warrior, so nobody used it — a profiled 1,000-round AI game
-delivered ZERO routes.
+tiles apart (Manhattan) now pay 192 gold rather than 14, which is what repays a
+50-shield caravan and a twenty-turn walk. At the old numbers the system was
+strictly worse than building a warrior, so nobody used it — a profiled
+1,000-round AI game delivered ZERO routes.
 
 * Payout arrives as **both gold and science**.
 * *Intercontinental* means a Bresenham line between the two cities crosses
@@ -1297,8 +1345,8 @@ delivered ZERO routes.
   a pop-1 city as able to host a route, because its routes are the FOREIGN kind
   that pays double and the payout is a function of both ends. The old pop-2 floor
   delayed the `trade` chain until the first city had grown — 44 rounds later, and
-  past the horizon entirely for a slow-starting civ. See `scripts/
-  trade_pipeline_sim.py`.
+  past the horizon entirely for a slow-starting civ. The gate is pinned by
+  `tests/ai/tradePipelineGates.test.ts`.
 * **The AI's scored research pick always wins.** Two research pickers exist:
   `AIResearch.scoreTechnology` (which knows the strategy and every relevance
   hook — caravan, naval, island, fishing, nuclear) and a much older
@@ -1336,13 +1384,19 @@ Defined in: `src/game/engine/EconomicManager.ts`
 commerce             = max(tileTrade, CITY_CENTER_COMMERCE=4) + Σ tradeRoutes
 afterGovPenalty      = commerce × (1 − government.commercePenalty)
 corruption           = floor(afterGovPenalty × corruptionRate)
-afterCorruption      = max(0, floor(afterGovPenalty − corruption))
+afterCorruption      = max(0, afterGovPenalty − corruption)   (no floor here)
 
 tax                  = afterCorruption × taxRate / 100  × 3   (fractional)
-science              = round(afterCorruption × scienceRate / 100)
-                       + buildingScience + specialistScience
+science              = round((round(afterCorruption × scienceRate / 100)
+                              + buildingScience + specialistScience)
+                             × wonderScienceMult)
 luxury               = floor(afterCorruption × luxuryRate / 100)   (integer)
 ----
+
+There is **one** floor in this pipeline, at the end of the corruption step —
+not one before the rate split as well; a city with 2 commerce has to be able to
+pay tax. `wonderScienceMult` is the wonder multiplier on the whole science line
+(Great Library +10 %, SETI +30 %, Copernicus ×2, …).
 
 Tax rate, science rate and luxury rate must sum to 100.
 
@@ -1371,8 +1425,8 @@ Luxury stays integer: it is compared against integer unhappiness.
 distance     = euclidean distance from the capital
 distanceMult = min(distance / 10, 1.5)
 rate         = government.corruptionRate × distanceMult
-               × Π (1 − building.corruptionReduction)   for each building held
-corruption   = floor(trade × rate)
+               × Π building.corruptionReduction   for each building held
+corruption   = floor(afterGovPenalty × rate)
 ----
 
 The capital itself is never corrupt. The base rate is the **government's own**
@@ -1382,8 +1436,10 @@ not just a tax-cap choice.
 
 A building's declared `corruptionReduction` is a **multiplier on the rate**:
 Marketplace, Bank and Palace 0.5 (halve it), Courthouse and Stock Exchange 0.8
-(leave a fifth). They compound, and the Courthouse therefore behaves exactly as
-it always did while the other four stop being inert. Values live in
+(cut it by a fifth — four fifths of the rate remain). They compound. The
+Courthouse used to be special-cased to halve the rate by hand; the declared
+table is what runs now, and Marketplace, Bank, Palace and Stock Exchange —
+dead data until it was read — cut the rate for real. Values live in
 `src/data/CorruptionConstants.ts`.
 
 === Food and growth
@@ -1450,7 +1506,7 @@ civilization is not worked**, for as long as that unit stands there.
 [source]
 ----
 tile is usable  ⇔  no live foreign unit stands on it
------
+----
 
 The tile is handed back the moment the unit leaves, so the effect is a *race*:
 every turn a defender is parked on a field is a turn of food the city does not
@@ -1498,7 +1554,8 @@ luxury still accrue.
   Communism, and **1** in Republic and Democracy.
 * A unit garrisons a city by standing on its tile or by being fortified on or
   beside it; an unfortified unit that is merely nearby does not count.
-* A disordered city produces **no** tax, science, luxury or commerce.
+* A disordered city produces **no** tax, science or commerce — luxury and
+  shields still accrue.
 * `CAPTURED_CITY_UNHAPPY = 3`.
 
 === Specialists
@@ -1557,10 +1614,12 @@ Aqueduct cost 240 gold to rush and 120 to buy.
 |===
 |Building |Upkeep
 
-|Temple, Marketplace, Courthouse, Library, Granary, Bank, Colosseum
+|Barracks, Granary, Temple, Marketplace, Library, Courthouse, Aqueduct, Bank,
+Colosseum, Harbor, Hospital
 |1
 
-|City Walls, Aqueduct, University, Cathedral, Harbor, Hydro Plant, Mass Transit, Power Plant
+|City Walls, Cathedral, University, Hydro Plant, Mass Transit, Nuclear Plant,
+Power Plant, Recycling Center, Stock Exchange
 |2
 
 |Factory
@@ -1647,12 +1706,12 @@ prerequisite list is empty). Roots are marked ★.
 |Pottery ★
 |20
 |—
-|Granary
+|Granary, Hanging Gardens
 
 |Bronze Working ★
 |30
 |—
-|Phalanx, Barracks
+|Phalanx, Barracks, Colossus
 
 |Alphabet ★
 |20
@@ -1667,32 +1726,37 @@ prerequisite list is empty). Roots are marked ★.
 |Masonry ★
 |30
 |—
-|City Walls, Harbor, Great Wall, Pyramids
+|City Walls, Harbor, Pyramids, Construction
 
 |Sailing ★
 |35
 |—
-|Ferry, Map Making
+|Sail, Ferry, Map Making
 
 |Ceremonial Burial ★
 |20
 |—
-|Temple, Hanging Gardens, Polytheism
+|Temple, Polytheism, Mysticism
 
 |Horseback Riding ★
 |20
 |—
 |Knights, Cavalry
 
+|Mysticism
+|40
+|Ceremonial Burial
+|Oracle, Religion
+
 |Iron Working
 |50
 |Bronze Working
-|Legion
+|Legion, Metallurgy
 
 |Writing
 |40
 |Alphabet
-|Diplomat, Literacy
+|Diplomat, Library, Literacy
 
 |Mathematics
 |50
@@ -1702,7 +1766,7 @@ prerequisite list is empty). Roots are marked ★.
 |Map Making
 |40
 |Sailing
-|Trireme, Navigation
+|Trireme, Lighthouse, Silk Road, Navigation
 
 |Code of Laws
 |40
@@ -1712,7 +1776,7 @@ prerequisite list is empty). Roots are marked ★.
 |Currency
 |60
 |Bronze Working
-|Marketplace
+|Marketplace, Trade
 
 |Monarchy
 |60
@@ -1722,7 +1786,7 @@ prerequisite list is empty). Roots are marked ★.
 |Literacy
 |60
 |Writing
-|Philosophy
+|Great Library, Philosophy
 
 |Polytheism
 |60
@@ -1732,17 +1796,23 @@ prerequisite list is empty). Roots are marked ★.
 |Trade
 |70
 |Currency
-|Caravan, Banking
+|Caravan, Trade Ship, Banking
 
 |Construction
 |70
 |Masonry, Mathematics
-|Aqueduct
+|Aqueduct, Colosseum, Fortress
 
 |Philosophy
 |80
 |Literacy
-|Oracle, Astronomy, Monotheism, Democracy, Communism
+|Astronomy, University, Monotheism, Scientific Theory, Democracy, Communism,
+Religion
+
+|Religion
+|90
+|Philosophy, Mysticism
+|Michelangelo's Chapel, J.S. Bach's Cathedral (and it retires the Oracle)
 
 |Republic
 |80
@@ -1752,12 +1822,23 @@ prerequisite list is empty). Roots are marked ★.
 |Engineering
 |90
 |Mathematics
-|Hospital, Industrialization, Railroad, Combustion, river bridges
+|Hospital, Invention, Industrialization, Railroad, Combustion
+
+|Invention
+|120
+|Engineering
+|Leonardo's Workshop (and it retires the Hanging Gardens)
 
 |University
 |90
 |Philosophy
-|University building, Newton's University
+|University building, Medicine, Scientific Theory (and it retires the Great
+Library)
+
+|Medicine
+|110
+|University
+|Shakespeare's Theatre
 
 |Metallurgy
 |100
@@ -1767,12 +1848,12 @@ prerequisite list is empty). Roots are marked ★.
 |Theology
 |100
 |Monotheism
-|Cathedral
+|Democracy (a prerequisite only — it gates no unit, building or wonder)
 
 |Monotheism
 |80
 |Philosophy, Polytheism
-|Michelangelo's Chapel
+|Cathedral, Theology
 
 |Banking
 |100
@@ -1782,12 +1863,22 @@ prerequisite list is empty). Roots are marked ★.
 |Astronomy
 |70
 |Philosophy, Mathematics
-|Navigation
+|Copernicus' Observatory, Navigation, Theory of Gravity
+
+|Theory of Gravity
+|100
+|Astronomy
+|Isaac Newton's College
 
 |Navigation
 |80
 |Map Making, Astronomy
-|Caravel, Frigate, Magellan's Voyage
+|Caravel, Frigate, Magellan's Expedition, Magnetism
+
+|Magnetism
+|100
+|Navigation
+|Retires the Lighthouse — nothing new is built with it
 
 |Gunpowder
 |100
@@ -1797,7 +1888,7 @@ prerequisite list is empty). Roots are marked ★.
 |Democracy
 |120
 |Theology, Philosophy
-|Democracy government, United Nations, Women's Suffrage
+|Democracy government, Statue of Liberty
 
 |Industrialization
 |120
@@ -1812,22 +1903,22 @@ prerequisite list is empty). Roots are marked ★.
 |Scientific Theory
 |140
 |University, Philosophy
-|Electricity
+|Electricity, Genetic Engineering
 
 |Steel
 |160
 |Metallurgy
-|Ironclad, Battleship
+|Artillery, Ironclad, Battleship
 
 |Electricity
 |160
 |Scientific Theory
-|Power Plant
+|Power Plant, Electronics (and it retires the Colossus)
 
 |Communism
 |160
 |Industrialization, Philosophy
-|Communism government
+|Communism government (and it retires the Pyramids and Michelangelo's Chapel)
 
 |Mass Production
 |170
@@ -1837,12 +1928,18 @@ prerequisite list is empty). Roots are marked ★.
 |Electronics
 |180
 |Electricity
-|Hydro Plant, Nuclear Power, Computers
+|Hydro Plant, Hoover Dam, Transport, Nuclear Power, Computers (and it retires
+Shakespeare's Theatre)
 
 |Combustion
 |180
 |Engineering, Electricity
-|Mech. Inf., Tank, Destroyer, Cruiser, Submarine
+|Mech. Inf., Tank, Destroyer, Cruiser, Submarine, Automobile, Flight
+
+|Automobile
+|200
+|Combustion
+|Retires Copernicus' Observatory — nothing new is built with it
 
 |Flight
 |200
@@ -1852,17 +1949,28 @@ prerequisite list is empty). Roots are marked ★.
 |Nuclear Power
 |200
 |Electronics
-|Nuclear Plant, Nuclear
+|Nuclear Plant, Nuclear, Nuclear Fission
+
+|Nuclear Fission
+|240
+|Nuclear Power
+|Manhattan Project (and it retires Isaac Newton's College)
 
 |Computers
 |220
 |Electronics
-|Space Flight
+|SETI Program, Super-Kamiokande, Colossus (AI Supercluster), Space Flight,
+Genetic Engineering
+
+|Genetic Engineering
+|230
+|Scientific Theory, Computers
+|Human Genome Project
 
 |Space Flight
 |250
 |Flight, Computers
-|SDI Defense, Moonshot
+|SDI Defense, International Space Station, Tiangong, Mir, Moonshot
 
 |Moonshot
 |300
@@ -1870,8 +1978,14 @@ prerequisite list is empty). Roots are marked ★.
 |**Instant victory**
 |===
 
-Moonshot is flagged `available: false` in the data — it cannot be selected in
-the tech tree, and completing it wins the game on the spot.
+Moonshot is flagged `available: false` in the data — it stays unselectable in
+the tech tree until any space station (ISS, Tiangong or Mir) exists — and
+completing it wins the game on the spot.
+
+Several cells say what a technology *retires*: a wonder's `obsoleteBy`
+technology switches that wonder's effect off for **every** civilization as soon
+as any one of them has it (`src/data/WonderData.ts`). Magnetism and Automobile
+exist only for that — they gate no unit, building or improvement.
 
 For the mapping to the original Civilization I tech list, per-tech research
 recommendations and in-game clarity notes, see
@@ -1879,7 +1993,7 @@ link:TECH_COMPARISON.adoc[Technology Comparison].
 
 A few technology *descriptions* name things that do not exist as units or
 buildings in this codebase — "Horsemen" (the unit is `knights`), "Crusader
-units", "Observatory", "Research Labs". The unlock column above is what the code
+units", "Research Labs". The unlock column above is what the code
 actually gates on.
 
 === Research costs
@@ -1895,18 +2009,23 @@ effectiveCost      = max(10, floor(baseCost × mapTechRate / difficultyFactor
 
 knownCivsModifier  = clamp(1 − knownCivs × 0.1, 0.6, 1)
 prereqModifier     = clamp(1 − (missingPrereqs / totalPrereqs) × 0.4, 0.6, 1)
-beakers            = floor(floor((baseCost + 1) × knownCivsModifier) × prereqModifier)
+beakers            = floor(floor((baseBeakers + 1) × knownCivsModifier)
+                                 × prereqModifier)
 
 perTurnProgress    = clamp(beakers, ceil(effectiveCost / 32), remaining)
 ----
 
 * A **larger map is harder**: the tech rate scales with map size.
 * A **higher difficulty is easier**: the factor divides, and Emperor is 0.8.
+* `baseBeakers` is the civ's per-turn science *before* the modifiers — the
+  number `advanceResearch` is handed.
 * `MIN_RESEARCH_TURNS = 4`, `MAX_RESEARCH_TURNS = 32` per technology.
 * Research is locked for the **first 5 rounds**.
 * Science produced with nothing selected banks in `civ.bankedScience` and is
   spent as soon as a technology is chosen.
-* Completing Metallurgy scraps every city wall in the empire.
+* Completing a technology never destroys anything — Metallurgy does **not**
+  scrap city walls, no rule in the engine does (walls fall on capture, or when
+  the player sells them).
 
 == Government
 
@@ -2000,8 +2119,10 @@ Defined in: `src/game/engine/BarbarianManager.ts`
   condition.
 * Horde strength is `Σ(max(0.5, attack) + defense × 0.3)`.
 * An assault needs at least 2 units and `hordeStrength >= cityDefense × 1.5`.
-* `estimateCityDefense = max(1, population) × (3 with walls) + Σ(attack + defense × 0.5)`
-  for units within Chebyshev distance 2.
+* `estimateCityDefense = max(1, population) × (1.5 with walls)` — the same
+  building defence multiplier `CombatSystem` applies — plus
+  `Σ (max(1, attack) + defense × 0.5) × rankMultiplier` for each of the city's
+  own units within **Manhattan** (`squareDistance`) distance 2.
 * A captured barbarian city has all its buildings sold, switches to
   auto-production, and pumps out raiders once per round.
 
@@ -2266,16 +2387,56 @@ The ledger survives save/load intact — that is the v3 → v4 migration.
 
 === Willingness
 
-Base by attitude: friendly 75, neutral 50, annoyed 30, hostile 10. Then treaty
-modifiers — peace +15, ceasefire +20, alliance −10, tribute −20 (+25 if you are
-1.5× stronger), open borders +5, trade +10, mutual defence −15, non-aggression
-+15, embargo −10, tech exchange +5. Minus 15 per treaty broken. Clamped 0–100.
+There is no 0–100 willingness number left: the old `Math.random() × 100 <
+willingness` roll (base by attitude 75/50/30/10, −15 per treaty broken) is gone.
+Every proposal is now scored as a readable sum by `evaluateProposal`
+(`src/game/engine/diplomacy/ProposalScoring.ts`) and accepted when it clears a
+personality-scaled bar:
+
+[source]
+----
+score     = Σ factors
+threshold = (trustSensitivity − 5) × 1.2 − (greed − 5) × 0.8
+noise     = seededNoise(proposer, responder, action, round, sequence) × 5   → ±5
+accepted  = not vetoed  and  score + noise > threshold
+----
+
+* **Base appetite** is per *action*, not per attitude: peace 18, ceasefire 26,
+  non-aggression 18, gift of gold 20, open borders 8, trade agreement 12, tech
+  exchange 10, alliance 2, joint war −2, embargo −6, mutual defence −4, asking
+  for gold −12, tribute demand −18, incite revolt −10.
+* **Power** enters as a *capped* nudge — `POWER_TERM_CAP` = 25 points — with a
+  different phrasing per action ("they can hurt me" on a demand or a request,
+  "I am losing" on a peace offer, "they are the stronger neighbour" on open
+  borders).
+* **Goodwill** is the ledger above × a per-action weight (0.06 for an incite
+  revolt … 0.35 for a gift of technology). This is where the old
+  `brokenTreaties × 15` penalty lives now: `−5` per offer already refused and
+  `−0.25` per point of unresolved grievance.
+* **Terms are priced.** Gold is scored against the *responder's own* treasury —
+  `−(saturation × 200) / tolerance`, where 60 gold is one "ask", saturation
+  flattens as the sum grows, and tolerance rises with wealth and greed — plus a
+  "more than they can spare" penalty once the ask passes 1.5× their gold.
+  Gifts and trade pips score the other way round.
+* **Context**: a shared enemy is worth +20 on an alliance or defence pact; a call
+  for help adds +18 (joint war +12) and +12 more with a defence pact, but −30
+  when the responder has no capacity for another front, −20 at war wear ≥ 14 and
+  −25 if the named enemy outclasses them; a peace offer into an active war is
+  +12; technology deals are scored by research-cost fairness (and are −80 at
+  war).
+* **Pride veto**: grievance ≥ `PRIDE_VETO` (85) refuses a tribute demand or an
+  alliance outright, whatever the sum comes to.
+
+The diplomacy screen forecasts the very same arithmetic — score against
+threshold, plus the decisive factor — so the player reads the answer the AI
+will give. The noise is seeded from the pair, round, action and sequence, so
+identical proposals resolve identically.
 
 === Bribery
 
-Cost is `25 × (attack + defense)`, success chance 60 % — +20 % against a hostile
-target, −20 % against a friendly one. A success transfers the unit **and
-auto-declares war**. The diplomat is consumed.
+Cost is `25 × ((attack or 1) + (defense or 1))`, success chance 60 % — +20 %
+against a hostile target, −20 % against a friendly one. A success transfers the
+unit **and auto-declares war**. The diplomat is consumed.
 
 == Victory
 
@@ -2355,7 +2516,7 @@ score = population
 
 == Difficulty
 
-[cols="2,1,1,1", options="header"]
+[cols="2,1,1", options="header"]
 |===
 |Difficulty |AI bonus |Barbarian frequency
 

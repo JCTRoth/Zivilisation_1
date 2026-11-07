@@ -610,7 +610,7 @@ dismissal/proximity re-offer, first-blood hostility + the raid march and
 stores stolen, the pride-driven second refusal turning a clan hostile, and
 the friendly return visit with its map gift.
 
-`tests/nomadEconomy.test.ts` (7) — the 300 opening purse; travelling
+`tests/nomadEconomy.test.ts` (8) — the 300 opening purse; travelling
 bazaar build (cost 100, proven at the `createUnit` call) → delivery →
 exact route income → the partner falling ends the route; the six-route
 ceiling against a seventh, perfectly targetable city; the city market's

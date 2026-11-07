@@ -197,7 +197,9 @@ link:GAME_RULES.adoc[Game Rules Reference].
 |70
 |Masonry, Mathematics
 |Aqueduct, Colosseum, Fortress improvement
-|High — Aqueduct unlocks city growth past size 2
+|High — Aqueduct lifts the housing cap, so cities grow past size 10
+  (`AQUEDUCT_HOUSING_CAP = 10`, `EconomicManager.ts:171`; growth gate
+  `TurnManager.processCityGrowth`)
 |Clear
 
 |Philosophy

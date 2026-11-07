@@ -23,40 +23,52 @@ document* is right for happiness and disorder.
 == The one-sentence version
 
 A city is in disorder when its population is larger than everything it can
-muster to keep it calm: `unhappiness > happiness`, where unhappiness is simply
-the population and happiness is a sum of seven small terms. A disordered city
+muster to keep it calm: `unhappiness > happiness`, where unhappiness is the
+population plus unrest (minus a wonder's contentment) and happiness is a sum of
+seven small terms. A disordered city
 pays no tax, produces no science, and does not grow — but it still eats.
 
 == The two numbers
 
-`unhappiness` — *defined in* `EconomicManager.cityHappiness` (`src/game/engine/EconomicManager.ts:896`)
+`unhappiness` — *defined in* `EconomicManager.cityHappiness` (`src/game/engine/EconomicManager.ts:1379`)
 
 [source,typescript]
 ----
-const unhappiness = population + capturedUnrest;
+const unhappiness = Math.max(0, population + capturedUnrest - wonderContent);
 ----
 
-Exactly two terms:
+Exactly three terms:
 
 [cols="1,3"]
 |===
 | Term | Value
 
 | `population`
-| The city's size, one unhappy citizen each. This is the whole rule.
+| The city's size, one unhappy citizen each. This is the core of the rule.
 
 | `capturedUnrest`
 | `+3` (`CAPTURED_CITY_UNHAPPY`) while `city.capturedTurns > 0`. A freshly
   captured city resents its new owner. It decays by one turn per player turn
   (`TurnManager.processTurn`) and reaches zero on its own, so a captured city
   heals without player action.
+
+| `wonderContent`
+| `−` the unhappy citizens a wonder converts to content in this city
+  (`wonderUnhappyToContentForCity`, backed by `WonderEffects.unhappyToContentForCity`
+  — J.S. Bach's Cathedral on the continent, Shakespeare's Theatre locally).
+  It is subtracted, so a wonder shrinks the *demand* side rather than adding
+  happiness to the *supply* side.
 |===
+
+The whole expression is wrapped in `Math.max(0, …)`, so a wonder can never
+drive unhappiness negative.
 
 [NOTE]
 ====
 There is **no government tolerance** in this game. It was removed: the
 `tolerance` field is gone from `GovernmentProperties`, and the crowding rule is
-plainly `population`. Governments now contribute only a flat *happiness bonus*
+plainly `population` (+ `capturedUnrest` − `wonderContent`, see the table
+above). Governments now contribute only a flat *happiness bonus*
 (see the table below), which is a much smaller lever than tolerance was — a
 government with tolerance 5 used to swallow five unhappy citizens.
 ====
@@ -70,22 +82,24 @@ const happiness =
   specLuxury +
   martialLawBonus +
   this.buildingHappiness(city) +
+  this.wonderHappinessForCity(city) +
   gov.happinessBonus +
   BASE_CONTENTMENT;
 ----
 
-Six additive terms. There are no multipliers, no diminishing returns and no
-ordering effects — the sum is the score.
+Seven additive terms. There are no multipliers, no diminishing returns and no
+ordering effects — the sum is the score. (One multiplier does exist *inside*
+term 4: the Oracle and Michelangelo's Chapel scale a building type's happiness.)
 
 === The terms in detail
 
 ==== 1. `out.luxury` — commerce converted by the luxury rate
 
-*Defined in* `cityOutputs` (`EconomicManager.ts:228`).
+*Defined in* `cityOutputs` (`EconomicManager.ts:338`).
 
 [source,typescript]
 ----
-luxury: Math.max(0, Math.floor(afterCorruption * (rates.luxury / 100)))
+luxury: Math.floor(afterCorruption * (rates.luxury / 100))
 ----
 
 * `afterCorruption` is the city's commerce *after* the government's commerce
@@ -100,8 +114,8 @@ luxury: Math.max(0, Math.floor(afterCorruption * (rates.luxury / 100)))
 
 ==== 2. `specLuxury` — Entertainers
 
-*Defined in* `specialistYields` (`EconomicManager.ts:683`) from
-`SPECIALIST_YIELDS` (`src/data/GameConstants.ts:283`).
+*Defined in* `specialistYields` (`EconomicManager.ts:959`) from
+`SPECIALIST_YIELDS` (`src/data/GameConstants.ts:413`).
 
 [cols="1,1,1,1"]
 |===
@@ -169,7 +183,7 @@ const martialLawBonus = Math.min(garrisonUnits, martialLawMax);
 **A garrison point is dual-purpose, and this is where the common Civ 1 advice
 is wrong for this game.** The widely-copied rule says *"units in cities are not
 available for defense"* and advises moving them out to fight. Here they *are* the
-defence: when a city is attacked, `GameEngine.attackCity` collects the living
+defence: when a city is attacked, `GameEngine.resolveCityCombat` collects the living
 units standing on the city tile as the garrison, fights them one at a time, and
 only runs the population-vs-attack roll once the garrison is empty. A soldier
 standing in a city both pacifies it and defends it, so there is no trade-off to
@@ -179,20 +193,20 @@ balance — parking a defender is not a cost.
 
 ==== 4. `buildingHappiness` — buildings
 
-*Defined in* `buildingHappiness` (`EconomicManager.ts:954`), a plain sum of
+*Defined in* `buildingHappiness` (`EconomicManager.ts:1441`), a plain sum of
 `BUILDING_PROPERTIES[id].effects.happiness` over the city's buildings.
 
 [cols="1,1,2"]
 |===
 | Building | Happiness | Note
 
-| Temple | *+1*
-| Courthouse | *+1*
-| Palace | *+1*
-| Hospital | *+1*
-| Colosseum | *+2*
-| Mass Transit | *+2*
-| Cathedral | *+3*
+| Temple | *+1* |
+| Courthouse | *+1* |
+| Palace | *+1* |
+| Hospital | *+1* |
+| Colosseum | *+2* |
+| Mass Transit | *+2* |
+| Cathedral | *+3* |
 | *City Walls* | *−1* | the only negative effect in the table
 |===
 
@@ -200,41 +214,68 @@ balance — parking a defender is not a cost.
 ====
 **City Walls make a city unhappy.** Walls carry `happiness: -1` and it is summed
 like any other value, so a walled city needs one more point of happiness than an
-identical unwalled one. Walls also double city defence (`City.getDefenseValue`)
-and shield the population from ground attacks, so the trade is usually worth it —
+identical unwalled one. Walls also multiply city defence by ×1.5
+(`CombatSystem.ts:253-270`) and shield the population from ground attacks, so the
+trade is usually worth it —
 but it is a real cost and it is applied unconditionally.
 ====
 
-==== 5. `wonderHappiness` — content from a wonder
+==== 5. `wonderHappinessForCity` — flat happiness from a wonder
 
-*Defined in* `wonderHappiness` (`EconomicManager.ts:945`).
+*Defined in* `wonderHappinessForCity` (`EconomicManager.ts:1349`), which asks
+`WonderEffects.happinessForCity` for the flat happiness every wonder of this civ
+grants this city. The wonder's *scope* (`city` / `civilization` / `continent`),
+its ownership and its obsolescence are resolved there, so a wonder is held by
+exactly one city but may apply much wider.
 
-A wonder carrying `globalHappiness` grants content to *every* city of the civ
-that owns it, not just the city it stands in. This is the empire-wide answer to
-a crowded empire, and the only wonder effect that touches happiness at all:
+Wonders that add flat happiness to the total:
 
-[cols="1,1"]
+[cols="1,1,2"]
 |===
-| Wonder | `globalHappiness`
+| Wonder | Happiness | Scope
 
-| *Pyramids* | *+1* in every city
-| Hanging Gardens | *+1* in every city
+| *Human Genome Project* | *+1* | every city of the owner (`civilization`)
+| Hanging Gardens | *+1* | every city of the owner on the same continent
+  (`continent`)
 |===
 
-Two implementation notes, both of which were bugs first:
+Wonders touch happiness in two other ways as well — neither of them is a term of
+the sum above:
 
-* `globalHappiness` was declared on Hanging Gardens and *read by nothing* — the
-  effect existed only on paper. It is now wired, and it was removed from
-  `INERT_EFFECTS` so the building audit prices it instead of calling the wonder
-  worthless.
+[cols="1,2"]
+|===
+| Effect | What it does
+
+| `unhappyToContent` | Converts unhappy citizens to content, which *subtracts*
+  from `unhappiness`: J.S. Bach's Cathedral (1 per city on the continent,
+  `WonderData.ts:463`) and Shakespeare's Theatre (4 in the city that holds it,
+  `WonderData.ts:553`).
+| `buildingHappinessMultiplier` | Scales term 4 for one building type: the
+  Oracle doubles Temple happiness, Michelangelo's Chapel gives Cathedrals
+  ×1.5 (`EconomicManager.buildingHappiness` applies it per building).
+|===
+
+**The Pyramids have no happiness effect at all.** Their only effect is
+`governmentAnarchyTurns: 1` (`WonderData.ts:328`) — a shorter revolution, not
+contentment.
+
+Two implementation notes:
+
 * **Wonders live in `WONDER_PROPERTIES`, not `BUILDING_PROPERTIES`.** Looking a
   wonder up in the wrong table returns `undefined` rather than an error, so an
   effect read that way silently arrives as zero. Both `buildingHappiness` and
-  `wonderHappiness` therefore go through one accessor, `buildingEffect(id, key)`,
-  which consults both tables and coerces the value to a number (the effects bag
-  has an index signature, so undeclared keys arrive as `unknown`).
+  `wonderHappinessForCity` therefore go through one accessor, `buildingEffect(id, key)`
+  (`EconomicManager.ts:1372`), which consults both tables and coerces the value
+  to a number (the effects bag has an index signature, so undeclared keys arrive
+  as `unknown`).
+* There is no `globalHappiness` field any more — happiness effects are typed
+  `{ kind: 'happiness', scope, amount }` in `WonderData.ts`. The key survives
+  only in comments: `INERT_EFFECTS` (`BuildingEconomics.ts:97`) deliberately
+  does not list it, so the building audit prices the effect instead of calling
+  the wonder worthless.
 
-Each global wonder is counted **once** per civ, not once per city holding one.
+Each wonder is counted **once** per civ (`WonderEffects.effectsForCity` walks
+the civ's active wonders), not once per city that could see it.
 
 ==== 6. `gov.happinessBonus` — the government
 
@@ -254,14 +295,14 @@ Each global wonder is counted **once** per civ, not once per city holding one.
 
 * Anarchy forces all three rates to 0 (`forcesZeroRates`), so during a
   revolution a city earns nothing at all and cannot buy luxury. The revolution
-  itself lasts `ANARCHY_TURNS = 3` turns (`GovernmentManager.ts:17`).
+  itself lasts `ANARCHY_TURNS = 3` turns (`GovernmentManager.ts:18`).
 * Republic and Democracy get no martial law but pay the highest bonuses.
   Republic is the best place to *stop* — which is exactly why the AI is told not
   to stop there (see <<AI: government target>>).
 
 ==== 7. `BASE_CONTENTMENT` — the floor
 
-*Defined in* `EconomicManager.ts:85` as `2`.
+*Defined in* `EconomicManager.ts:115` as `2`.
 
 Every city gets 2 free happiness, always, with no building and no government.
 This is what makes a size-2 city content on its own.
@@ -343,7 +384,9 @@ The chain, in order, *defined in* `cityOutputs`:
 . `effective = commerce × (1 − gov.commercePenalty)` — Communism loses 25 % here.
 . `corruption = CityUtils.calculateCorruption(city, civ, effective)` — distance
   from the capital degrades the rest.
-. `afterCorruption = max(0, floor(effective − corruption))`.
+. `afterCorruption = max(0, effective − corruption)` — no floor here; it stays a
+  fraction (only the reported `commerce` is `floor`ed, and `tax` is carried
+  fractionally to the treasury).
 . `luxury = floor(afterCorruption × luxuryRate / 100)`.
 
 So luxury happiness is bought with *tax revenue*, at a rate the player chooses
@@ -354,7 +397,7 @@ luxury happiness at all — `luxuryRate` is 0 by definition in that case.
 [[What disorder costs]]
 == What disorder costs
 
-*Defined in* `applyCityOutputs` (`EconomicManager.ts:936`) and `TurnManager`.
+*Defined in* `applyCityOutputs` (`EconomicManager.ts:1410`) and `TurnManager`.
 
 [cols="1,3"]
 |===
@@ -391,13 +434,18 @@ for the next growth event.
 
 === Player feedback
 
-* A 🔥 is drawn under any city in disorder (`MapRenderer.ts:2405`).
+* A 🔥 is drawn under any city in disorder (`MapRenderer.ts:2669-2676`).
 * A `CITY_DISORDER` event fires **on transitions only** (never every turn), and
-  `EngineEventHandlers` raises the "Sire! The citizens of X are rioting!" modal
-  with the mirrored "ORDER RESTORED" message (`GameModals.tsx:2033`).
-* The rates modal labels the luxury slider *"Commerce → happiness (prevents
-  disorder)"* (`RatesModal.tsx:156`) — the only player-facing hint that luxury
-  is a happiness lever.
+  `EngineEventHandlers.onCityDisorder` (`src/utils/EngineEventHandlers.ts:1917`)
+  raises the modal rendered in `GameModals.tsx:3090-3102`. The strings are i18n
+  keys, not literals: `gm.disorder.revolt.pre` / `gm.disorder.revolt.post`
+  (`en.ts:2126-2127`, "Sire, the citizens of X have taken to the streets…"),
+  mirrored on recovery by `gm.disorder.titleOrder` (`en.ts:2125`, "Order
+  returns to {{city}}").
+* The rates modal labels the luxury slider with the hint *"Commerce buys
+  contentment — the surest cure for a city on the edge of disorder"*
+  (`RatesModal.tsx:227`, i18n key `rates.hint.luxury`, `en.ts:1029`) — the only
+  player-facing hint that luxury is a happiness lever.
 * The city screen shows the stored `city.happiness` / `city.unhappiness` and a
   disorder flag.
 
@@ -466,7 +514,10 @@ here because they are the practical answer to "why is my civ rioting".
   `ENTERTAINER_FOOD_HEADROOM (2)`, i.e. 3.
 |===
 
-  Cap: `MAX_ENTERTAINERS_PER_CITY = 2`.
+  Cap: at least `MAX_ENTERTAINERS_PER_CITY = 2` and growing with the city —
+  `min(population − 2, max(2, min(MAX_SPECIALISTS_PER_CITY (5),
+  floor(population / 3))))`, i.e. `specialistCapForPopulation`
+  (`AICityManager.ts:102-107`).
 
   Unneeded Entertainers are sent back to the fields.
 . `steerSurplus` / `manageSpecialists` — and `manageSpecialists` refuses to hire
@@ -482,20 +533,29 @@ could keep a *disordered* city's output alive.
 The AI computes the luxury percentage its worst city needs:
 
 * for every city: `nonLuxHappiness = specLuxury + martialLawBonus +
-  entertainerPotential + 2`, where `entertainerPotential` assumes up to 2 more
-  Entertainers at 2 each, and the `+2` is base contentment;
-* `need = max(0, population − nonLuxHappiness)` per city, taking the **worst**
-  city;
-* the percentage is `ceil(need × 100 / minAfterCommerce)` over the cities,
-  where `minAfterCommerce` is the smallest post-corruption commerce any city has
-  — so the AI never sets a luxury rate its poorest city cannot cash in.
+  gov.happinessBonus + 2 + buildingHappiness + wonderHappiness`, where the `+2`
+  is base contentment. The government bonus and the happiness the city already
+  gets from its buildings and wonders are credited; there is **no**
+  `entertainerPotential` term any more — only Entertainers that actually exist
+  count (the old hypothetical +4 of unhired Entertainers made a disordered city
+  ask for 0 % luxury);
+* `need = max(0, population − nonLuxHappiness)` per city;
+* per city, `after = max(0, floor(effective − corruption))` and
+  `pct = ceil(need × 100 / after)`; the civ's luxury rate is the **maximum**
+  of those percentages across its cities — one rate, sized for the city with the
+  biggest shortfall, each city judged against its *own* after-corruption
+  commerce (a city with `after <= 0` contributes nothing rather than dragging
+  the whole empire's rate with it).
+
+(`AIEconomicManager.luxuryNeedPct`, `AIEconomicManager.ts:523-584`.)
 
 It is then clamped: `min(luxuryNeed, 30, 100 − AI_MIN_TAX − AI_SCIENCE_FLOOR)`,
 and dropped to 0 entirely when no city has a happiness problem.
 
 === 3. Production (`AutoProduction`)
 
-* `isHappinessCrisis(city)` — true when the civ's luxury rate is **≥ 40 %** or
+* `AutoProduction.isHappinessCrisis(city)` (`AutoProduction.ts:1666-1670`) —
+  true when the civ's luxury rate is **≥ 40 %** or
   the city is in disorder. A city that is spending 40 %+ of its commerce
   papering over unhappiness, or is actually rioting, builds a happiness building
   *ahead of everything else*, including defenders.
@@ -505,8 +565,9 @@ and dropped to 0 entirely when no city has a happiness problem.
   settler that completes consumes one citizen, and the citizen that leaves takes
   its unhappiness with it. That is the Civ 1 pressure valve for a crowded,
   dissatisfied city.
-* `AIBuildingStrategy.isHappinessEmergency` ranks happiness buildings for a city
-  in disorder above all other production.
+* `AutoProduction.chooseHappinessBuilding` overrides whatever the city is
+  currently producing when `isHappinessCrisis` holds (`AutoProduction.ts:295`),
+  so a happiness building is ranked above *all* other production.
 
 == AI: what a happiness building is worth
 
@@ -605,7 +666,8 @@ each is pinned:
 |===
 | Rule | Test
 
-| `unhappiness == population`, no government tolerance
+| `unhappiness` counts every citizen — no government tolerance (plus
+  `capturedUnrest`, minus wonder content)
 | `tests/economicManager.test.ts` ("counts every citizen as unhappy regardless of government")
 | `disorder` is strictly greater
 | `tests/economicManager.test.ts` (size-2 content, size-3 disorder)
@@ -648,18 +710,25 @@ pinned by a test, so a future change could silently alter it:
 * The preview path (`previewEconomy`, used by the rates modal) re-implements the
   disorder check in a third place. It is correct today and mirrors `cityHappiness`,
   but it is a copy, not a call.
-* **The AI does not yet take the martial-law deal.** It garrisons for *defence*
-  within two tiles of a city, which earns no martial law at all, and then hires
-  Entertainers — a worker off the fields — to do a job a soldier would do for
-  free. An attempt to fix this by steering idle combat units onto city tiles was
+* **The AI never *targets* martial law for happiness.** Its garrison duty
+  (`AIManager.findGarrisonPost`) and its city-defence reserves park units *on*
+  the city tile, where the happiness rule counts them, so the defence floor
+  does pay — but the trigger is an empty defence slot, never a city's happiness
+  deficit. A city short of content past that floor hires Entertainers — a worker
+  off the fields — to do a job a soldier would do for free. An attempt to steer
+  idle combat units onto city tiles *because* a city needed happiness was
   measured and reverted: see the note below.
 
-== Open: the AI does not take the martial-law deal, and why that is unproven
+== Open: the AI never targets martial law for happiness, and why that is unproven
 
-Martial law is free happiness that the AI leaves on the table. It garrisons for
-*defence* within two tiles of a city — which earns no martial law, because the
-test is an exact tile match — and then hires Entertainers, at the cost of a
-worker off the fields, to do a job a soldier would do for free.
+Martial law is free happiness the AI does not go *looking* for. Its garrison
+duty (`AIManager.findGarrisonPost`) fills a fixed defence floor — one unit per
+city, two while an offensive is under way — and a unit it parks on the city
+tile is counted by the same rule the happiness total uses, so the floor does
+pay. What does not exist is a happiness-driven order: nothing sends a soldier
+onto a city tile *because* that city is short of content, and past the floor a
+short city hires Entertainers, at the cost of a worker off the fields, to do a
+job a soldier would do for free.
 
 The obvious fix is to steer idle combat units onto city tiles that still have
 room under their cap and are short of happiness. That was implemented (a
@@ -680,8 +749,8 @@ rather than a conclusion:
   buildings liquidated by turn 120 — but that trace was taken from an
   *instrumented* run which monkey-patched `processTurn`, consuming the seeded
   RNG differently. It is therefore a different trajectory, not evidence about the
-  clean run. The clean suite is green (1410/1410) both with and without the
-  *engine* changes.
+  clean run. The clean suite is green (247 test files / 2,929 tests) both with
+  and without the *engine* changes.
 * So the honest position: the late-game AI-vs-AI scenario on a pinned map has
   enough run-to-run variance that one seed cannot attribute a cause. The hook is
   out only because it was not proven, not because it was proven harmful.
@@ -690,9 +759,11 @@ rather than a conclusion:
 To settle it, measure across several seeds rather than one: run the pinned
 scenario with and without the hook, three seeds each, and compare the disorder
 fraction and surviving-city count. Until then the mechanic is correct for the
-player and unused by the AI, which is the state documented above.
+player, and the AI collects martial law only as a side effect of its defence
+floor — never by targeting a city's happiness, which is the state documented
+above.
 
-== Balance knobs, in one place== Balance knobs, in one place
+== Balance knobs, in one place
 
 [cols="2,1,3"]
 |===
@@ -700,9 +771,9 @@ player and unused by the AI, which is the state documented above.
 
 | `BASE_CONTENTMENT` | 2 | `EconomicManager.ts`
 | `CAPTURED_CITY_UNHAPPY` | 3 | `EconomicManager.ts`
-| `martialLawMax` | 4 / 3 / 0 | `EconomicManager.ts` (by government)
-| `MIN_DISORDER_CITY_WORTH` | 3 | `BuildingEconomics.ts:96`
-| `BEAKER_GOLD_EQUIVALENT` | 1 | `BuildingEconomics.ts:44`
+| `martialLawMax` | 4 / 3 / 1 | `EconomicManager.ts` (by government)
+| `MIN_DISORDER_CITY_WORTH` | 3 | `BuildingEconomics.ts:132`
+| `BEAKER_GOLD_EQUIVALENT` | 1 | `BuildingEconomics.ts:45`
 | `HAPPINESS_BUILDINGS_PER_CITY` | 4 | `BuildingCoordinator.ts`
 | `USEFUL_COPIES_PER_CITY.temple` | 3 | `BuildingCoordinator.ts`
 | `MAX_ENTERTAINERS_PER_CITY` | 2 | `AICityManager.ts`

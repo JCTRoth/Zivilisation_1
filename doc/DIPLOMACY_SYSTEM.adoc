@@ -47,7 +47,7 @@ The diplomacy system implements a full diplomatic relations framework inspired b
 
 === Features beyond Civ I
 * *Open Borders* — allow unit passage through foreign territory
-* *Trade Agreements* — generate gold-per-turn for both parties
+* *Trade Agreements* — double the trade of every route between the two civs
 * *Mutual Defense Pacts* — automatic war declaration when an ally is attacked
 * *Non-Aggression Pacts* — soft commitment against hostility
 * *Embargoes* — jointly restrict a third civilization
@@ -173,7 +173,7 @@ Every pair of civilizations has exactly one `DiplomaticStatus`:
     └────┬────┘                      └──┬──┬───┘
          │                              │  │
          │ break alliance               │  │ declare_war
-         │ (penalty -50)                │  │ (penalty -20)
+         │ (alliance_break -60)         │  │ (surprise_attack -35)
          │                              │  │
          ▼                              │  ▼
     ┌─────────┐   propose_peace      ┌──┴──────┐
@@ -184,7 +184,8 @@ Every pair of civilizations has exactly one `DiplomaticStatus`:
          │       ┌───────────┐          │
          └───────│ CEASEFIRE  │◄────────┘
                  └───────────┘
-                   (5 turn cooldown)
+                   (no ceasefire cooldown — a signed peace
+                    blocks new wars for 8 rounds)
 ----
 
 === Opinion: a directed ledger, not a reputation score
@@ -246,7 +247,8 @@ In addition to the basic diplomatic status, civilizations can sign *treaties* th
 
 |*Trade Agreement*
 |`'trade_agreement'`
-|Both civs receive gold per turn (default: +2 gold/turn each)
+|Every trade route between the two civs pays *twice* its trade value
+(`TREATY_ROUTE_TRADE_MULTIPLIER = 2`); no flat gold stipend is paid
 
 |*Mutual Defense Pact*
 |`'mutual_defense'`
@@ -324,7 +326,7 @@ respect come from the military-strength comparison; border friction adds
 
 The *Diplomat* is a civilian unit (attack: 0, defense: 0, movement: 2, cost: 30) that can perform diplomatic actions when adjacent to an enemy unit or city.
 
-==== What a diplomat can do, and where the list comes from
+=== What a diplomat can do, and where the list comes from
 
 `GameEngine.getDiplomatTargets(diplomatId)` returns one `DiplomatTarget` per
 adjacent foreign city *and* per adjacent foreign unit — a diplomat standing
@@ -363,11 +365,12 @@ Rules the list encodes:
 
 Terms the caller does not specify are filled in by the engine, so a bare
 `executeDiplomatAction` still reaches the responder as a complete proposal: a
-demand is worth 50 gold, a trade deal pays 2 gold/turn, an exchange names a
-concrete pair of technologies and an embargo a concrete third party (a shared
-enemy if there is one, otherwise the weakest other civ met). The negotiation
-screen opens on the other side of the call, where the player names their own
-terms or refuses outright.
+demand is worth 50 gold, a trade deal carries a 2 gold/turn term (scored, but
+no longer paid — a standing treaty doubles route trade instead), an exchange
+names a concrete pair of technologies and an embargo a concrete third party (a
+shared enemy if there is one, otherwise the weakest other civ met). The
+negotiation screen opens on the other side of this call, where the player names
+their own terms or refuses outright.
 
 [cols="1,2,2", options="header"]
 |===
@@ -375,15 +378,15 @@ terms or refuses outright.
 
 |`propose_peace`
 |Offer to end a war
-|Attitude + willingness roll
+|Base 18 + goodwill, power and terms against the personality threshold
 
 |`propose_ceasefire`
 |Offer temporary ceasefire
-|Easiest to accept (+20 willingness)
+|Easiest to accept — base 26, the highest of the asks
 
 |`propose_alliance`
 |Propose full alliance
-|Hardest (-10 willingness)
+|Hardest of the standing treaties — base 2 (a shared enemy adds 20)
 
 |`demand_tribute`
 |Demand gold payment
@@ -403,7 +406,7 @@ terms or refuses outright.
 
 |`propose_trade_agreement`
 |Propose mutual trade income
-|+10 willingness bonus
+|Base 12
 
 |`offer_tech_exchange`
 |Swap technologies
@@ -411,15 +414,15 @@ terms or refuses outright.
 
 |`propose_mutual_defense`
 |Propose defense pact
-|-15 willingness (big commitment)
+|Base −4 (big commitment)
 
 |`propose_non_aggression`
 |Propose non-aggression
-|+15 willingness (easy to accept)
+|Base 18 (easy to accept)
 
 |`propose_embargo`
 |Jointly embargo a third civ
-|-10 willingness
+|Base −6
 |===
 
 === Espionage (city infiltration)
@@ -451,7 +454,7 @@ cover blown and starts a war, leaving the city untouched
 |`steal_technology`
 |Take ONE blind random technology
 |Pool = `getTechTradeOptions().theyHaveWeLack`; detection roll 45% base. Civ I:
-|the cover is *always* blown and the victim *always* declares war — the loot
+the cover is *always* blown and the victim *always* declares war — the loot
 lands only when the theft itself succeeded
 |===
 
@@ -475,18 +478,33 @@ same `getDiplomatTargets` menu the player's is drawn from
 (`AIManager.chooseDiplomatTreaty` filters its scored candidates against that
 list).
 
-=== Willingness calculation
+=== Proposal scoring (was: a willingness roll)
+
+There is no willingness number and no `random(0–100) < willingness` roll any
+more. `src/game/engine/diplomacy/ProposalScoring.ts` — shared by the engine and
+the negotiation UI — adds up explicit factors and compares the sum to a bar the
+responder's personality sets:
 
 [source]
 ----
-base = attitude_base[attitude]    # friendly: 75, neutral: 50, annoyed: 30, hostile: 10
-+ action_modifier                 # see table above
-+ military_strength_bonus         # +25 if proposer is much stronger (for tribute)
-- treaties_broken × 15            # each broken treaty reduces willingness
-= final willingness (clamped 0–100)
-
-Roll: random(0–100) < willingness → accepted
+score     = Σ factors                     # every factor is listed in the UI
+  base    = BASE_WILLINGNESS[action]      # peace 18, ceasefire 26, alliance 2,
+                                          # tribute −18, open borders 8, trade 12,
+                                          # mutual defence −4, non-aggression 18, …
+  power   = strength-ratio nudge, capped at ±25 (POWER_TERM_CAP)
+  goodwill= responder's goodwill toward the proposer × GOODWILL_WEIGHT[action]
+  terms   = gold asked/offered against the treasury, tech fairness by research
+            cost, shared enemy, war wear, refusal memory, grievance …
+threshold = (trustSensitivity − 5) × 1.2 − (greed − 5) × 0.8
+noise     = seeded ±5 (pair, round, action, sequence) — no Math.random()
+accepted  = score + noise > threshold
+            unless grievance ≥ PRIDE_VETO (85), which vetoes tribute
+            demands and alliance offers outright
 ----
+
+The size of a demand now matters (a gold term scaled by what the responder can
+actually spare), each earlier refusal costs −5 points on the next score, and
+only ±5 points of the result are noise — so the same game replays identically.
 
 ---
 
@@ -495,23 +513,47 @@ Roll: random(0–100) < willingness → accepted
 
 The AI evaluates diplomatic options every *5 turns* (`AI_DIPLOMACY_INTERVAL`):
 
-=== Decision tree per relation
+=== How a target is chosen (scored, not a decision tree)
+
+There is no per-relation if/else ladder any more — the old `aggression ≥ 7 AND
+strength × 1.5` chain does not exist in the code. `processAIDiplomacy()`
+(`DiplomacyManager.ts:2581`) first calls `considerCallToArms()`, then for every
+contacted counterpart it:
+
+. builds a `PolicyContext` (opinions, strength ratio, war wear, treaties,
+  temperament) and scores *every* action worth considering with
+  `AIDiplomacyPolicy.scoreCandidates()` — each candidate carrying a
+  human-readable `because`;
+. lets `chooseAction()` take the best candidate whose score (plus a seeded
+  ±0.5 tiebreak) clears its act threshold: `declare_war` 10, `demand_tribute` 8,
+  `propose_alliance` 6, `establish_embassy` 3, everything else 6;
+. executes that one action through the same proposal machinery the player uses.
+
+The gates behind those scores:
 
 [source]
 ----
-IF at war:
-  IF outmatched (enemy > own × 1.3) AND war > 5 turns:
-    → Propose ceasefire
-  ELSE IF war > 15 turns AND attitude ≠ hostile:
-    → Propose peace
+mayDeclareWar():                       # all four must hold, or war is not a candidate
+  activeWars < temperament limit       # maxWars from warmongering (turtle 1 … military 3)
+  team mode → not while the team is already at war
+  war wear < 18
+  roundsSincePeace ≥ 8                 # a signed peace must be 8 rounds old
 
-ELSE IF at peace or ceasefire:
-  IF aggression ≥ 7 AND own strength > enemy × 1.5 AND hostile:
-    → Declare war
-  ELSE IF aggression ≥ 6 AND own strength > enemy × 2 AND 10+ turns:
-    → Demand tribute (scaled by strength ratio)
-  ELSE IF at peace AND friendly AND diplomacy ≥ 6 AND similar strength:
-    → Propose alliance
+war score  = max(0, ratio − warTargetMargin(year)) × 25 × appetite
+             − 12 per war already open − grievance/8 − fear/20 + late-game push
+             warTargetMargin: 1.6 early → 1.4 (year 0) → 1.25 (1000 AD) → 1.1 (1500 AD)
+             appetite = warAppetite(wear) × temperament(warmongering)
+                        — warmongering ≤ 4 gives appetite 0: no conquest at all
+
+at war     losing → ceasefire (+20 × peace appetite) and peace (+12 × peace
+             appetite); winning offers terms only once the war is long or the
+             wear is high; every war past 12 turns adds `turnsSince − 12`
+             points to the peace candidate each turn
+
+at peace   courtship = 6 + goodwill/20 + fear/25, split across open borders,
+             trade agreement and non-aggression; tribute only when the ratio
+             is > 2 and their fear > 30; embassy and knowledge offers need a
+             channel and something worth swapping
 ----
 
 === Player notifications
@@ -631,22 +673,32 @@ ground and diplomatic contact within the team.
 
 === Trade agreements
 
-* Both parties receive *+2 gold/turn* (configurable per agreement)
-* Gold is transferred automatically during `processTurn()`
-* Breaking a trade agreement (cancel or war) stops the income immediately
+* Every trade route between the two civs pays *twice* its trade value
+  (`TREATY_ROUTE_TRADE_MULTIPLIER = 2` in `GameConstants.ts`, applied by
+  `EconomicManager.routeTrade()`)
+* No gold is minted out of nothing: the flat +2 gold/turn stipend the treaty
+  used to pay both sides every round is gone — `tradeGoldPerTurn` is kept on
+  the relation only for save compatibility and is forced to 0 each turn
+* Breaking a trade agreement (cancel or war) drops the multiplier immediately
 * Trade agreements are always *symmetric* — both sides benefit equally
 
 === Tribute
 
 * Tribute demands extract gold from the target's treasury
-* AI demand amount scales with military strength ratio: `max(25, floor(ratio × 20))`
-* Weaker targets are more likely to comply (+25 willingness when outmatched ×1.5)
+* AI demand amount scales with military strength ratio:
+  `max(25, min(400, floor(ratio × 20)))`
+* Weaker, more frightened targets are more likely to comply (the "they can
+  hurt me" term is capped at +25 points, and fear adds up to +12)
 
 === Bribery
 
 * Unit bribe cost: `BRIBE_UNIT_BASE_COST (25) × (attack + defense)`
 * Bribed unit changes ownership immediately (moves set to 0)
-* Base 60% success chance, modified by attitude: friendly +20%, hostile -20%
+* Base 60% chance of the unit defecting, modified by the *owner's* opinion of
+  the briber: hostile owner (goodwill < −20) **+20%**, friendly owner
+  (goodwill > 20) **−20%**, plus `(owner paranoia − 5) × 2`; the other 40%
+  splits between a reported bribe (gold taken, unit stays, `bribe_exposed`
+  lands on the ledger) and a quiet refusal (no gold, no trace)
 
 === Knowledge: swapping, selling, giving
 
@@ -957,7 +1009,7 @@ The system is designed so *procedural portraits can be replaced with pixel art o
 |`formAlliance()`
 
 |`UNIT_BRIBED`
-|`{ diplomatCivId, unitId, cost }`
+|`{ diplomatCivId, unitId, originalCivId, cost }`
 |`bribeUnit()`
 
 |`DIPLOMACY_EVENT`
@@ -977,7 +1029,9 @@ Events are routed through `EngineEventRouter.handle()`:
 [[constants-tuning]]
 == 15. Constants & Tuning
 
-All balance constants are defined at the top of `DiplomacyManager.ts`:
+Most balance constants are defined at the top of `DiplomacyManager.ts`; the
+opinion-ledger bounds (`GOODWILL_MIN` / `GOODWILL_MAX`, `INTENSITY_MAX`,
+`REASON_HISTORY`) live in `src/game/engine/diplomacy/DiplomaticOpinion.ts:25-30`:
 
 [cols="1,1,2", options="header"]
 |===
@@ -1007,9 +1061,10 @@ All balance constants are defined at the top of `DiplomacyManager.ts`:
 |25 gold
 |Per (attack+defense) point
 
-|`BRIBE_CITY_BASE_COST`
-|100 gold
-|Per population point (reserved)
+|City incitement cost
+|`100 × max(1, population)`
+|Charged inline by `DiplomacyManager.inciteRevolt()` — there is no
+`BRIBE_CITY_BASE_COST` constant and no `bribe_city` action in the code
 
 |`AI_DIPLOMACY_INTERVAL`
 |5 turns
@@ -1035,7 +1090,7 @@ DiplomacyManager.processProposal({
   action: 'propose_alliance'
 })
          │
-         ├─► calculateWillingness() → roll < willingness?
+         ├─► evaluateProposal() → score + noise > threshold?
          │
          ├─► YES: formAlliance() → logEvent() → emitEvent('ALLIANCE_FORMED')
          │         └──► EngineEventHandlers → GameStore → notification toast
@@ -1178,7 +1233,7 @@ DiplomacyManager.processProposal({
 |`processTurn(roundNumber)`
 |`number`
 |`void`
-|Turn processing (reputation, trade, defense)
+|Turn processing (grievance decay, treaty upkeep, mutual-defence consent, war wear)
 
 |`processAIDiplomacy(civId)`
 |`number`
@@ -1196,15 +1251,15 @@ DiplomacyManager.processProposal({
 [[testing]]
 == 18. Testing
 
-Tests are in `tests/ai/DiplomacyManager.test.ts` with *53 test cases* covering:
+Tests are in `tests/ai/DiplomacyManager.test.ts` with *73 test cases* covering:
 
 [cols="1,1,2", options="header"]
 |===
 |Test group |Count |What's tested
 
 |Initialization
-|2
-|Relations created, correct pair count
+|3
+|Relations created, correct pair count, symmetric, all default to peace
 
 |Queries
 |5
@@ -1212,51 +1267,63 @@ Tests are in `tests/ai/DiplomacyManager.test.ts` with *53 test cases* covering:
 
 |declareWar
 |5
-|Status change, events, reputation, no-op, getEnemies
+|Status change, WAR_DECLARED event, surprise-attack goodwill, no-op, getEnemies
 
 |makePeace
-|1
-|Status change from war to peace
+|3
+|War → peace, no-op from peace, PEACE_MADE event
 
 |signCeasefire
-|1
-|Status change from war to ceasefire
+|2
+|War → ceasefire, refused from peace
 
 |formAlliance
-|2
-|Status change, alliance break penalty
+|4
+|Peace → alliance, refused from war, getAllies, alliance break costs more than a surprise attack
 
 |getAttitude
-|1
-|Score-to-attitude mapping
+|2
+|Valid attitude, war worsens it
 
 |processProposal
-|1
-|Proposal acceptance/rejection
+|2
+|Peace proposal resolved, tribute transfers gold when accepted
 
 |gatherIntelligence
 |1
-|Report generation
+|Report with city and military counts
 
 |bribeUnit
+|7
+|Not enough gold, missing unit, own unit, plus the three seeded outcomes (defect / reported / refused)
+
+|inciteRevolt
+|5
+|Capital immune, paid up front and flips the city, garrison foils it, refused at war, routed as infiltration
+
+|considerCallToArms
 |3
-|Success, not found, own unit
+|Allied civ asked once per war per cooldown, not re-asked, not asked of a civ that never met the enemy
 
 |processTurn
 |1
-|Reputation recovery
+|Grievance fades slowly rather than vanishing
 
 |processAIDiplomacy
-|1
-|AI decision-making
+|2
+|Skips human players, runs for AI players without error
+
+|AI war for conquest
+|3
+|Clear strength advantage declares, young peace treaty blocks it, defensive turtle never declares
 
 |reset
 |1
 |Full state reset
 
 |getEventLog
-|2
-|Event tracking, log cap at 50
+|6
+|Event tracking, log cap at 50, and four embassy-visibility cases (own dealings always visible, third-party wars hidden until both embassies exist)
 
 |Border friction
 |1
@@ -1271,8 +1338,8 @@ Tests are in `tests/ai/DiplomacyManager.test.ts` with *53 test cases* covering:
 |DIPLOMACY_EVENT emission
 
 |Treaties
-|9
-|Sign, query, trade gold, mutual defense cascade, non-aggression, cancel, no-duplicate, war clears treaties, attitude improvement
+|10
+|Sign, query, route trade instead of a stipend, mutual defense cascade, non-aggression, cancel, no-duplicate, war clears treaties, attitude improvement
 
 |Counter-proposals
 |1

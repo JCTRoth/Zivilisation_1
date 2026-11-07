@@ -214,6 +214,21 @@ re-render subscriptions are language-agnostic.
 |`combat.*`, `cityEvent.*`, `stack.*`, `village.*`
 |Combat report, city event, unit stack and goody-hut modals
 
+|`story.*`, `event.*`
+|Chronicle cards (`StoryModal`) and the engine's disaster / nuclear toasts.
+`event.*` (10 keys: eight `event.disaster.*` + `event.nuclearMeltdown` /
+`event.nuclearMeltdownAi`) is translated **at the engine call site** in
+`EngineEventHandlers.ts`, not in a component
+
+|`espionage.*`, `audience.*`
+|Espionage report beats (`EspionageReportModal`, `tEspionage` in
+`EngineEventHandlers.ts`) and the audience dialog a diplomat opens
+
+|`nomad.*`, `team.*`, `hotseat.*`
+|Nomad diplomacy toasts and the nomad hall, team-command notices
+(`team.planChanged`, `team.cmd.*`), and the hotseat "pass the device"
+handoff
+
 |`wonderDone.*`, `wonderConflict.*`, `researchReq.*`, `unitActions.*`
 |Wonder completed/conflict notices, research-required prompt, unit actions
 
@@ -250,13 +265,23 @@ wonders, governments, specialists and difficulty levels everywhere they are
 displayed, and the full *wonder prose* (effect, history, trivia and facts) of
 all 24 wonders.
 
-Deliberately still English: strings emitted by the *game engine* itself
-(runtime notifications such as AI diplomacy messages and turn events, which
-are assembled deep inside `src/game/engine/*`), data prose fields
+Most engine-emitted strings are still English: AI diplomacy messages and
+turn events assembled deep inside `src/game/engine/*`, data prose fields
 (building/technology descriptions, government descriptions) and
-proper nouns (civilization and leader names, "Civilopedia"). Translating
-engine notifications means adding keys at the engine call sites — a
-follow-up with its own key namespace (e.g. `toast.*`).
+proper nouns (civilization and leader names, "Civilopedia"). Translating the
+rest means adding keys at the engine call sites — a follow-up with its own
+key namespace (e.g. `toast.*`).
+
+Three namespaces are **already** translated at the engine call site, so they
+are the model to copy:
+
+* `event.disaster.*` and `event.nuclearMeltdown` / `event.nuclearMeltdownAi`
+  — `EngineEventHandlers.ts` (`CITY_DISASTER` and the meltdown handlers),
+  with `{{placeholder}}` parameters for city, losses and gold;
+* `nomad.*` — the nomad diplomacy toasts (`NOMAD_SIGHTED`, raid, gift,
+  knowledge sale, …);
+* `espionage.*` — the espionage report toasts through the `tEspionage`
+  helper (`stolen`, `caught`, `sabotaged`, …).
 
 To translate another string:
 

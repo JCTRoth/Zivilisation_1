@@ -1,8 +1,8 @@
 = Story Screen Art — Generation Prompts
 
 > Full-screen illustrated moments (the chronicle). Each image is shown as
-> a **full-bleed cover hero** (`GameModal artLayout="cover"`), roughly
-> 64vh tall on the story cards and 52vh inside the city dialog,
+> a **full-bleed cover hero** (`GameModal artLayout="cover"`), `min(64vh, 560px)`
+> tall (`src/styles/storyModal.css:16`),
 > pixel-scaled (`image-rendering: pixelated`) over a `#0b0f14` stage.
 >
 > **All images are optional.** A missing file degrades to the card's own

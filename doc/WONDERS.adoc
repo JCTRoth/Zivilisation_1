@@ -55,7 +55,7 @@ export interface WonderDefinition {
   obsoleteBy: string | null;   // tech id that kills the effect (null = never)
   era: 'antiquity' | 'middle' | 'industrial';  // FLAVOUR ONLY — no mechanics
   icon: string;                // emoji placeholder icon
-  image: string;               // 'assets/wonders/<id>.png' — art added later
+  image: string;               // 'assets/wonders/<id>.jpg' — 24 shipped in public/assets/wonders/
   shortEffect: string;         // one-liner (city screen, production list)
   effectText: string;          // full plain-language mechanics (completion screen)
   flavor: string;              // short historical text

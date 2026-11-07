@@ -183,6 +183,10 @@ That last point is a real, independent gap worth knowing about:
 rejects tiles within 5 of **any** city. The AI can therefore propose sites the
 engine will refuse. It did not cause this particular stall, but it wastes turns
 on any map where the civ is surrounded.
+(fixed since: the evaluator now applies the same absolute rule as
+`canPlaceCityAt` — no city of anybody's within `MIN_CITY_CENTER_DISTANCE = 5`
+— `SettlementEvaluator.ts:416-441`; the comment there records that this alone
+was 310 of the 323 idle settler turns in the pinned game.)
 
 Fix: the reset now lives in `startTurn(civilizationId)`, with the duplicate in
 `advanceTurn()` removed, so *every* civ gets a fresh turn however it is driven.
@@ -258,6 +262,8 @@ the reason is not unrest:
   near *any* city. On a map where a civ is surrounded, the AI proposes sites
   the engine will refuse, and burns a turn per refusal. The two need to share
   one predicate.
+  (fixed since: they now do — `SettlementEvaluator.ts:416-441` runs the
+  absolute spacing rule before scoring, so the two predicates agree.)
 . **Barbarian cities** are not covered by either rule's intent and are the
   main thing taking cities off the AI (3.3 per game).
 
@@ -265,10 +271,13 @@ the reason is not unrest:
 
 [source]
 ----
-tests/144 files, 1433 tests ......... all passing
+tests/247 files, 2929 tests ......... 2927 green on 2026-11-07 (nomads ×2 red)
 tests/idleUnits.test.ts ............. settler idle share 25.8 % (bar 35 %)
 tests/lateGameEconomics.test.ts ..... disorder < 0.5 after 150 turns
 ----
+
+(When this report was written the suite was 144 files / 1,433 tests, all
+passing; it has since grown to 247 files / 2,929 tests.)
 
 == Files touched
 

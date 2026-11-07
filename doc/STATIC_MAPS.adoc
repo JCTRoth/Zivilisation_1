@@ -4,6 +4,13 @@ Hand-crafted maps that ship with the game instead of being procedurally
 generated. They live in `src/data/maps/` and are the base for the in-game
 *world map* ("Earth" map type).
 
+Three maps are registered today — `earth-180x90`, `naval-archipelago-96x60`
+and `naval-aegean-96x60` — all three in the `STATIC_MAPS` registry
+(`src/data/maps/index.ts`). Which map type each one backs is recorded in
+`STATIC_MAP_FOR_MAP_TYPE`, a **module-private** table in that same file (not
+exported); outside callers use the exported `staticMapForMapType(mapType)`
+accessor instead.
+
 == Folder layout
 
 [cols="1,2", options="header"]
@@ -18,6 +25,12 @@ generated. They live in `src/data/maps/` and are the base for the in-game
 
 |`src/data/maps/earth-180x90.json`
 |Extracted Earth world map (180×90, 39.9 % land, 342 bonus resources, 30 start positions)
+
+|`src/data/maps/naval-archipelago-96x60.json`
+|Hand-tuned archipelago (`AI_VS_AI_NAVAL`, the naval-AI spectator scenario)
+
+|`src/data/maps/naval-aegean-96x60.json`
+|Hand-tuned Aegean close-up (`AEGEAN_CAMPAIGN`)
 
 |`scripts/extract-freeciv-map.mjs`
 |Extractor: Freeciv savegame → map data file

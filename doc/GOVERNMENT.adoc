@@ -45,55 +45,49 @@ Switching is not instant. `GovernmentManager.startRevolution(civId, gov)`:
    government is applied and the new rate caps re-apply.
 
 Anarchy is therefore the *cost* of a government change: roughly 3 turns with a
-frozen economy (tolerance also drops to 1, so larger cities tend to fall into
-unhappiness/disorder).
+frozen economy (and `happinessBonus` drops to 0, so larger cities are likelier
+to fall into unhappiness/disorder).
 
 == What each government does
 
 Modifiers live in `src/data/GovernmentData.ts` (`GOVERNMENTS`):
 
-[cols="1,1,1,1,1,1", options="header"]
+[cols="1,1,1,1,1", options="header"]
 |===
-|Government |Tax cap |Tolerance |Corruption |Commerce penalty |Happiness
+|Government |Tax cap |Corruption |Commerce penalty |Happiness
 
 |Despotism
 |100%
-|2
 |0.30
 |0
 |0
 
 |Monarchy
 |100%
-|3
 |0.25
 |0
 |+1
 
 |Republic
 |100%
-|4
 |0.15
 |0
 |+2
 
 |Democracy
 |*10%*
-|5
 |0.05
 |0
 |+4
 
 |Communism
 |100%
-|3
 |0.10
 |*−25%*
 |+1
 
 |Anarchy
 |0%
-|1
 |0.30
 |0
 |0
@@ -107,12 +101,12 @@ Where each modifier is applied:
 * *Commerce penalty & corruption* — `EconomicManager.cityOutputs` computes
   `effective = commerce × (1 − commercePenalty)` (Communism −25%) and then
   subtracts distance-from-capital corruption (`calculateCorruption`).
-* *Happiness & the crowding rule* — per-city happiness counts citizens beyond
-  the government's `tolerance` as unhappy and adds `happinessBonus`
-  (`EconomicManager`, the Civ1 crowding rule). A higher tolerance / happiness
-  bonus keeps cities out of disorder as they grow.
+* *Happiness* — every citizen counts as unhappy (there is *no* government
+  tolerance any more), so the government's `happinessBonus` is added flat to
+  each city's happiness (`EconomicManager.cityHappiness`). A higher bonus keeps
+  cities out of disorder as they grow.
 * *Settler upkeep* — Settlers consume *food* from their home city (1
-  food/turn, 2 in Democracy), not gold. Shield support for Settlers applies
+  food/turn, 2 in Republic or Democracy), not gold. Shield support for Settlers applies
   in Republic/Democracy only (`TurnManager.calculateCityShieldSupport`).
   Settlers have *zero gold maintenance* (`UNIT_PROPS.settler.maintenance = 0`).
 
@@ -137,34 +131,47 @@ if (!govManager.isInRevolution(civ)) {
 
 === `evaluateGovernmentForCiv` (situational)
 
-`GovernmentManager.evaluateGovernmentForCiv(civ)` scores every *tech-unlocked*
-government (plus the current one) for the civ's actual situation and returns the
-best, or `null` to keep the current government. Scoring lives in
-`scoreGovernmentForCiv(civ, govId)` and weighs:
+`GovernmentManager.evaluateGovernmentForCiv(civ)` scores the *candidate*
+governments for the civ's actual situation and returns the best, or `null` to
+keep the current government. The candidates are restricted to
+`AI_GOVERNMENT_LADDER` — `despotism → monarchy → communism`
+(`GovernmentManager.ts:197-198`); **Republic and Democracy are excluded by
+policy**, so a civ may only end up ruling one by inheritance (a captured
+empire), and it is then scored as "off-ladder" and always beaten by the first
+available rung. Scoring lives in `scoreGovernmentForCiv(civ, govId)` and weighs:
 
 * *Corruption saving* — scaled by empire size (number of cities + total
   population), so low-corruption governments matter more for a large realm.
 * *Commerce penalty* — Communism's −25% city commerce hurts in proportion to
   the economy's size and an economic personality.
-* *Happiness & tolerance* — keeps large / high-population cities content
-  (helps avoid disorder as cities grow).
+* *Happiness* — a government's `happinessBonus` keeps large / high-population
+  cities content (helps avoid disorder as cities grow).
 * *Tax need* — a militarist/economist civ, or one with a large army to
-  maintain, needs high tax income and so avoids Democracy's 10% tax cap (and a
-  commerce penalty that would cut gold).
+  maintain, needs high tax income and so avoids a low tax cap (and a
+  commerce penalty that would cut gold). Inert today: every ladder candidate
+  caps tax at 100 %, so the term evaluates to zero.
 * *Science focus* — science personalities value low corruption / no commerce
   penalty.
 * *Expansion* — Republic/Democracy make Settlers cost shields, so an
-  expansionist civ is penalised slightly for them.
+  expansionist civ is penalised slightly for them — also inert today, because
+  neither is ever a candidate.
 
-A switch happens only when the best candidate beats the current government by a
-*margin* (anarchy costs ~3 turns of output, so it won't revolt for a negligible
-gain). `bestGovernmentForCiv` (the plain tech ladder) is still available but the AI
+Two shortcuts sit in front of the score:
+
+* if `communism` is researched and not yet held, it is returned *immediately*,
+  whatever the −25 % commerce penalty says — the ladder has a named destination
+  and the AI heads for it (`GovernmentManager.ts:208-211`);
+* otherwise a switch happens only when the best candidate beats the current
+  government by `SWITCH_MARGIN = 5` (`GovernmentManager.ts:232-236`) — anarchy
+  costs ~3 turns of output, so it won't revolt for a negligible gain.
+
+`bestGovernmentForCiv` (the plain tech ladder) is still available, but the AI
 uses the situational evaluator.
 
-Net effect: *the AI adopts the government that best fits its empire and
-personality once it has researched it* — a large, happy, science empire goes to
-Republic/Democracy, while a cash-strapped militarist holds onto a high-tax
-government instead of blindly jumping to Democracy.
+Net effect: *the AI walks its fixed ladder — Despotism → Monarchy → Communism
+— and times each step by the score.* A small or poor civ can reasonably sit in
+Monarchy; a large empire makes the jump to Communism. Republic and Democracy
+are never chosen by the AI (see `HAPPINESS.adoc`, "AI: government target").
 
 == Human interaction
 
@@ -183,8 +190,9 @@ governments and their trade-offs are shown, then confirms the switch (revolution
 * `src/game/engine/GameEngine.ts` — `startRevolution(civId, gov)` and
   `setGovernment(civId, gov)` wrappers.
 * `src/game/engine/EconomicManager.ts` — `setGovernment`, rate caps / anarchy
-  zero-rates, commerce penalty + corruption, per-city happiness (crowding rule).
+  zero-rates, commerce penalty + corruption, per-city happiness (every citizen
+  unhappy + government `happinessBonus`).
 * `src/game/engine/TurnManager.ts` — advances the revolution countdown each turn;
   settler shield support per government.
-* `src/game/engine/AIManager.ts` — Phase 2b (when the AI revolts).
+* `src/game/engine/AI/AIManager.ts` — Phase 2b (when the AI revolts).
 * `src/components/ui/gamemodals/GovernmentModal.tsx` — the human government UI.

@@ -1,7 +1,7 @@
 = Balance & Behaviour Analysis — Economy, AI and Map Generation
 
 Analysis of the Civ1 clone's economic model and computer-player behaviour, based
-on the code and on eight unattended 400-round games run headlessly.
+on the code and on six unattended 400-round games run headlessly.
 
 == Method
 
@@ -36,19 +36,25 @@ the code, the summary below is what the engine really does.
 === One city, one turn
 
 Tile yields (terrain + resource + improvement) → worked-tile assignment →
-`trade` is the only currency: `commerce = max(trade, 2)`. Commerce is then:
+`trade` is the only currency: `commerce = max(trade, CITY_CENTER_COMMERCE = 4)`.
+Commerce is then:
 
-* reduced by corruption — `0.3` **hard-coded base**, scaled to `2.0` by
-  Euclidean distance from the capital, halved by a Courthouse
-  (`CityUtils.calculateCorruption`)
+* reduced by corruption — base = the government's own `corruptionRate`
+  (0.05 democracy … 0.3 despotism), scaled by Euclidean distance from the
+  capital (multiplier capped at `1.5`) and multiplied by each building's
+  declared `corruptionReduction` (Courthouse ×0.8, marketplace/bank/palace
+  ×0.5) — `CityUtils.calculateCorruption`, `src/data/CorruptionConstants.ts`
 * reduced by a government's `commercePenalty` (only Communism, −25 %)
 * split by the tax/science/luxury rates into gold / beakers / happiness,
-  `tax × TRADE_GOLD_MULTIPLIER (2)`
+  `tax × TRADE_GOLD_MULTIPLIER (3)`
 
-Growth threshold is `(population + 1) × 10`; citizens eat 2 food; settlers eat 1
-(2 under Republic/Democracy) and cost 1 shield under those governments. A
-Granary keeps half the food box. There is **no** free unit support: every unit
-pays its per-type maintenance (1–6 gold), buildings 1–4 (wonders 0).
+Growth threshold is `(population + 1) × 10`; citizens eat 2 food each up to
+population 5 and `0.2` more per citizen above that (`citizenFoodDemand`);
+settlers eat 1 (2 under Republic/Democracy) and cost 1 shield under those
+governments. A Granary keeps half the food box. There is **no** free unit
+support: every unit pays its per-type maintenance (0–6 gold), buildings 1–4
+(wonders 0), and the empire pays `(cities − FREE_CITY_SUPPORT = 3) × 1` gold of
+city upkeep (`EconomicManager.totalUpkeep`).
 
 === What the model gets right
 
@@ -71,11 +77,19 @@ pays its per-type maintenance (1–6 gold), buildings 1–4 (wonders 0).
   every 5 rounds. The AI is running a permanent deficit and paying for it by
   dissolving its army — including, presumably, the garrisons that would stop the
   barbarians.
+  (fixed since: the forgiveness no longer creates money out of nothing —
+  `forgiveDeficit` books the shortfall as debt and repays it at 1 g/turn, and
+  emits an `ECONOMY_FORGIVEN` event; `EconomicManager.ts:1984-2003`. The
+  per-civ counters this document asks for in R6 are still missing.)
 * **The government's corruption number is dead data.** `GOVERNMENTS[].corruptionRate`
   (0.05 democracy … 0.3 despotism) is never read; corruption is a flat 0.3 ×
   distance. `corruptionReduction` on marketplace, bank, palace and stock
   exchange is equally inert. Late-game government choice therefore changes only
   the tax cap and happiness bonus.
+  (fixed since: recommendation R2 — the government's own rate is the base
+  (`CityUtils.ts:52-53`), the distance multiplier is capped at 1.5
+  (`src/data/CorruptionConstants.ts:22`), and every declared
+  `corruptionReduction` multiplies the rate (`CityUtils.ts:63-76`).)
 
 == What the AI actually does
 
@@ -121,7 +135,7 @@ replaced, forever:
 |Cap |Produced across 28 civ-games
 
 |scouts — `AI_ABSOLUTE_MAX_SCOUTS = 3` |**250** (106 in one game, 76 in another)
-|settlers — target 3–5 per profile |**184**
+|settlers — target 3–5 per profile |**184** (the per-profile clamp is `EXPANSION_PARAMS`, `AutoProduction.ts:159-177`: min 1–2, max 3–4 today)
 |===
 
 Each replacement costs food, shields and upkeep, and they die on the way: one
@@ -151,7 +165,7 @@ and the "attack" is mostly intent.
 === F6. A game with no humans has no ending
 
 `VictoryManager.evaluateEndOfTurn` is called from exactly one place:
-`TurnManager.advanceTurn` (TurnManager.ts:687). The headless harness never
+`TurnManager.advanceTurn` (TurnManager.ts:699). The headless harness never
 calls it, which is why every game above reports `over: false` — but it also
 means an AI-vs-AI game that loses *all* its civs (2 of 4 standard games)
 declares no winner at all, and in a no-human game the only possible conclusion
@@ -159,7 +173,8 @@ is the barbarians winning.
 
 === F7. Happiness buildings are capped for the AI only
 
-`HAPPINESS_BUILDINGS_PER_CITY = 4` is enforced in `AIBuildingStrategy`; the
+`HAPPINESS_BUILDINGS_PER_CITY = 4` is enforced in `AI/BuildingCoordinator.ts`
+(constant at :149, refusal at :364-373); the
 engine's `buildingHappiness` has no cap, so the human can stack temples. Same
 rules must apply to both seats.
 
@@ -195,6 +210,12 @@ exchange. Late-game governments then mean something beyond the tax cap, and
 Republic/Democracy/Communism become playable instead of cosmetic. This also
 gives the AI a real reason to research Code of Laws and to build Courthouses.
 
+(fixed since: implemented — `CityUtils.calculateCorruption` reads
+`gov.corruptionRate` as the base, caps the distance multiplier at 1.5
+(`CorruptionConstants.ts:22`) and compounds every building's declared
+`corruptionReduction`; `GovernmentManager.scoreGovernmentForCiv` weighs the same
+number today (`GovernmentManager.ts:141,162`).)
+
 === R3. Stop the treadmill (fixes F2)
 
 Count units **produced** in a rolling window (e.g. 25 rounds) against the
@@ -207,6 +228,11 @@ start buying walls.
 Improvement orders must target tiles inside some own city's radius +2, and the
 settler governor must score work by the food/production it actually feeds. A
 settler that cannot improve a nearby tile should join a city or explore instead.
+
+(fixed since: implemented — `AIManager.pickWorksTileForCity` bounds **both**
+axes to `CITY_RADIUS` around the city it serves (`AIManager.ts:7353`), the
+margin ring is offered for irrigation only, and `citiesNeedBuildOut` scopes the
+works programme to own cities' areas.)
 
 === R5. Parity and endings (fixes F6, F7)
 
@@ -223,6 +249,13 @@ Keep the 8-gold forgiveness, but count it: emit an `ECONOMY_FORGIVEN` event and
 track `disbanded`, `floorForgiven` and `negativeGoldTurns` per civ in the
 progression export. Today the CSV cannot distinguish a healthy civ from one
 that is being liquidated.
+
+(partly fixed since: the event is emitted with the gold restored, the debt
+booked and the running debt (`EconomicManager.ts:1996`), and the forgiven
+amount is a loan repaid 1 g/turn (`DEBT_REPAYMENT_PER_TURN`,
+`EconomicManager.ts:2012-2019`) rather than free money. The progression export
+still has no `disbanded`, `floorForgiven` or `negativeGoldTurns` field — that
+part of this recommendation is open.)
 
 == Recommendations — map generator
 
@@ -281,6 +314,14 @@ extend that to a hard veto on *other* wars while barbarians hold cities.
 first — the machinery `runBuildingAnalysis` already has — and only then
 disband, and never below one defender per city with a barbarian city nearby.
 
+(fixed since: implemented in the engine's own turn — after the rate
+reconciliation, a still-negative treasury sells the cheapest upkeep building of
+each city (`sellBuilding` with `force`) before the disband protocol runs, and
+the emergency disband is capped at `EMERGENCY_DISBAND_CAP_PER_TURN = 3`:
+`EconomicManager.ts:2135-2185`. The "one defender per city near a barbarian
+city" clause is covered only by the disbander's general sole-defender
+protection.)
+
 === A5. Freeze dead civs (fixes wasted turns)
 
 A civ with no cities and no units should be skipped entirely (no AI turn, no
@@ -323,7 +364,11 @@ node scripts/run-ai-batch.mjs 2 400 6 /tmp/batch-6civ.json
 AI_BATCH_MAP_TYPE=AI_VS_AI_NAVAL node scripts/run-ai-batch.mjs 2 400 4 /tmp/batch-naval.json
 ----
 
-`scripts/run-naval-session.mjs` is currently broken: it writes its generated spec
-to `tests/ai/tmpNavalSession.test.ts`, which `vitest.config.js` excludes with
-`**/tmp*.test.ts`, so the run silently does nothing. Use the batch runner with
-`AI_BATCH_MAP_TYPE` instead, or rename the generated file.
+`scripts/run-naval-session.mjs` was broken when this document was written: it
+wrote its generated spec to `tests/ai/tmpNavalSession.test.ts`, which
+`vitest.config.js` excludes with `**/tmp*.test.ts`, so the run silently did
+nothing. (fixed since: the runner now invokes vitest with
+`--config vitest.diag.config.ts`, which does not apply that exclusion —
+`scripts/run-naval-session.mjs:121`; see `doc/NAVAL_AI_OVERHAUL.adoc:16-21`.)
+The batch runner with `AI_BATCH_MAP_TYPE` remains the alternative for
+headless batches.

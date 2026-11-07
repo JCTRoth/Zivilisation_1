@@ -6,9 +6,14 @@ path (`GameEngine.moveUnit` → `resolveCityCombat`).
 
 == Mechanics (`GameEngine.resolveCityCombat`)
 
-* *Attacker strength* = `attack × (health / 100)` (civilians with attack 0 have
-  zero strength — they cannot take a city).
-* *City defense* = population, *tripled* by `city_walls` — but air units
+* *Attacker strength* = `attack × (health / 100) × rankMultiplier`
+  (`CombatSystem.attackerStrength`, `CombatSystem.ts:150-152`; rank runs from
+  Rookie ×1 to Battle-Hardened ×1.5) — civilians with attack 0 have
+  zero strength, so they cannot take a city.
+* *City defense* = `max(1, population)` × *1.5* when `city_walls` stands
+  (`defense: 2` in `BuildingConstants.ts:126` → `1 + 2 × 0.25` in
+  `BuildingEffects.ts:147-148`, applied in `CombatSystem.resolveCityRound`,
+  `CombatSystem.ts:253-270`) — but air units
   (fighters/bombers) and siege artillery (cannon/artillery, the Howitzer
   stand-ins) *ignore the walls entirely*.
 * Win roll: `Math.random() * (attack + defense) < attack`.
@@ -42,8 +47,14 @@ path (`GameEngine.moveUnit` → `resolveCityCombat`).
 * *Instant capture after clearing the garrison* — in `combatUnit`, when the
   last defender on an enemy city tile falls, the city is captured immediately
   (a garrisoned city can no longer be left permanently untouchable).
-* Civilian unit types (`settler`, `worker`, `caravan`, `diplomat`, `scout`) are
-  blocked from attacking cities (`civilian_cannot_attack_city`).
+* Civilian block (`civilian_cannot_attack_city`, `GameEngine.ts:5031-5054`):
+  `settler`, `worker` and `diplomat` cannot attack or capture a city — but
+  `caravan` sits in the same set *and is excluded from the test*
+  (`&& unit.type !== 'caravan'`, so it is never turned away by this rule), and
+  `scout` is not blocked at all: it may *rush* an undefended city with a 30 %
+  chance. `worker` never actually matches anything — there is no `worker` unit
+  type in `UNIT_TYPES` (`src/data/UnitConstants.ts:25-71`), so in practice only
+  settlers and diplomats are turned away.
 * Attacking a city auto-declares war if the two civs are not already at war.
 
 == AI behaviour
@@ -57,13 +68,29 @@ and `moveUnit` handles the capture), but two gaps made it dormant in real games:
    Fix: `AITypes.getCivPersonality(profile)` maps each production profile to a
    deterministic personality; `GameEngine.createCivilizations` now assigns it
    (e.g. `military_expansion` → aggression 8, `defensive_turtle` → aggression 2).
-. *War-for-conquest declaration* — `processAIDiplomacy` now lets
-   military-leaning civs attack a weaker neighbour without needing
-   aggression ≥ 7 + hostile attitude:
-   `military_expansion`: declares war at ≥ 1.6× military strength
-   `balanced_growth`: declares war at ≥ 2.0×
-   other profiles stay peaceful until provoked (classic aggression ≥ 7 + hostile
-   path is retained).
+. *War-for-conquest declaration* — the old profile thresholds
+   (`military_expansion ≥ 1.6×`, `balanced_growth ≥ 2.0×`) are gone.
+   `DiplomacyManager.processAIDiplomacy` now scores a `declare_war` candidate in
+   `AIDiplomacyPolicy` (`src/game/engine/diplomacy/AIDiplomacyPolicy.ts:478-500`),
+   which needs *both*:
+
+   * the `mayDeclareWar(ctx)` gate (`AIDiplomacyPolicy.ts:201-219`): war
+     capacity (`activeWars < maxWars`), no independent second front for a team
+     already at war, war exhaustion below 18, and at least 8 rounds of peace
+     since the last one;
+   * a target worth taking:
+     `targetWorth = max(0, strengthRatio − warTargetMargin(year)) × 25`, where
+     the margin *closes as the calendar runs out* — 1.6 before year 0, 1.4
+     from year 0, 1.25 from year 1000, 1.1 from year 1500
+     (`AIDiplomacyPolicy.ts:174-180`).
+
+   The score is then multiplied by war appetite × temperament (a
+   `defensive_turtle` temperament can reach zero, so it never opens a war of
+   conquest at all) minus war fatigue, grievances and fear, plus
+   `lateGameWarPush` (`AIDiplomacyPolicy.ts:187-195`). The chosen candidate is
+   executed by the `declare_war` case in `DiplomacyManager.processAIDiplomacy`
+   (`DiplomacyManager.ts:2613-2635`), which calls the allies in first and then
+   declares.
 
 Once at war, the AI captures cities via the existing pipeline: scout-discovered
 enemy cities feed `enemyLocations` → `updateOffensivePlan` assigns combat units →
@@ -129,7 +156,7 @@ out:
 == Tests
 
 * `tests/cityCapture.test.ts` — capture, raze, capital re-establishment,
-  civilian block, weak-attacker loss, walls tripling defense, air units ignoring
+  civilian block, weak-attacker loss, walls ×1.5 defense, air units ignoring
   walls, building destruction on capture, gold plundering, garrison destruction,
   production reset + unrest flag, instant capture after clearing the garrison,
   failed-attack population loss vs wall protection, wall obsolescence, and the

@@ -553,7 +553,13 @@ export class NomadManager {
     this.lastRound = round;
     if (this.gameEngine.isGameOver) return;
     const humanId = this.humanCivId();
-    if (humanId === null) return;
+    const allAi = humanId === null
+      && Array.isArray(this.gameEngine.gameSettings?.humanPlayerIds)
+      && this.gameEngine.gameSettings!.humanPlayerIds!.length === 0;
+    // Single-human games: run with the human. All-AI spectator games: run
+    // without a human (nomads travel between AI courts, no parleys). Hotseat
+    // and other multi-human setups remain unsupported.
+    if (humanId === null && !allAi) return;
 
     // The tribe's economy (their own AI-player turn): runs whenever the
     // tribe is in the game — routes and bought cities outlive the camp,
@@ -574,12 +580,15 @@ export class NomadManager {
       this.goAngry();
     }
 
-    // The first visit — always to the human: the story opens at your gate.
+    // The first visit — the story opens at a court. In single-human games
+    // that's the human; in all-AI spectator games, pick any alive AI court.
     if (this.visitCount === 0) {
-      const hasCity = (this.gameEngine.cities ?? []).some((c) => c.civilizationId === humanId);
+      const firstTarget = humanId ?? this.firstAiCourtId();
+      if (firstTarget === null) return;
+      const hasCity = (this.gameEngine.cities ?? []).some((c) => c.civilizationId === firstTarget);
       const due = (round >= NOMAD_TRIGGER_ROUND && hasCity)
         || round >= NOMAD_TRIGGER_FALLBACK_ROUND;
-      if (due) this.spawnVisit(round, humanId);
+      if (due) this.spawnVisit(round, firstTarget);
       return;
     }
 
@@ -595,7 +604,7 @@ export class NomadManager {
     // Angry camps prey on the player, then leave for good.
     if (this.standing === 'angry') {
       if (!this.campAlive()) return; // wiped out — nothing left to raid with
-      this.raidRound(humanId, round);
+      if (humanId !== null) this.raidRound(humanId, round);
       if (round >= this.angrySince + NOMAD_RAID_ROUNDS) {
         for (const camp of [...this.camps]) this.departCamp(camp, round);
       }
@@ -612,10 +621,10 @@ export class NomadManager {
    * One camp's turn at its court. The visit is per camp, so whichever group
    * you are standing with is the one whose envoy speaks to you.
    */
-  private runVisit(camp: NomadCamp, round: number, humanId: number): void {
+  private runVisit(camp: NomadCamp, round: number, humanId: number | null): void {
     if (!this.camps.includes(camp) || camp.unitIds.length === 0) return;
     const target = camp.targetCivId;
-    const humanVisit = target === humanId;
+    const humanVisit = humanId !== null && target === humanId;
 
     // THE VISIT: their units walk INTO the court — the envoy only ever
     // speaks when a nomad unit stands ON the host's city (or beside one
@@ -777,7 +786,7 @@ export class NomadManager {
    * purse, the 100-gold bazaar, the six-route ceiling and the 450-gold
    * market gate — is how the mechanics balance against each other.
    */
-  private economyPhase(round: number, humanId: number): void {
+  private economyPhase(round: number, humanId: number | null): void {
     // The brain reviews first: the stance it announces is the stance this
     // round's plan executes (a stance change is announced once, on change).
     const situation = this.situationOf(round);
@@ -789,13 +798,13 @@ export class NomadManager {
 
     this.collectRouteIncome();
     this.collectCityTribute();
-    this.tryBribe(humanId, round, plan);
+    if (humanId !== null) this.tryBribe(humanId, round, plan);
     this.tryBuildCaravan(round, plan);
     this.tryMuster(round, plan);
     this.moveCaravans();
     this.trySellKnowledge(round, plan);
-    this.tryOfferCity(humanId, round, plan);
-    this.tryAskForMoney(humanId, round, plan);
+    if (humanId !== null) this.tryOfferCity(humanId, round, plan);
+    if (humanId !== null) this.tryAskForMoney(humanId, round, plan);
     this.settlementPhase(round);
   }
 
@@ -1859,6 +1868,17 @@ export class NomadManager {
     return this.gameEngine.civilizations?.[id]?.isHuman === true ? id : null;
   }
 
+  /** First alive AI civilization with a city — used as a starting court in all-AI games. */
+  private firstAiCourtId(): number | null {
+    const civs = this.gameEngine.civilizations ?? [];
+    const cities = this.gameEngine.cities ?? [];
+    for (const civ of civs) {
+      if (!civ || civ.id < 0 || civ.isHuman === true || civ.isAlive === false) continue;
+      if (cities.some((c) => c.civilizationId === civ.id)) return civ.id;
+    }
+    return null;
+  }
+
   private unitById(id: string) {
     return (this.gameEngine.units ?? []).find((u) => u.id === id && !u.isDefeated);
   }
@@ -2094,23 +2114,31 @@ export class NomadManager {
 
     // Only a visit to YOUR court counts as a visit with you — the tribe
     // camps at the rivals too, and their meetings are their own business.
-    if (camp.targetCivId === this.humanCivId()) {
+    // In all-AI spectator games there is no "your court", but the tribe is
+    // still spawned and must not re-spawn every round.
+    const humanId = this.humanCivId();
+    const allAi = humanId === null
+      && Array.isArray(this.gameEngine.gameSettings?.humanPlayerIds)
+      && this.gameEngine.gameSettings!.humanPlayerIds!.length === 0;
+    if (camp.targetCivId === humanId || (allAi && this.visitCount === 0)) {
       this.visitCount += 1;
       this.departed = false;
-      // NO FOG REVEAL — and that is the fix. The camp stands 9–13 tiles
-      // out, far beyond your sight, so lighting it up marked ~50 tiles you
-      // had never walked as EXPLORED the moment the wagons appeared: gray
-      // fog on ground nobody had visited. Fog is earned by walking it —
-      // the maps door and the hall's "find" are the deliberate, announced
-      // exceptions — and you meet this horde the honest way: their riders
-      // walk ONTO your city, inside your vision, and only then does the
-      // envoy speak. The story still says so.
-      this.gameEngine.onStateChange?.('NOMAD_SIGHTED', {
-        col: camp.col,
-        row: camp.row,
-        clan: this.clan?.id,
-        visit: this.visitCount,
-      });
+      if (camp.targetCivId === humanId) {
+        // NO FOG REVEAL — and that is the fix. The camp stands 9–13 tiles
+        // out, far beyond your sight, so lighting it up marked ~50 tiles you
+        // had never walked as EXPLORED the moment the wagons appeared: gray
+        // fog on ground nobody had visited. Fog is earned by walking it —
+        // the maps door and the hall's "find" are the deliberate, announced
+        // exceptions — and you meet this horde the honest way: their riders
+        // walk ONTO your city, inside your vision, and only then does the
+        // envoy speak. The story still says so.
+        this.gameEngine.onStateChange?.('NOMAD_SIGHTED', {
+          col: camp.col,
+          row: camp.row,
+          clan: this.clan?.id,
+          visit: this.visitCount,
+        });
+      }
     }
     return true;
   }

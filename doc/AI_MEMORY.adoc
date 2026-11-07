@@ -29,10 +29,16 @@ touchpoint.
   wired into `CaravanGovernor` + `AIManager`; see §First implementation)
 * ✔ implemented — `NavalPatrolMemory` (`src/game/engine/AI/NavalPatrolMemory.ts`,
   wired into `AIManager`; see §Second implementation)
-* ☐ pending — the entries in §Candidate list.
+* ◐ built, not wired — `ProductionROIMemory`
+  (`src/game/engine/AI/ProductionROIMemory.ts`, 471 lines, tested by
+  `tests/ai/productionRoiMemory.test.ts`; **no engine code imports it yet**, so
+  it does not affect gameplay)
+* ☐ pending — the remaining entries in §Candidate list.
 
-Every implemented module is *consumed*, not merely present: each one is read on
+Every ✔ module is *consumed*, not merely present: each one is read on
 a live code path and covered by a test that fails if the wiring is removed.
+The ◐ `ProductionROIMemory` is the exception — built and tested bottom-up,
+awaiting its integration into the production decision.
 
 == Candidate list (high to low priority)
 
@@ -76,7 +82,7 @@ forward-settling strategy. Distinct from tile-improvement memory.
 
 Integration: `AIStrategyBranches` (`parallelColonies`), `InfrastructurePlanner`.
 
-=== 5. Production ROI memory
+=== 5. Production ROI memory  (BUILT — not yet wired)
 Remember which buildings/units actually paid for themselves in gold, science,
 food and production (vs. projections), so future production choices weigh
 outcomes instead of forecasts. Improves `AIEconomicManager` and
@@ -136,7 +142,10 @@ Integration: `GameEngine` `validateAndCleanState`, serializer, `Storage`.
 
 1. ✔ Build `CaravanMemory` (item 1) — the canonical next governor memory.
 2. ✔ Build `NavalPatrolMemory` (item 3) — small, contained, naval-focused.
-3. ☐ Build `ProductionROIMemory` (item 5) — feeds economic decisions.
+3. ✔ Build `ProductionROIMemory` (item 5) — built and tested (471 lines,
+   `tests/ai/productionRoiMemory.test.ts`); **wiring into
+   `AIEconomicManager` / `AIBuildingStrategy` is still pending** — until then
+   nothing in the engine imports it.
 4. ☐ Build `ResearchEffectivenessMemory` (item 6).
 5. ☐ Build `CombatTacticsMemory` (item 2) — largest; needs enemy data input.
 6. ☐ Wire AI-observation + barbarian (items 7, 8).
@@ -182,8 +191,8 @@ wired into the build decision yet — the disband ladder already paces the fleet
 and two throttles on one decision is worse than one.
 
 Tests: `tests/ai/caravanMemory.test.ts` (9, storage contract) and
-`tests/caravanGovernor.test.ts` (5, wiring — tie-breaks, blacklist skip, TTL
-expiry, and the no-home-city fallback).
+`tests/caravanGovernor.test.ts` (73 — governor behaviour, including the wiring
+tests: tie-breaks, blacklist skip, TTL expiry, and the no-home-city fallback).
 
 == Second implementation: NavalPatrolMemory (item 3)
 
@@ -239,7 +248,12 @@ distinct patrol picks).
 
 * 2026-10-16 — document created; item 1 (CaravanMemory) started.
 * 2026-10-16 — item 1 finished and wired: `pickDeliveryTarget` consumes
-  `rankPartners`, and five governor-level tests cover the wiring.
+  `rankPartners`, and the governor-level tests in `tests/caravanGovernor.test.ts`
+  (73 today) cover the wiring.
 * 2026-10-17 — item 3 (NavalPatrolMemory) built bottom-up and wired;
   `Unit._navalIntent` retired in favour of it.
-* Next: item 5 (Production ROI memory), then item 6 (research effectiveness).
+* item 5 (ProductionROIMemory) built bottom-up and tested (471 lines,
+  `tests/ai/productionRoiMemory.test.ts`); **not yet imported by any engine
+  code** — status "built, not wired".
+* Next: wire item 5 into the production decision, then item 6 (research
+  effectiveness).

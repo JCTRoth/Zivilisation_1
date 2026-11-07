@@ -8,7 +8,7 @@
 Zivilisation_1 is not a perfect clone, but it is not trying to be one. +
 It is a spiritual successor that takes the core concepts of Civilisation and reimagines them for a modern audience. +
 For players seeking a nostalgic Civilization-like experience in the browser, it delivers! +
-For purists seeking a 1:1 recreation of the 1991 original, it falls short in several areas but therefor it introduces more stratgic depth, more strategie and a non-cheating AI. +
+For purists seeking a 1:1 recreation of the 1991 original, it falls short in several areas but therefore it introduces more strategic depth, more strategy and a non-cheating AI. +
 The implementation is technically impressive (TypeScript, React, Vite, comprehensive tests, data-driven design) and functionally complete (the game is winnable and playable). +
 The developers should be commended for creating a sophisticated strategy game that honors its inspiration while making sensible modernizations. +
 
@@ -37,24 +37,32 @@ Gameplay::
 * 14 civilizations with leaders, portraits and city-name lists
 * City founding, joining, capture, destruction, razing, governors, specialists
 * Growth, starvation, granaries, disorder, martial law
-* 33 units across land, sea, air and civilian, with stacking, GoTo, sleep/fortify/skip/wait
+* 36 units across land, sea, air and civilian, with stacking, GoTo, sleep/fortify/skip/wait
 * 54 technologies (8 available at the start) with map-size and difficulty cost scaling
-* Six governments plus Anarchy, revolutions, capital relocation
-* Diplomacy: war, peace, ceasefires, alliances, five treaty types, bribes, tech exchange
+* Six governments (Despotism through Democracy, plus Anarchy), revolutions,
+  capital relocation
+* Diplomacy: war, peace, ceasefires, alliances, six treaty types, bribes, tech exchange
 * Fixed alliances — optional permanent teams with locked diplomacy, team-wide
   war/peace, team victory and human spectating
+* Nomads — three historical factions (Bedouin, Mongol, Sámi) that travel from
+  court to court and parley with whoever they meet
+* The Chronicle — full-screen illustrated story cards for the game's big moments
+* Seven city disasters with prevention rules
 * Trade routes, ferries with cargo, Fisher Boats and fishing nets
 * Barbarians, goody huts, tile improvements, pollution
 * Fog of war with per-player visibility and cross-turn scout memory
+* Hot-seat play — several humans at one machine, with a handoff screen
 * Two victory conditions: Moonshot and elimination
 * 24 world wonders with a data-driven effect model
 
 Systems::
-* Save/load — versioned JSON (v5) with v1–v5 migration
+* Save/load — versioned JSON (v5) with v1–v5 migration, file download/upload
+  and an autosave every turn
 * Full AI: 6 production profiles, strategy selection, research, government,
   diplomacy, army groups, naval doctrine, city governor, auto-production
 * Headless batch runners and a progression export (JSON + compact CSV)
-* 13 map types, including 3 static maps and 4 unattended AI-vs-AI scenarios
+* 13 map types, including 3 static maps and 3 unattended AI-vs-AI scenarios
+* Localized UI in 6 languages (EN/DE/FR/RU/ES/JA), type-checked keys
 * Animated movement, combat, camera glides, death
 * Minimap, tech tree, statistics, demographics, settings, game menu
 * URL parameters for reproducible, unattended runs
@@ -80,13 +88,13 @@ colour, portrait and city-name list.
 
 [cols="1,1"]
 |===
-|Code |~70,000 lines TypeScript/TSX across ~150 files
-|Engine |`GameEngine.ts` (~7,200 lines) + 51 engine files, ~34,800 lines
-|AI |17 files, ~14,500 lines (`AIManager.ts` alone is ~7,500)
-|Rendering |6 files, ~4,700 lines (two-layer canvas)
-|Tests |153 Vitest suites, 1,537 cases, node environment (no DOM)
-|Browser tests |4 Playwright specs + setup
-|Balance data |13 tables in `src/data/` — every number in one place
+|Code |~125,000 lines TypeScript/TSX across ~200 files
+|Engine |`GameEngine.ts` (9,504 lines) + 74 engine files, ~61,600 lines
+|AI |31 files, ~25,600 lines (`AIManager.ts` alone is 11,403)
+|Rendering |6 files, ~4,900 lines (two-layer canvas)
+|Tests |247 Vitest suites, 2,929 cases, node environment (no DOM)
+|Browser tests |6 Playwright specs
+|Balance data |20 modules in `src/data/` — every number in one place
 |===
 
 == Architecture
@@ -103,15 +111,16 @@ src/
 │   └── maps/            # Static Freeciv-derived maps + registry
 ├── game/
 │   ├── engine/          # GameEngine + turn/economy/combat/diplomacy/AI
-│   │   ├── AI/          # ~14,500 lines over 17 files
+│   │   ├── AI/          # ~25,600 lines over 31 files
 │   │   ├── diplomacy/   # Opinion ledger, proposal scoring
 │   │   ├── nomad/       # The nomads: contact visit, parley, strategy, economy (README inside)
 │   │   └── MapGenerator/# Procedural world generation
 │   └── rendering/       # Canvas layers, minimap, textures, animation
 ├── hooks/               # useGameEngine: engine ↔ React wiring
+├── i18n/                # 6 languages, type-checked keys, language switcher
 ├── stores/              # GameStore.ts — one Zustand store
 ├── utils/               # session (command layer), event handlers, export, log
-└── styles/              # 19 CSS files
+└── styles/              # 31 CSS files
 types/                   # game.ts, progression.ts, commands.ts — shared types
 tests/  e2e/  scripts/   # Vitest (node env), Playwright, headless runners
 doc/                     # Subsystem documentation — index below
@@ -128,24 +137,24 @@ not add rules there.
 |===
 |File |Responsibility
 
-|`GameEngine.ts` (~7,200 lines)
+|`GameEngine.ts` (9,504 lines)
 |World state and the public API: grid, units, cities, civilizations, techs,
 per-player storage, ID counter. Emits every change through one
 `onStateChange(eventType, data)` channel. Also hosts `submit()` — the command
 layer's entry point.
 
-|`TurnManager.ts` (~1,600)
+|`TurnManager.ts` (1,740)
 |The phased turn engine: `START → UNIT_MOVEMENT → CITY_PRODUCTION → RESEARCH →
 END`, round boundary, unit reset, the economic pipeline and AI turns.
 
-|`engine/AI/` (~14,500)
-|The computer player. `AIManager.ts` (~7,500) is the turn orchestrator. See
+|`engine/AI/` (25,600)
+|The computer player. `AIManager.ts` (11,403) is the turn orchestrator. See
 link:doc/AI_OVERVIEW.adoc[AI Overview].
 
 |`CombatSystem.ts`
 |The single place a battle is resolved. See <<combat, combat>> below.
 
-|`EconomicManager.ts` (~1,600)
+|`EconomicManager.ts` (2,330)
 |Yields, corruption, rates, food, growth, happiness, upkeep, bankruptcy.
 
 |`ProductionManager.ts` / `AutoProduction.ts`
@@ -158,11 +167,11 @@ player share.
 |`MapGenerator/`
 |Continents → temperature → climate → age → rivers → polar caps → resources.
 
-|`rendering/` (~4,700)
+|`rendering/` (4,900)
 |A cached static terrain layer, a dynamic unit/city layer, an offscreen minimap,
 composable tile textures.
 
-|`stores/GameStore.ts` (~1,200)
+|`stores/GameStore.ts` (1,680)
 |One Zustand store: a *mirror* of engine state for React, plus all UI state.
 |===
 
@@ -174,7 +183,7 @@ composable tile textures.
   → React. The store is a projection; the engine is the source of truth.
 
 Zustand is the only state container in the project — there is no React Context.
-There are 94 selector subscriptions and 43 imperative `getState()/setState()`
+There are 130 selector subscriptions and 62 imperative `getState()/setState()`
 reads from engine, renderers and utilities.
 
 === Data architecture
@@ -189,7 +198,7 @@ All balance numbers live in `src/data/` and nowhere else:
 |13 terrains — yields, defence, movement, resources, spawn weights
 
 |`UnitConstants.ts`
-|33 unit types — attack/defense/move/cost/sight, tech requirements, cargo
+|36 unit types — attack/defense/move/cost/sight, tech requirements, cargo
 
 |`BuildingConstants.ts`
 |23 buildings (wonders are *derived*, see below)
@@ -205,7 +214,7 @@ here, not there.
 empty-prerequisite rule — 8 in total)
 
 |`GovernmentData.ts`
-|6 governments + Anarchy: tax cap, corruption, commerce penalty, happiness bonus
+|6 governments (incl. Anarchy): tax cap, corruption, commerce penalty, happiness bonus
 
 |`TileImprovementConstants.ts`
 |Irrigation/road/railroad/mine/fortress — yields, worker-turns per terrain
@@ -215,6 +224,10 @@ empty-prerequisite rule — 8 in total)
 
 |`GameConstants.ts`
 |Global constants, auto-scenario map types, specialist yields, colours
+
+|`NomadConstants.ts` / `TeamConstants.ts` / `StoryEvents.ts` / `CorruptionConstants.ts`
+|Nomad pacing and prices, fixed-alliance tuning, chronicle moments, the
+distance-corruption model
 |===
 
 link:doc/GAME_RULES.adoc[Game Rules Reference] transcribes all of it with the
@@ -227,8 +240,9 @@ formulas. If this README and that document disagree, the rules reference wins.
 Exactly two, checked at the end of every turn:
 
 * **Moonshot** — research `moonshot` (Space Flight → Moonshot) and you win
-  immediately. Detection scans human seats only, so an AI cannot end the game
-  this way; it wins by elimination.
+  immediately. The tech only appears once a space-station wonder (ISS, Tiangong
+  or Mir) is built. Detection scans human seats only, so an AI cannot end the
+  game this way; it wins by elimination.
 * **Elimination** — be the last civilization still *operational*: owning at
   least one unit or one city. A single surviving enemy unit keeps the game alive.
 
@@ -243,8 +257,8 @@ export CSV. It never ends a game.
 * Only the loser takes damage: 25 HP, or death if the round was decisive
 * Terrain defence: forest/river/lake/jungle/swamp ×1.5, hills ×2, mountains ×3
 * Fortified or in a friendly city ×1.5; a Fortress ×2 on top
-* **City walls ×1.5** on `max(1, population)` — and they apply to everyone,
-  because no caller passes `ignoresWalls`
+* **City walls ×1.5** on `max(1, population)` — catapults, cannons, artillery
+  and air units ignore them (`CombatSystem.ignoresCityWalls`)
 * Garrison units die one per round; the city falls once the garrison is empty
 * A captured city loses population, its walls and one building per citizen lost,
   pays 20 % plunder (capped at 100) and stays restless for 5 turns
@@ -261,12 +275,14 @@ see `src/game/engine/UnitRankSystem.ts`.
 === Economy and growth
 
 * Growth threshold `(population + 1) × 10`; a Granary keeps **half** the food box
-* Citizens eat 2 food, settlers 1 (2 under Republic/Democracy)
+* Citizens eat 2 food, rising by 0.2 each above size 5; settlers eat 1
+  (2 under Republic/Democracy)
 * Settlers also cost 1 shield per turn under Republic/Democracy — nowhere else
 * Unit upkeep is **per unit type** (0–6 gold), not a flat 1; city-less units pay
   nothing
-* Corruption grows with distance from the capital; a Courthouse halves it
-* Trade converts to gold at `TRADE_GOLD_MULTIPLIER = 2`
+* Corruption grows with distance from the capital; a Courthouse multiplies the
+  rate by 0.8 (a 20 % cut)
+* Trade converts to gold at `TRADE_GOLD_MULTIPLIER = 3`
 
 === Happiness
 
@@ -341,8 +357,8 @@ prerequisites you already know. Research takes between 1 and 32 turns — the
 
 === Diplomacy
 
-Five treaty types (open borders, trade agreement, mutual defence,
-non-aggression, embargo) on top of four statuses. Attitude is a directed
+Six treaty types (open borders, trade agreement, mutual defence, non-aggression,
+embargo, embassy) on top of four statuses. Attitude is a directed
 **goodwill/grievance ledger**, not a single reputation number: an act costs a
 paranoid civ 2.5× what it costs a belligerent one, betraying an alliance costs
 more than breaking a peace, and grievance decays at 0.5 per turn. A signed peace
@@ -391,8 +407,10 @@ npx playwright install chromium
 npm run dev        # http://localhost:3000
 ----
 
-Production build: `npm run build` → deploy `dist/` to any static host. Saves
-live in `localStorage`, so they are bound to the browser profile that made them.
+Production build: `npm run build` → deploy `dist/` to any static host. A save
+is a versioned `.json` file you download and load back through the Game Menu;
+the autosave lives in `localStorage`, so it is bound to the browser profile
+that made it.
 
 == Controls
 
@@ -413,7 +431,7 @@ npm run dev          # Vite dev server, port 3000
 npm run build        # production build
 npm run lint         # ESLint, max-warnings 0
 npm run type-check   # tsc --noEmit
-npm run test         # Vitest — 153 suites, node environment, no DOM
+npm run test         # Vitest — 247 suites, 2,929 cases, node environment, no DOM
 npm run test:e2e     # Playwright (needs the dev server)
 npm run knip         # unused exports / dependencies
 ----
@@ -456,7 +474,7 @@ the commit message which rule the number encodes.
 
 * Balance data → `src/data/*`. Never in the engine.
 * Engine mechanics → the matching `src/game/engine/*` file. `GameEngine.ts` is
-  already ~7,200 lines; do not grow it.
+  already 9,504 lines; do not grow it.
 * Anything the AI also needs → shared engine code, not `AI/`.
 * Player intents → a `Command` in `types/commands.ts` + a `case` in
   `GameEngine.submit()`. UI never calls engine methods directly.
@@ -479,6 +497,7 @@ the commit message which rule the number encodes.
 * link:doc/WONDERS.adoc[Wonders] — the 24-wonder data format and effect model
 * link:doc/MODALS.adoc[Modals & Dialogs] — every dialog, how it opens, screenshots in `doc/dialogs/`
 * link:doc/HAPPINESS.adoc[Happiness] — content, disorder, martial law
+* link:doc/DISASTERS.adoc[City Disasters] — the seven Civ1 events, their chances and prevention
 * link:doc/FOG_OF_WAR_IMPLEMENTATION.adoc[Fog of War] — visibility, exploration, storage
 
 === Systems
@@ -492,7 +511,10 @@ the commit message which rule the number encodes.
 * link:doc/STATIC_MAPS.adoc[Static Maps] — static map format and registry
 * link:doc/NEW_MAP_GUIDE.adoc[Adding a New Map] — step by step with a checklist
 * link:doc/RENDERING_ASSETS.adoc[Rendering & Tile Assets] — layers, textures, tile generator
-* link:doc/SOUND_EFFECTS.adoc[Sound Effects] — every cue, when it plays, the seven shipped recordings, and how to drop in another
+* link:doc/SOUND_EFFECTS.adoc[Sound Effects] — every cue, when it plays, the shipped recordings, and how to drop in another
+* link:doc/I18N.adoc[I18n] — the six shipped languages, key namespaces, adding a language
+* link:doc/TEAM_COORDINATION.adoc[Team Coordination] — fixed-alliance attack/defence coordination and the team commands
+* link:doc/MISSING_ASSETS.adoc[Missing Assets] — what art, icons and recordings are still missing
 
 === AI
 
@@ -501,9 +523,17 @@ the commit message which rule the number encodes.
 * link:doc/AI_PRODUCTION.adoc[AI Production] — profiles and expansion-first production
 * link:doc/AI_SETTLER_INTEGRATION.adoc[AI Settler Integration] — site selection
 * link:doc/AI_CITY_STABILITY.adoc[AI City Stability] — keeping large cities stable
-* link:doc/AI_VS_AI_ANALYSIS.adoc[AI vs AI Analysis] — a 300-round headless analysis
+* link:doc/AI_VS_AI_ANALYSIS.adoc[AI vs AI Analysis] — a headless AI-vs-AI game: missing aggression, zero captures, no expansion
 * link:doc/AI_MICRO_ERRORS_REPORT.adoc[AI Micro-Errors Report] — a 587-round catalogue
 * link:doc/SCOUT_AND_ENEMY_SEARCH.adoc[Scout & Enemy Search] — scout unit and spiral search
+* link:doc/AI_MEMORY.adoc[AI Memory] — what the AI remembers between turns, and what is still unwired
+* link:doc/AIR_DOCTRINE.adoc[Air Doctrine] — how the AI builds and uses air power
+* link:doc/NAVAL_AI_OVERHAUL.adoc[Naval AI Overhaul] — hulls, invasions and the naval bench
+
+=== Status and audits
+
+* link:doc/DEVELOPMENT_STATUS.adoc[Development Status] — where the project stands, what is next
+* link:doc/IMPLEMENTATION_AUDIT.adoc[Implementation Audit] — done / partial / missing, with the open backlog
 
 === Design proposals (not implemented)
 
@@ -513,7 +543,7 @@ the commit message which rule the number encodes.
 === Balance analysis
 
 * link:doc/BALANCE_ANALYSIS.adoc[Balance & Behaviour Analysis] — 400-round headless games, measured economy/AI failures and a prioritized fix list
-* link:doc/ECONOMY_ANALYSIS.adoc[Economics Analysis] — why the treasury is empty: quantized income, priced-above-output citizens, dead corruption data, and the two simulators (`economy_sim.py`, `trade_pipeline_sim.py`) that decided the fix
+* link:doc/ECONOMY_ANALYSIS.adoc[Economics Analysis] — why the treasury is empty: quantized income, priced-above-output citizens, dead corruption data, and the `economy_sim.py` simulator that decided the fix
 * link:doc/CARAVAN_GOVERNOR.adoc[Caravan Governor] — the per-unit trade brain: mission lifecycle, route economics, travel budget, threat profile, escort, and the three gates a caravan has to pass
 
 === UI
@@ -530,18 +560,20 @@ gradient fallbacks without them — generate one at a time, in any order):
 
 === Working notes
 
-* link:TODO.txt[TODO] — the live task list
+* link:TODO/TODO.txt[TODO] — the live task list
 
 == Roadmap
 
 Ordered by impact, see link:doc/DEVELOPMENT_STATUS.adoc[Development Status] and
-link:TODO.txt[TODO] for the detail:
+link:TODO/TODO.txt[TODO] for the detail:
 
-. **Command layer rollout** — 4 interactions converted (`moveUnit`, rates,
-   production, found city); the remaining ~51 UI→engine calls follow the same
+. **Command layer rollout** — 6 commands converted (`MOVE_UNIT`, `SET_RATES`,
+   `SET_CITY_PRODUCTION`, `FOUND_CITY`, `TEAM_COORDINATE_ATTACK`,
+   `TEAM_DEFEND_CITY`); the remaining direct UI→engine calls follow the same
    pattern, then engine methods can be made internal.
-. **Determinism** — route the ~34 gameplay `Math.random` calls and the
-   `Date.now()`-based unit IDs through a seeded RNG and a counter.
+. **Determinism** — route the 63 `Math.random()` calls (37 of them in the
+   engine) and the `Date.now()`-based unit IDs through a seeded RNG and a
+   counter.
 . **Client/server split** — a `GameRoom` running the engine as the authority
    over the `GameSession` interface, with per-connection fog filtering. The
    engine is already DOM-free and runs headlessly; the blockers are the three

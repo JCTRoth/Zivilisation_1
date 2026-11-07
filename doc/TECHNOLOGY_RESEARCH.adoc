@@ -65,8 +65,15 @@ The Science Rate now visibly changes research time:
    floor 0.6).
    `prerequisitesModifier < 1.0` when the civ has discovered prerequisite techs
    (up to 40% off).
-. *Hard caps*: research can never complete in fewer than *4 turns* nor take
-   more than *32 turns* (even with 0 science, minimum progress is applied).
+. *Hard cap*: research never takes more than *32 turns* — `advanceResearch`
+   always applies at least `ceil(cost / 32)` beakers per turn, so even 0 science
+   makes progress (`ResearchManager.perTurnProgress`, `ResearchManager.ts:138-154`).
+   The old *4-turn minimum* is gone: with enough science a tech now finishes in
+   fewer than 4 turns (pinned by `tests/researchManager.test.ts:128-141`,
+   "research progress is constant — no min-turns slowdown"). The `4` survives
+   only as `MIN_RESEARCH_TURNS`, which clamps the *UI estimate*
+   (`estimatedTurns`, `ResearchManager.ts:126`) — the ETA never shows fewer
+   than 4 turns even though the research itself may finish sooner.
 . The side panel shows the *effective* cost (`progress/effectiveCost`) and a live
    "~X turns to complete" estimate computed from the per-turn science at the
    *current* Science Rate — changing the rate in the rates modal immediately
@@ -76,9 +83,10 @@ The Science Rate now visibly changes research time:
 
 == Tests
 
-* `tests/researchPath.test.ts` — path finding + icons (7 unit tests).
+* `tests/researchPath.test.ts` — path finding + icons (11 unit tests).
 * `tests/researchManager.test.ts` — tech cost scaling, known-civs/prereq modifiers,
-   beakers formula, 4-turn minimum, 32-turn maximum, ETA.
+   beakers formula, no min-turns slowdown (4-turn minimum removed),
+   32-turn maximum, ETA.
 * `tests/scienceRate.test.ts` — science rate changes research accumulation through
    the real turn pipeline.
 * e2e `e2e/game.spec.ts` — Tech Tree tests (modal shows available techs, selecting a

@@ -10,9 +10,9 @@ in-file notes on why the archipelago is shaped the way it is).
 
 == The two ways to make a map
 
-[cols="1,3,2"]
+[cols="1,3,2,2"]
 |===
-| Approach | When to use it | Cost
+| Approach | When to use it | Cost | Where it lands in the repo
 
 | **Static map file**
 (`src/data/maps/*.json`)
@@ -66,7 +66,7 @@ The file keeps the *raw* characters so it stays a faithful copy of its source.
 `FREECIV_TERRAIN_LEGEND` in `src/data/maps/types.ts` translates them at load
 time.
 
-[cols="1,1"]
+[cols="1,1,1,1,1"]
 |===
 | Char | Terrain | | Char | Terrain
 | `' '` | ocean | | `p` | plains
@@ -89,9 +89,11 @@ pipeline as a procedural map, so these all still apply:
 
 * `stage5_Rivers` — rivers are carved from *land* (the source map has none).
 * `fillIsolatedOceanHoles` — one-tile ocean pockets become land.
-* `classifyLakes` — an ocean body of ≤ `LAKE_MAX_TILES` (24) becomes a **lake**,
-  which is impassable to everyone, ships included. A 96×60 archipelago has one
-  3800-tile ocean body, so it stays ocean; a cramped map may surprise you.
+* `classifyLakes` — an ocean body **strictly smaller than** `LAKE_MAX_TILES`
+  (24) becomes a **lake**, which is impassable to everyone, ships included.
+  The comparison is `<`, not `≤` (`MapGenerator.ts:1431`), so a 24-tile body
+  stays ocean; a 23-tile one does not. A 96×60 archipelago has one 3800-tile
+  ocean body, so it stays ocean; a cramped map may surprise you.
 * `stage7_FloodFillGroups` / `stage8_BuildSites` / `ensurePassability`.
 
 Two things the file controls and the generator does *not*:
@@ -142,11 +144,16 @@ export const STATIC_MAPS: Record<string, StaticMapDefinition> = {
   'my-map-64x48': myMap as StaticMapDefinition,
 };
 
-/** Which static map backs a map type, if any. */
-export const STATIC_MAP_FOR_MAP_TYPE: Readonly<Record<string, string>> = {
+/** Which static map backs a map type, if any — module-private, not exported. */
+const STATIC_MAP_FOR_MAP_TYPE: Readonly<Record<string, string>> = {
   EARTH: WORLD_MAP_ID,
   MY_MAP: 'my-map-64x48',           // ← new
 };
+// Consumers read it through the accessor below (GameEngine, GameSetupModal):
+export function staticMapForMapType(mapType: string | undefined) {
+  const id = mapType ? STATIC_MAP_FOR_MAP_TYPE[mapType] : undefined;
+  return id ? STATIC_MAPS[id] : undefined;
+}
 ----
 
 === 2. The map size — `GameEngine.generateWorld`
@@ -333,7 +340,8 @@ that decide whether a map is good:
 |===
 | Column | What a healthy map looks like
 | `citiesFounded` | growing steadily; a map nobody can expand on stays flat
-| `stalls` / `noPath` | near zero. High numbers mean unreachable targets
+| `stalls` / `noTarget` | near zero. High numbers mean unreachable targets
+  (`no_path` is one of the *reason codes* counted into them, not a column)
 | `unitsLost` vs `units` | a sane ratio. A map where the AI shreds units is a trap
 | `aiActions` | many small numbers, no single huge one (that is a stall loop)
 | `warWith` | non-empty by mid-game on a scenario meant to have a war
@@ -368,7 +376,8 @@ Register it alongside the existing ones so the suite is the map's real spec.
 
 . Map file in `src/data/maps/`, `rows` exactly `width` chars, `specials`
   exactly `height` strings, only known terrain characters
-. Registered in `STATIC_MAPS` and `STATIC_MAP_FOR_MAP_TYPE`
+. Registered in `STATIC_MAPS`, and (when it backs a map type) in the
+  module-private `STATIC_MAP_FOR_MAP_TYPE` read through `staticMapForMapType()`
 . Map size added in `GameEngine.generateWorld`, matching the file exactly
 . Option added in `GameSetupModal` with a "Name · why it is interesting" label
 . AI-vs-AI only: type added to `AUTO_SCENARIO_MAP_TYPES` and to

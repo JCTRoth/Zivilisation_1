@@ -37,13 +37,20 @@ Implemented in `src/App.tsx` (search for `quickstartRef`). It:
   `isExploredByPlayer`, `updatePlayerVisibility`).
 - **All units and cities are visible** — `getVisibleUnits` / `getVisibleCities` return
   everything.
+- **Spectator exception** — in a game nobody sits at (`isSpectatorGame`: every AI-vs-AI map
+  type, or an explicit `humanPlayerIds: []`) Dev Mode is forced on *for the watching human*,
+  but each AI keeps its **own fog of war** for decision-making. The five fog entry points above
+  therefore short-circuit only when `devMode && !isSpectatorGame(gameSettings)`; the human's
+  full board comes from the store (`GameStore.updateVisibility`, `MiniMap` `ignoreFog`), not
+  from the engine.
 - **Minimap shows all players** — `MiniMap` renders with `ignoreFog: true`.
 - **Camera follows any unit**, including AI moves that would normally be hidden
   (`GameStore.focusOnNextUnit`, `EngineEventHandlers.isUnitVisibleToHuman`).
 - **Verbose AI/perf logging** is enabled (e.g. scout zone timings, visibility updates).
 
-Note: `mapType: 'AI_VS_AI'` / `'AI_VS_AI_SMALL'` also force `devMode: true` so the whole
-map stays observable during AI-vs-AI runs.
+Note: `mapType: 'AI_VS_AI'` / `'AI_VS_AI_SMALL'` / `'AI_VS_AI_NAVAL'` also force `devMode: true`
+so the whole map stays observable during AI-vs-AI runs — see the spectator exception above: the
+observer sees everything, the AIs do not.
 
 ## Related URL parameter
 

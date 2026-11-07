@@ -8,9 +8,10 @@ The terrain system around cities is the backbone of the economy. Every city clai
 
 == 1. City Work Radius
 
-Defined in `City.getCityRadiusTiles()` (`src/game/City.ts`):
+Defined in `GameEngine.isTileInCityRadius()` (`src/game/engine/GameEngine.ts:4029`)
+and `EconomicManager.cityTerritory()` (`src/game/engine/EconomicManager.ts:674`):
 
-* The radius is a *Chebyshev distance ≤ 2* from the city center — a 5×5 diamond.
+* The radius is a *Chebyshev distance ≤ 2* from the city center — a 5×5 square.
 * The *4 extreme corners* of the 5×5 square are excluded (distance 2 in both axes).
 * The *city center* itself is excluded from the radius list but is always worked.
 * Result: *20 workable tiles* surrounding the city, plus the city center.
@@ -123,6 +124,14 @@ Each terrain type has base yields defined in `src/data/TerrainConstants.ts`:
 |1.5
 |Trade bonus
 
+|Lake
+|2
+|0
+|1
+|1
+|1.5
+|Inland fresh water, *impassable*
+
 |Ocean
 |1
 |0
@@ -132,13 +141,29 @@ Each terrain type has base yields defined in `src/data/TerrainConstants.ts`:
 |Coastal only
 |===
 
-*Effective yield* = base terrain yield + resource bonus + improvement bonuses − pollution penalty (see `Tile.getYields()` in `src/game/Terrain.ts`).
+*Effective yield* = base terrain yield + resource bonus + improvement bonuses
+(−1 food / production / trade while the tile carries the `pollution`
+improvement) — computed by `tileYields()` in `src/game/engine/EconomicManager.ts:575`.
+(`Tile.getYields()` in `src/game/Terrain.ts` is *dead code*: nothing imports
+that module.)
 
 ---
 
 == 3. Special Resources
 
-Each terrain type can have *one special resource* (15% chance on map generation). Resources *double* the base terrain yields:
+Each terrain type can have *one special resource*. The chance a tile carries it
+is set in `src/data/TerrainConstants.ts` (`rollResource`, applied by
+`src/game/engine/MapGenerator/MapGeneratorHelper.ts:188`):
+
+* default *0.15* per tile (`DEFAULT_RESOURCE_SPAWN_CHANCE`),
+* ocean *0.18* (`COASTAL_FISH_CHANCE`), and only for water next to land — a
+  deep-ocean tile gets no fish at all (`COASTAL_FISH_BONUS_CHANCE = 0`),
+* river *0.09* (the ocean rate × `RIVER_FISH_CHANCE_MULTIPLIER` 0.5).
+
+Resources do **not** double anything: they *add* a fixed bonus to the terrain's
+base yields (`getResourceYields`, `TerrainConstants.ts:359`, added in
+`EconomicManager.tileYields`). Doubling exists only in the AI's settlement
+*scoring* (see section 9, Settlement Placement, below):
 
 [cols="1,1,1,1,1", options="header"]
 |===
@@ -175,7 +200,7 @@ Each terrain type can have *one special resource* (15% chance on map generation)
 |—
 
 |Fish
-|Ocean
+|Ocean, River
 |+2
 |—
 |—
@@ -187,8 +212,8 @@ Each terrain type can have *one special resource* (15% chance on map generation)
 |—
 
 |Game
-|Forest
-|+2
+|Forest (*+2* food), Tundra (*+3* food)
+|+2 / +3
 |—
 |—
 
@@ -199,64 +224,80 @@ Each terrain type can have *one special resource* (15% chance on map generation)
 |—
 |===
 
-Resource bonuses are applied in `Tile.getYields()`.
+Resource bonuses are applied in `EconomicManager.tileYields()`
+(`EconomicManager.ts:585-590`); the Tundra Game is a special case worth *+3*
+food (`TerrainConstants.ts:369-372`), the Forest Game +2.
 
 ---
 
 == 4. Tile Improvements
 
-Improvements add flat yield bonuses on top of terrain + resource yields:
+Improvements are declared in `src/data/TileImprovementConstants.ts`
+(`IMPROVEMENT_PROPERTIES`) and applied tile by tile in
+`EconomicManager.tileYields` (`EconomicManager.ts:590-608`). Almost everything
+is *per terrain*: a base `effects` bag plus `effectsByTerrain` /
+`tradeBonusTerrains` overrides, and the build time comes from `turnsByTerrain`
+(`GameEngine.canBuildImprovement`, `GameEngine.ts:8466-8470`: a missing entry
+means the improvement cannot be built on that terrain).
 
-[cols="1,1,1,1,1,2", options="header"]
+[cols="1,2,2,2", options="header"]
 |===
-|Improvement |Food |Production |Trade |Build Turns |Allowed Terrain
+|Improvement |Yield effect |Build turns (by terrain) |Where it may stand
 
 |Road
-|—
-|—
-|+1
-|3
-|Any
+|+1 trade on Grassland, Plains and Desert only (`tradeBonusTerrains`), 0
+ elsewhere; movement cost 1/3
+|2 grassland/plains/desert/tundra/river · 4 forest/hills/jungle/swamp ·
+ 6 arctic/mountains
+|Any land tile
 
-|Railroad
-|—
-|+1
-|—
-|6
-|Any (requires road)
+|Railroad (needs Road)
+|+0.5 food, +0.5 production, +0.5 trade; movement cost ≈ 0
+|4 grassland/plains/desert/tundra/river · 8 forest/hills/jungle/swamp ·
+ 12 mountains
+|Any land tile that already carries a road
 
 |Irrigation
-|+1
-|—
-|—
-|5
-|Grassland, Plains, Desert
+|+1 food
+|5 desert/grassland/plains/river · 15 forest/jungle/swamp
+|Desert, Grassland, Plains, River, Forest, Jungle, Swamp — and only where
+ fresh water is within 5 orthogonal steps (a river/lake tile, or an existing
+ irrigation to extend a canal from; the search cannot step through ocean —
+ `GameEngine.hasFreshWaterAdjacency`, `IRRIGATION_WATER_REACH = 5`).
+ On forest/jungle/swamp the work *converts the terrain* instead of placing the
+ improvement (forest → plains, jungle/swamp → grassland)
 
 |Mine
-|—
-|+1
-|—
-|5
-|Hills, Mountains
+|+3 production on Hills, +1 on Mountains, 0 anywhere else (including Desert)
+|5 desert · 10 grassland/hills/mountains · 15 plains
+|Desert, Grassland, Hills, Mountains, Plains — on grassland/plains the work
+ converts the terrain to forest rather than placing the mine
 
-|Fortress
-|—
-|—
-|—
-|8
-|Any (+2 defense)
+|Fortress (needs Construction)
+|No yield — `defenseMultiplier: 2`, i.e. ×2 defence in combat
+|5 desert/grassland/plains/river · 6 forest/hills/jungle/swamp/tundra ·
+ 7 mountains
+|Any land tile except Arctic
 |===
 
-*Terrain conversions* (Jungle/Swamp → Grassland, etc.) change the base terrain type and recalculate yields.
+*Terrain conversions* (Jungle/Swamp → Grassland, Forest → Plains, …) change the
+base terrain type and recalculate its yields (`GameEngine.completeImprovement`,
+`GameEngine.ts:8602-8617`). A tile carries at most *one* improvement, so
+`pollution` (−1 food, −1 production, −1 trade) replaces whatever stood there
+until a Settler clears it (`GameEngine.cleanPollution`).
 
 ---
 
 == 5. City Center Bonuses
 
-The city center tile (always worked) has special rules (`City.calculateYields()`):
+The city center tile (always worked) has special rules
+(`EconomicManager.cityWorkedTiles`, `EconomicManager.ts:783`, applying
+`CITY_CENTER_MIN` from `EconomicManager.ts:118`):
 
 * *Minimum yields*: food ≥ 2, production ≥ 1, trade ≥ 1 (floors, not overrides)
-* *River bonus*: +1 trade if a river flows through the city center
+* There is **no river bonus**: the live yield path gives a centre tile no extra
+  trade for a river running through it (that rule survived only in the dead
+  `src/game/City.ts`).
 
 ---
 
@@ -264,42 +305,65 @@ The city center tile (always worked) has special rules (`City.calculateYields()`
 
 === How Workers Are Assigned
 
-When a city grows, `City.optimizeWorkerAssignment()` runs:
+Every yield recompute (`EconomicManager.recomputeCityYields` →
+`cityWorkedTiles`, `EconomicManager.ts:783-933`) picks the tiles:
 
-. *Reset*: Clear all tile assignments except the city center.
-. *Get workable tiles*: Filter radius tiles through `canWorkTile()`.
-. *Priority sort* (Civ1 4-tier system in `getTilePriority()`):
-   ** *Tier 1* (highest): Food-rich tiles — food ≥ 3
-   ** *Tier 2*: Balanced tiles — food ≥ 2 AND production ≥ 1
-   ** *Tier 3*: Production-rich — production ≥ 2
-   ** *Tier 4* (lowest): All other tiles (trade-focused, etc.)
-. *Within same tier*: Sort by total yield value (food×2 + production + trade).
-. *Assign*: Fill from best to worst, up to `population − 1` workers (city center counts as 1).
+. *Pool*: every tile of `cityTerritory()` (the 20-tile radius) that passes
+  `canWorkTile()`.
+. *Sort*: by raw total yield — `food + production + trade` — unless the city has
+  a `governorWeights`, in which case the governor's own weights rank the same
+  pool (`EconomicManager.ts:866-871`). There is no Civ1 4-tier
+  `getTilePriority()` in the live engine.
+. *Player pins*: tiles in `userAssignedTiles` are taken first, so a manual
+  pick-up/drop survives the auto-assign (`EconomicManager.ts:892-899`).
+. *Target*: `targetTiles = workers + 1` (`EconomicManager.ts:879`) — the city
+  center is worked *for free* and every citizen then works *one extra* tile, so
+  a size-1 city works *2* tiles (center + 1), a size-5 city 6.
+. *Food floor*: before slots go to raw yield, the fill first buys enough food
+  to out-eat the citizens plus the settlers the city supports
+  (`MIN_CITY_FOOD_SURPLUS = 1`), ranked by food and then by score
+  (`EconomicManager.ts:901-921`).
+. *Fill*: the remaining slots go to the best-scoring tiles not yet chosen
+  (`EconomicManager.ts:923`).
 
-=== Can a Tile Be Worked? (`canWorkTile()`)
+A citizen with no tile left is converted to an Entertainer (the idle-citizen
+conversion in `cityWorkedTiles`), and when the city *shrinks*,
+`fitCityToPopulation` / `fitWorkedTilesToPopulation`
+(`EconomicManager.ts:998`, `:1017`) drop the worst tiles first.
+
+=== Can a Tile Be Worked? (`EconomicManager.canWorkTile`, `EconomicManager.ts:769`)
 
 A tile is workable if ALL of these are true:
 * It is within the city radius (20 tiles + center)
-* It has *not* already been assigned to another city
-* It has been *explored* by this civilization
-* If ocean: must have fish resource OR be coastal (adjacent to land)
+* It is not the city center and not already worked by this city
+* It is not claimed by *another city's* territory
+* No *foreign* unit stands on it
+* No Fisher Boat is actively fishing it — a netted ground belongs to the boat
 
 ---
 
 == 7. Yield Accumulation
 
-Each turn, `City.calculateYields()` iterates over all assigned tiles:
+Each turn, `EconomicManager.recomputeCityYields(city)`
+(`EconomicManager.ts:1051`) sums the yields of the assigned tiles, tile by tile
+through `EconomicManager.tileYields` (`EconomicManager.ts:575`), with the city
+center floored at 2F/1P/1T:
 
 [source]
 ----
-totalFood = Σ (tile.getYields().food for each assigned tile)
-totalProduction = Σ (tile.getYields().production for each assigned tile)
-totalTrade = Σ (tile.getYields().trade for each assigned tile)
+totalFood       = Σ food of the worked tiles
+totalProduction = Σ production of the worked tiles + flat building/wonder shields
+totalTrade      = Σ trade of the worked tiles + flat building trade + per-trade-square wonders
 ----
 
-Then building bonuses are applied as multipliers (e.g., Granary → +50% food).
+Buildings add *flat* bonuses, not multipliers: `buildingBonuses().trade` /
+`.science` and `cityBuildingEffects().production`. The Granary has **no** food
+multiplier — it declares `foodStorage: 2`, `growthBonus: 1`, `health: 1`
+(`BuildingConstants.ts:57-68`).
 
-Trade is split: *50% → Gold, 50% → Science* (before further building modifiers).
+Trade is split by the civ's *tax / science / luxury* rates in
+`EconomicManager.cityOutputs` (`EconomicManager.ts:368-374`), not 50/50 (that
+split survives only in the dead `src/game/City.ts`).
 
 ---
 
@@ -309,11 +373,13 @@ Trade is split: *50% → Gold, 50% → Science* (before further building modifie
 * Food consumption = `population × citizenFoodDemand(population)`, where
    `citizenFoodDemand(p) = 2 + 0.2 × max(0, p − 5)` — the appetite rises with
    city size, so a large city is harder to keep fed than a small one
-* Food surplus → stored in `foodStorage`
-* Growth threshold = `(population + 1) × 10`
-* When `foodStorage ≥ threshold` → city grows (+1 population)
+* Food surplus → stored in `foodStored` (`TurnManager.processCityGrowth`,
+  `TurnManager.ts:1368-1375`)
+* Growth threshold = `(population + 1) × 10`, held in `foodNeeded`
+  (`TurnManager.ts:1373`)
+* When `foodStored ≥ foodNeeded` → city grows (+1 population)
 * Granary: retains 50% of stored food on growth; without it, food resets to 0
-* Starvation: if `foodStorage < 0` → population decreases, weakest tile unworked
+* Starvation: if `foodStored < 0` → population decreases, weakest tile unworked
 * A tile occupied by a *foreign* unit is not worked at all
 
 === Production → Buildings & Units
@@ -342,9 +408,14 @@ The AI searches a *10×10 area* around the settler and scores each location:
 
 . *Validity checks*: Not ocean, not mountains, no existing city, no blocking unit
 . *Distance check*: Must be ≥ MIN_CITY_CENTER_DISTANCE from all friendly cities
-. *3×3 area evaluation*: Sums food/production/trade yields for the 3×3 area around the candidate
-. *Resource multiplier*: Special resource tiles have their yields *doubled*
-. *City proximity penalty*: Tiles near friendly cities get penalized (−1 per overlapping tile)
+. *5×5 area evaluation*: sums food/production/trade for all *25* tiles of the
+  candidate's workable area, the inner ring (Chebyshev distance ≤ 1) counted in
+  full and the outer ring at 0.5 (`SettlementEvaluator.evaluateArea`,
+  `SettlementEvaluator.ts:137-201`)
+. *Resource multiplier*: special resource tiles have their yields *doubled* —
+  in this score only, never in the real yields
+. *City proximity penalty*: tiles within reach of another city get penalized
+  (−1 per overlapping friendly tile, −0.2 per enemy tile)
 . *Water bonus*: +2 score if adjacent to ocean/sea
 . *Weighted score*: `food × food_weight + production × shields_weight + trade × gold_weight + water_bonus`
 
@@ -381,13 +452,14 @@ The AI searches a *10×10 area* around the settler and scores each location:
 
 == 10. Site Evaluation for Existing Cities
 
-`City.evaluateCitySite()` provides a quality assessment of a city's location:
+The live engine has **no** per-city site score: `City.evaluateCitySite()` (with
+`foodPotential` / `productionPotential` / `tradePotential` / `resourceScore` /
+`overallScore`) lives only in `src/game/City.ts`, which nothing imports — it is
+dead code, like the rest of that module.
 
-* *foodPotential*: Sum of food yields from all radius tiles
-* *productionPotential*: Sum of production yields + 0.5 bonus for each hill/forest
-* *tradePotential*: Sum of trade yields + 1 for each river tile
-* *resourceScore*: Weighted value of special resources (Fish=2, Gold=4, Gems=3, etc.)
-* *overallScore*: `(food × 2) + production + (trade × 1.5) + (resource × 3) + (river ? 2 : 0)`
+The only site evaluation the game actually runs is the one for *new* cities,
+`SettlementEvaluator` (section 9): a 25-tile area score with the strategy
+weights, the resource doubling and the proximity penalty described there.
 
 ---
 
@@ -401,25 +473,26 @@ Map Generation
 Terrain tiles created (TerrainConstants defines base yields)
      │
      ▼
-Special resources placed (15% chance per tile)
+Special resources placed (0.15 per tile by default; ocean 0.18, river 0.09)
      │
      ▼
 City founded
      │
-     ├── getCityRadiusTiles() → 20 workable tiles
+     ├── isTileInCityRadius() → 20 workable tiles
      ├── city center always worked (min 2F/1P/1T)
      │
      ▼
 Each turn:
      │
-     ├── calculateYields() → sum yields from assigned tiles
-     │       ├── tile.getYields() = base + resource + improvements - pollution
-     │       └── applyBuildingBonuses() → multipliers from buildings
+     ├── recomputeCityYields() → sum yields from assigned tiles
+     │       ├── tileYields() = base + resource + improvements
+     │       │       (the `pollution` improvement subtracts 1F/1P/1T)
+     │       └── buildingBonuses() / cityBuildingEffects() → flat bonuses
      │
-     ├── processFood() → growth or starvation
-     ├── processProduction() → build units/buildings
-     └── trade split → gold + science
-```
+     ├── processCityGrowth() → growth or starvation (foodStored vs foodNeeded)
+     ├── processCityProduction() → build units/buildings
+     └── cityOutputs() → trade split by tax / science / luxury rates
+----
 
 ---
 
@@ -429,20 +502,33 @@ Each turn:
 |===
 |File |Purpose
 
-|`src/game/City.ts`
-|City radius, worker assignment, yield calculation, growth
+|`src/game/engine/GameEngine.ts`
+|`isTileInCityRadius` — the 20-tile workable radius (`:4029`)
 
-|`src/game/Terrain.ts`
-|Tile yields, improvements, resources, terrain conversion
+|`src/game/engine/EconomicManager.ts`
+|The live economy: `tileYields` (`:575`), `cityWorkedTiles` / worker assignment
+(`:783-933`), `canWorkTile` (`:769`), `recomputeCityYields` (`:1051`),
+`cityOutputs` rate split (`:368-374`)
+
+|`src/game/engine/TurnManager.ts`
+|Growth and starvation (`processCityGrowth`, `:1356`), city production (`:997`)
 
 |`src/data/TerrainConstants.ts`
-|Base terrain properties, special resource definitions
+|Base terrain properties, special resource definitions and spawn chances
+
+|`src/data/TileImprovementConstants.ts`
+|Improvement properties (road, irrigation, mine, fortress, railroad)
 
 |`src/game/engine/SettlementEvaluator.ts`
 |AI city placement scoring, minimum distance enforcement
+(`MIN_CITY_CENTER_DISTANCE = 5`, `:34`)
 
-|`src/game/engine/AIManager.ts`
+|`src/game/engine/AI/AIManager.ts`
 |Settler decision logic, pathfinding to settlement sites
+
+|`src/game/City.ts`, `src/game/Terrain.ts`
+|**Dead code** — nothing imports either module; the live equivalents are the
+rows above
 |===
 
 ---
@@ -491,20 +577,24 @@ The selected city's own 20-tile diamond is drawn *on top* of the red layer, with
 |Population |Tiles worked (green) |Tiles in radius (green + gold)
 
 |1
-|1 (city center only)
-|21 (1 green + 20 gold)
-
-|2
 |2 (center + 1 best)
 |21 (2 green + 19 gold)
 
+|2
+|3 (center + 2 best)
+|21 (3 green + 18 gold)
+
 |5
-|5 (center + 4 best)
-|21 (5 green + 16 gold)
+|6 (center + 5 best)
+|21 (6 green + 15 gold)
 
 |10
-|10 (center + 9 best)
-|21 (10 green + 11 gold)
+|11 (center + 10 best)
+|21 (11 green + 10 gold)
 |===
 
-As the city grows, more gold tiles turn green because new citizens are auto-assigned to the best available tiles via `City.optimizeWorkerAssignment()`.
+The city center is worked *in addition to* one tile per citizen
+(`targetTiles = workers + 1`, `EconomicManager.ts:879`) — so pop 1 already
+works two tiles. As the city grows, more gold tiles turn green because new
+citizens are auto-assigned to the best available tiles via
+`EconomicManager.recomputeCityYields` → `cityWorkedTiles`.

@@ -24,7 +24,7 @@
 |Added `buildLandReachableLookup` wrapper (used by new tests)
 |===
 
-*Verification:* All 1062 tests pass, type-check clean, lint clean.
+*Verification (re-run 2026-11-07):* 247 test files / 2 929 tests pass, type-check clean, lint clean (`--max-warnings 0`), knip clean (0 findings).
 
 ---
 
@@ -32,40 +32,82 @@
 
 **Resolved.** Knip once reported 57 unused exports — mostly tuning constants in
 `src/game/engine/AI/*` and `src/data/*`. They were un-exported or deleted, and
-knip is clean again (it now runs as a hard CI gate). The only current finding is
-an unused `ModalTone` type in the user's in-progress modal refactor.
+knip is clean again (it now runs as a hard CI gate). Re-verified 2026-11-07:
+`npm run knip` exits 0 with **no findings at all** — there is no `ModalTone`
+finding any more; the type is used (`src/components/ui/gamemodals/ModalShell.tsx:11,22`).
 
 ---
 
 == Immediate Recommendation
 
-*Start with #1 (Naval Invasion).* It is the most impactful gap: without it, cross-water AI wars are stalemates, and the AI cannot project power across maps with straits or islands. The transport/embark mechanics already exist at the unit level (cargo capacity, coordinate alignment), so the missing piece is the mission planning layer in AIManager.
+*Start from the open Civ1-manual leftovers in `TODO/TODO.txt`* — the client/
+server split (5 blockers, the command-layer seam already exists), then global
+warming, the 6 advisor reports and Find City, plus the anti-fishing-boat
+raider mission and pincer scripting. The gaps that used to top this list
+(naval invasion, second fronts, era-driven army composition, earlier economy
+buildings, the diplomacy set) are all implemented — details below.
 
 == Priority Order
 
-=== 1. Naval Invasion / Transport Missions
-The navy pivot builds ships but there is *no transport/invasion mission* — only colony missions exist. Until this is implemented, an AI-vs-AI map whose strait splits civs across two continents is an unwinnable stalemate (465-round run: 17 wars, 3 attacks). This is the single biggest gameplay gap.
+=== 1. Naval Invasion / Transport Missions — DONE
+The mission layer is implemented: `InvasionMission` (interface at
+`AIManager.ts:284`, plan/access at `:3378-3382`, ferry action `:3749`,
+stored per turn at `:3321`), beach scoring, real load/unload through the ferry
+APIs, beachhead holds and batch counters (`Invasion —`, `AIManager.ts:3497,
+3798`). Regression tests: `tests/ai/navalInvasionSequence.test.ts`,
+`aiNavalTransport.test.ts`, `aiInvasionPlanning.test.ts`. Recorded as DONE in
+`TODO/TODO.txt:112-114` (moved to TOBECHECKED for a game run). *Remaining:*
+only the Civ1 transport-backend spec rules in `TODO/TODO.txt` are still to be
+checked against a real game run.
 
-=== 2. Multi-Group Offensives / Siege Commitment
-Two army groups can form, but there is *no coordination* between them — no pincer/second-front planning. Groups operate independently.
+=== 2. Multi-Group Offensives / Siege Commitment — mostly done
+`AIManager.secondaryGroupTargets` (`AIManager.ts:726`) lists the committed
+plan's target first and then opens at most `MAX_SECONDARY_FRONTS = 2`
+(`:731`, used at `:1028`) secondary fronts on the same war's other cities, so
+groups coordinate instead of stacking beside the main siege
+(`tests/ai/armyComposition.test.ts`). *Remaining:* pincer/encirclement
+scripting and a third group (`TODO/TODO.txt:40-43`).
 
-=== 3. Army Composition by Era
-The AI still over-produces the era's default defender. Needs stronger era/threat-aware composition weights so armies evolve with technology.
+=== 3. Army Composition by Era — DONE
+`AutoProduction.bestBuildableDefender` / `bestBuildableAttacker`
+(`AutoProduction.ts:1735,1752`) pick from `UNIT_PROPS` by role and
+`canBuildUnit(civ, type)` — no hardcoded ladder, so `mech_inf` and tanks are
+fielded the moment the tech lands, and defenders mix in the era's best
+attacker every third garrison unit. Tests: `tests/ai/armyComposition.test.ts`.
 
-=== 4. Economy Buildings Earlier
-The AI reaches 0–8 gold with big armies. Marketplace/Bank/Temple should be built earlier when upkeep pressure starts.
+=== 4. Economy Buildings Earlier — DONE
+Economy buildings are valued against upkeep pressure and the treasury by
+`src/game/engine/AI/BuildingCoordinator.ts` and
+`src/game/engine/AI/BuildingEconomics.ts` (gain − upkeep per turn), so
+Marketplace/Bank/Temple are ordered when upkeep starts to bite instead of
+after the treasury is empty.
 
-=== 5. Diplomacy Overhaul
-* Tech exchange (offer tech for tech, tech for money) — engine + UI exist,
-   but no tech-for-money (sell a tech) proposal
-* Gold transfer (send/request gold as a gift, not a demand)
-* AI-to-AI alliance calls for help
-* Embassy-based observation of AI-to-AI diplomacy
+=== 5. Diplomacy Overhaul — DONE
+* Tech exchange **and** tech-for-money: engine cases at
+   `DiplomacyManager.ts:1418` and `:2695`, UI with a price input at
+   `GameModals.tsx:2113-2140`
+* Gold transfer: `gift_gold`, `request_gold` and the unprompted `offer_gift`
+   button (`GameModals.tsx:804-805,868-870,1887,1947-1953`)
+* AI-to-AI alliance calls for help: `DiplomacyManager.considerCallToArms`
+   (`:2529`)
+* Embassy-based observation of AI-to-AI diplomacy:
+   `DiplomacyManager.getEventLog(observerCivId)` (`:538`)
 
-=== 6. End-of-Game Statistics & High Scores
-* End-of-game statistics screen (economics, military, science)
-* Civ1-style demographics screen (greatest cities, world rankings)
-* High score system with server submission
+*Remaining from the original set:* offensive "help me attack" asks, per-outcome
+bribe **modals** (toasts today) and the optional gold-sweetener input on a
+two-way tech exchange.
+
+=== 6. End-of-Game Statistics & High Scores — partially done
+* End-of-game statistics: `GameResultOverlay` (score/turn/cities/citizens/
+   units/techs/wonders/rivals) plus a reopenable `StatisticsModal` (game menu →
+   Statistics) — done; the overlay still has no economics/military/science
+   sections.
+* Civ1-style demographics: 14 rows with world ranks
+   (`DemographicsManager.computeDemographics`, `:213-226`) — done; the
+   "greatest cities in the world" list is still missing and the Players/world
+   tab is devMode-gated.
+* High score system with server submission: **still open** — no highscore
+   code, storage or server exists (`TODO/TODO.txt:30`).
 
 === 7. Dead Code Cleanup
 DONE — the 57 unused exports knip reported are gone. Tuning constants and
