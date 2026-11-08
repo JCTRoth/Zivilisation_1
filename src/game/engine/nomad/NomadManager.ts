@@ -55,6 +55,7 @@ import {
 import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
 import { bribeUnitCost } from '../DiplomacyManager';
 import { stripPalaceBuildings } from '../BuildingEffects';
+import { decideAiAttack } from '../AI/AttackOdds';
 import { NomadAI, type NomadPlan, type NomadSituation, type NomadStance } from './NomadAI';
 import {
   NOMAD_AI_HIRE_BASE_CHANCE,
@@ -107,10 +108,12 @@ import {
   NOMAD_ROUTE_INCOME_BASE,
   NOMAD_ROAM_LEASH,
   NOMAD_SETTLEMENT_DEFENDERS,
+  NOMAD_SETTLEMENT_FOOD_COST,
   NOMAD_SETTLEMENT_MAX_DISTANCE,
   NOMAD_SETTLEMENT_MUSTER_LIMIT,
   NOMAD_SETTLEMENT_MUSTER_ROUNDS,
   NOMAD_SETTLEMENT_TRADE_GOLD,
+  NOMAD_TRADE_ROUTE_SLOT_BONUS,
   NOMAD_SPLIT_DISTANCE,
   NOMAD_MAX_CAMPS,
   NOMAD_SPAWN_MAX_DISTANCE,
@@ -349,6 +352,8 @@ export class NomadManager {
     cityId: string;
     /** The wanderers the camp produced since it moved in. */
     unitIds: string[];
+    /** Host troops the camp gifted as guards when the settlement was agreed. */
+    guardUnitIds: string[];
     lastMusterRound: number;
   }> = [];
 
@@ -540,7 +545,10 @@ export class NomadManager {
     // Put them back in the box with the rest of the tribe. The settlement's
     // DEFENDERS are the player's own units and stay where they were paid for.
     for (const tile of this.gameEngine.map?.tiles ?? []) {
-      if (tile.nomadTent) tile.nomadTent = false;
+      if (tile.nomadTent) {
+        tile.nomadTent = false;
+        if (!tile.nomadSettlement) tile.nomadTentClanId = undefined;
+      }
     }
     this.gameEngine.units = (this.gameEngine.units ?? []).filter(
       (u) => u.civilizationId !== NOMAD_CIV_ID,
@@ -626,8 +634,8 @@ export class NomadManager {
     const target = camp.targetCivId;
     const humanVisit = humanId !== null && target === humanId;
 
-    // THE VISIT: their units walk INTO the court — the envoy only ever
-    // speaks when a nomad unit stands ON the host's city (or beside one
+    // THE VISIT: their units walk up to the court — the envoy only ever
+    // speaks when a nomad unit stands beside the host's city (or beside one
     // of its units), never on a timer. Until then this group WANDERS
     // (never receding from the way to the court); on contact the envoy
     // speaks: an audience for the human, a deal struck in code for a rival.
@@ -636,8 +644,7 @@ export class NomadManager {
         this.openMeeting(round, camp);
       } else {
         this.roamCamp(camp, target);
-        // They may have just stepped ONTO the court — the message binds
-        // to appearing on the tile, so speak now, not next round.
+        // They may have just reached the court's edge — speak now, not next round.
         if (this.hasMetCourt(target, camp)) this.openMeeting(round, camp);
       }
       return;
@@ -651,7 +658,7 @@ export class NomadManager {
       // Only a HUMAN audience can be dismissed and re-offered; a rival's
       // meeting is resolved the moment it happens. THE RULE: they may not
       // STAY at your court without a dialog — so an unanswered audience
-      // comes back whenever the camp stands with you (on your city, or
+      // comes back whenever the camp stands with you (beside your city, or
       // beside a unit) or you walk up to its tents, never silent for more
       // than the re-offer cooldown.
       if (
@@ -702,7 +709,7 @@ export class NomadManager {
    */
   private openMeeting(round: number, camp: NomadCamp): void {
     // THEY MAKE CAMP AT THE GATE: these tents move to the tile where the
-    // envoy actually stood. From here THIS group is camped on the host's
+    // envoy actually stood. From here THIS group is camped beside the host's
     // doorstep — its city pays their food (EconomicManager.nomadDrain) for
     // as long as they linger — and every straggler walks in to join them.
     const spot = this.meetingUnitIds(camp.targetCivId, camp)
@@ -713,7 +720,7 @@ export class NomadManager {
       camp.row = spot.row;
       // The tents moved — so did the pitch: the tent always sits beside
       // wherever the group is standing right now (beside your city, when
-      // the envoy spoke on your city's tile).
+      // the envoy spoke at its gate).
       this.pitchTent(camp);
     }
 
@@ -1405,8 +1412,8 @@ export class NomadManager {
    *  * the CAMP pays back — its day market trades `NOMAD_SETTLEMENT_TRADE_GOLD`
    *    per turn into the host city's owner, it musters its OWN soldiers
    *    (up to `NOMAD_SETTLEMENT_MUSTER_LIMIT`, the chest pays as always)
-   *    around the stakes, and those wanderers keep in shape by roaming the
-   *    land beyond the settlement — life, not scenery.
+   *    around the stakes. Settled riders patrol the city's perimeter so
+   *    they can answer an assault without entering the city.
    */
   private settlementPhase(round: number): void {
     for (const spot of this.settlementSpots) {
@@ -1435,15 +1442,16 @@ export class NomadManager {
   }
 
   /**
-   * The settlement-produced wanderers stretch their legs: a full random
-   * walk among the passable, unowned tiles — never onto a city, never off
-   * the leash (`NOMAD_ROAM_LEASH`) of their home camp. They are the map's
-   * living texture: sightable, raidable, friendly to the barbarians, and
+   * The settlement-produced guards patrol open tiles around their host city
+   * — never entering it or wandering away from its perimeter. If the city
+   * is gone, they fall back to the leash (`NOMAD_ROAM_LEASH`) of their home
+   * camp. They remain sightable, raidable, friendly to the barbarians, and
    * NEVER part of the camp machinery (no parley, no anger, no departing).
    */
   private roamSettlementWanderers(): void {
     const grid = this.gameEngine.squareGrid;
     for (const spot of this.settlementSpots) {
+      const city = (this.gameEngine.cities ?? []).find((candidate) => candidate.id === spot.cityId);
       for (const id of spot.unitIds) {
         const unit = this.unitById(id);
         if (!unit) continue;
@@ -1454,7 +1462,12 @@ export class NomadManager {
           if ((unit.movesRemaining ?? 0) <= 0) break;
           const neighbors = (grid?.getNeighbors?.(unit.col, unit.row) ?? []).filter(
             (n) =>
-              Math.max(Math.abs(n.col - spot.col), Math.abs(n.row - spot.row)) <= NOMAD_ROAM_LEASH
+              // Settled riders keep to the city perimeter, where they can
+              // actually answer an assault. If the city no longer exists,
+              // fall back to the camp leash so the units are not stranded.
+              (city
+                ? Math.max(Math.abs(n.col - city.col), Math.abs(n.row - city.row)) <= 1
+                : Math.max(Math.abs(n.col - spot.col), Math.abs(n.row - spot.row)) <= NOMAD_ROAM_LEASH)
               && !this.gameEngine.getUnitAt?.(n.col, n.row)
               && !this.gameEngine.getCityAt?.(n.col, n.row)
               && (this.gameEngine.canUnitMoveTo?.(unit.id, n.col, n.row) ?? false),
@@ -1465,6 +1478,51 @@ export class NomadManager {
         }
       }
     }
+  }
+
+  /**
+   * A settled camp can intercept an assault on the city it joined. Only a
+   * guard standing beside both the city and the attacker can engage, and it
+   * does so only when the shared combat-odds calculation approves the fight.
+   */
+  defendCityAgainst(city: City, attacker: Unit): boolean {
+    if (attacker.isDefeated === true || attacker.civilizationId === NOMAD_CIV_ID) return false;
+
+    const guardCandidates = this.settlementSpots
+      .filter((spot) => spot.cityId === city.id)
+      .flatMap((spot) => [...spot.unitIds, ...spot.guardUnitIds])
+      .map((id) => this.unitById(id))
+      .filter((guard): guard is Unit => {
+        if (!guard || guard.isDefeated === true) return false;
+        // The tribe's own mustered riders and the city's gifted settlement
+        // guards can both intercept while they still stand at the perimeter.
+        if (guard.civilizationId !== NOMAD_CIV_ID && guard.civilizationId !== city.civilizationId) return false;
+        const cityDistance = Math.max(Math.abs(guard.col - city.col), Math.abs(guard.row - city.row));
+        const attackerDistance = Math.max(Math.abs(guard.col - attacker.col), Math.abs(guard.row - attacker.row));
+        return cityDistance <= 1 && attackerDistance <= 1;
+      });
+
+    let best: { guard: Unit; chance: number } | null = null;
+    for (const guard of guardCandidates) {
+      const attackerTile = this.gameEngine.getTileAt?.(attacker.col, attacker.row);
+      const decision = decideAiAttack(guard, attacker, {
+        defenderTile: attackerTile ?? undefined,
+        defenderTerrainKey: attackerTile
+          ? String(attackerTile.type ?? attackerTile.terrain ?? '').trim().toLowerCase()
+          : undefined,
+        defenderInCity:
+          Boolean(this.gameEngine.getCityAt?.(attacker.col, attacker.row))
+          || attackerTile?.nomadTent === true
+          || attackerTile?.nomadSettlement === true,
+      });
+      if (decision.allow && (!best || decision.chance > best.chance)) {
+        best = { guard, chance: decision.chance };
+      }
+    }
+
+    if (!best) return false;
+    this.gameEngine.combatUnit(best.guard, attacker);
+    return true;
   }
 
   /**
@@ -1666,6 +1724,10 @@ export class NomadManager {
     // — the market and the plea — is valid in every state the tribe still
     // exists (it stands on the promised terms in `pending`).
     if (this.liveParley === null || this.visitCount === 0) return { ok: false };
+    // A settlement can only be built by choosing the explicit offer currently
+    // on the table. This also rejects stale or guessed choice ids after an
+    // offer has been withdrawn.
+    if (!this.liveChoices?.some((choice) => choice.id === choiceId)) return { ok: false };
     const humanId = this.humanCivId();
     if (humanId === null) return { ok: false };
     const human = this.gameEngine.civilizations?.[humanId];
@@ -1759,8 +1821,11 @@ export class NomadManager {
         // The settlement outlives the visit: its effects are read from the
         // map (city food drain, defenders raised here).
         tile.nomadSettlement = true;
+        tile.nomadTentClanId = this.clan?.id;
+        const guardUnitIds: string[] = [];
         for (let i = 0; i < NOMAD_SETTLEMENT_DEFENDERS; i++) {
-          this.gameEngine.createUnit(humanId, 'warriors', offer.col, offer.row);
+          const guard = this.gameEngine.createUnit(humanId, 'warriors', offer.col, offer.row);
+          guardUnitIds.push(guard.id);
         }
         // The camp puts down stakes and keeps them: from now on it feeds
         // the city its keep (the tile's engine-flagged food drain) and pays
@@ -1771,6 +1836,7 @@ export class NomadManager {
           row: offer.row,
           cityId: offer.cityId,
           unitIds: [],
+          guardUnitIds,
           lastMusterRound: this.lastRound,
         });
         this.settled = true;
@@ -1860,7 +1926,11 @@ export class NomadManager {
 
   // ── Internals ──────────────────────────────────────────────────────────
 
-  /** The one human seat, or null (hotseat / all-AI games are out in v1). */
+  /**
+   * The one human seat, or null — which is every hotseat game (still out in
+   * v1) and every all-AI spectator game (which runs fine: the tribe travels
+   * between AI courts with no audience to open).
+   */
   private humanCivId(): number | null {
     const seats = this.gameEngine.gameSettings?.humanPlayerIds ?? [0];
     if (seats.length !== 1) return null;
@@ -2130,7 +2200,7 @@ export class NomadManager {
         // fog on ground nobody had visited. Fog is earned by walking it —
         // the maps door and the hall's "find" are the deliberate, announced
         // exceptions — and you meet this horde the honest way: their riders
-        // walk ONTO your city, inside your vision, and only then does the
+        // reach your city, inside your vision, and only then does the
         // envoy speak. The story still says so.
         this.gameEngine.onStateChange?.('NOMAD_SIGHTED', {
           col: camp.col,
@@ -2184,7 +2254,7 @@ export class NomadManager {
    * THE REAL RIDE: a group that struck tents RIDES to its next court —
    * step by step, across the map, in the open (the nomads are drawn
    * through the fog, so you watch them come and go). Arrival is PHYSICAL:
-   * somebody stands ON the host's city — the same contact rule the first
+   * somebody stands beside the host's city — the same contact rule the first
    * visit plays by — and the tents go up around the riders who actually
    * walked in. Never a timer, never a spell.
    */
@@ -2224,8 +2294,8 @@ export class NomadManager {
       const hold = waiting ? NOMAD_RIDE_HOLD_DISTANCE : 0;
       for (const rider of riders) this.rideStep(rider, target, hold);
 
-      // ARRIVAL: somebody stands ON the host's city (or beside one of its
-      // units) — contact, exactly as on the first visit.
+      // ARRIVAL: somebody stands beside the host's city (or beside one of
+      // its units) — contact, exactly as on the first visit.
       if (!waiting && riders.some((u) => this.standsAtCourt(u, leg.targetCivId))) {
         this.raiseMarchedCamp(leg, riders, round);
         this.road.splice(i, 1);
@@ -2268,12 +2338,13 @@ export class NomadManager {
     leg.sinceProgress = 0;
   }
 
-  /** A rider standing ON that court's city, or within one tile of its units. */
+  /** A rider standing beside that court's city, or within one tile of its units. */
   private standsAtCourt(unit: Unit, courtId: number): boolean {
-    const onCity = (this.gameEngine.cities ?? []).some(
-      (c) => c.civilizationId === courtId && c.col === unit.col && c.row === unit.row,
+    const besideCity = (this.gameEngine.cities ?? []).some(
+      (c) => c.civilizationId === courtId
+        && Math.max(Math.abs(c.col - unit.col), Math.abs(c.row - unit.row)) <= 1,
     );
-    if (onCity) return true;
+    if (besideCity) return true;
     return (this.gameEngine.units ?? []).some(
       (u) =>
         u.id !== unit.id &&
@@ -2367,12 +2438,22 @@ export class NomadManager {
             id: 'settle',
             labelKey: 'nomad.choice.settle',
             labelParams: { city: cityName },
+            detailKey: 'nomad.choice.settleTerms',
+            detailParams: {
+              city: cityName,
+              food: NOMAD_SETTLEMENT_FOOD_COST,
+              gold: NOMAD_SETTLEMENT_TRADE_GOLD,
+              defenders: NOMAD_SETTLEMENT_DEFENDERS,
+              routes: NOMAD_TRADE_ROUTE_SLOT_BONUS,
+            },
             variant: 'accept',
           });
           choices.push({
             id: 'refuse_settle',
             labelKey: 'nomad.choice.refuseSettle',
             labelParams: { city: cityName },
+            detailKey: 'nomad.choice.refuseSettleTerms',
+            detailParams: { city: cityName },
             variant: 'pass',
           });
           this.pending = { ...(this.pending ?? {}), settle: settleTile };
@@ -2603,8 +2684,8 @@ export class NomadManager {
    * THE PITCH: a tent on the first free tile beside these tents — the
    * visible half of "the caravan has stopped here". It is the answer to
    * the standing still: the riders are IN CAMP, and the tent says so from
-   * across the fog. Visual only — no food, no defenders, nothing reads it
-   * but the map (`tile.nomadTent`) — and it is struck with the tents.
+   * across the fog. A tent tile also gives city-grade defensive cover to
+   * units standing there, and is struck when the camp moves on.
    */
   private pitchTent(camp: NomadCamp): void {
     this.strikeTent(camp);
@@ -2617,6 +2698,7 @@ export class NomadManager {
       const tile = this.gameEngine.getTileAt?.(n.col, n.row);
       if (!tile || tile.nomadTent || tile.nomadSettlement || tile.village) continue;
       tile.nomadTent = true;
+      tile.nomadTentClanId = this.clan?.id;
       camp.tent = { col: n.col, row: n.row };
       this.pushTiles();
       return;
@@ -2627,7 +2709,10 @@ export class NomadManager {
   private strikeTent(camp: NomadCamp): void {
     if (!camp.tent) return;
     const tile = this.gameEngine.getTileAt?.(camp.tent.col, camp.tent.row);
-    if (tile) tile.nomadTent = false;
+    if (tile) {
+      tile.nomadTent = false;
+      if (!tile.nomadSettlement) tile.nomadTentClanId = undefined;
+    }
     camp.tent = null;
     this.pushTiles();
   }
@@ -2638,15 +2723,8 @@ export class NomadManager {
   }
 
   /**
-   * THE HIRE SET — the camp units that STAND WITH the player right now: on
-   * one of their cities' tiles, or within one tile of one of their units.
-   * This is the envoy's contact rule applied per unit, and it is exactly
-   * what the hire door may sell: the riders you met, never a horde scattered
-   * across the map (a splinter camp four tiles away was never yours to buy).
-   */
-  /**
    * The riders of THIS camp (or of the whole tribe when no camp is named)
-   * that stand with `courtId`: on one of its city tiles, or within one tile
+   * that stand with `courtId`: beside one of its city tiles, or within one tile
    * of one of its units. This is the envoy's contact rule applied per unit,
    * and it is exactly what the hire door may sell — the group you met.
    */
@@ -2656,8 +2734,9 @@ export class NomadManager {
     for (const id of ids) {
       const unit = this.unitById(id);
       if (!unit) continue;
-      const onCity = (this.gameEngine.cities ?? []).some(
-        (c) => c.civilizationId === courtId && c.col === unit.col && c.row === unit.row,
+      const besideCity = (this.gameEngine.cities ?? []).some(
+        (c) => c.civilizationId === courtId
+          && Math.max(Math.abs(c.col - unit.col), Math.abs(c.row - unit.row)) <= 1,
       );
       const besideUnit = (this.gameEngine.units ?? []).some(
         (u) =>
@@ -2665,7 +2744,7 @@ export class NomadManager {
           && !u.isDefeated
           && Math.max(Math.abs(u.col - unit.col), Math.abs(u.row - unit.row)) <= 1,
       );
-      if (onCity || besideUnit) met.push(id);
+      if (besideCity || besideUnit) met.push(id);
     }
     return met;
   }
@@ -2752,7 +2831,12 @@ export class NomadManager {
     });
   }
 
-  /** A shuffled pick of every alive court but `fromCivId` — the promised court first. */
+  /**
+   * A shuffled pick of every alive court but `fromCivId` — the promised
+   * court first. YOUR gate is not on that list unless the return was
+   * promised (or there is nowhere else to ride): a visit to the human is a
+   * story event, never a coincidence.
+   */
   private pickNextCourt(fromCivId: number, promisedReturn: boolean): number | null {
     const humanId = this.humanCivId();
     const route = (this.gameEngine.civilizations ?? [])
@@ -2762,9 +2846,19 @@ export class NomadManager {
       const j = Math.floor(Math.random() * (i + 1));
       [route[i], route[j]] = [route[j], route[i]];
     }
-    if (route.length === 0 && humanId !== null) route.push(humanId);
-    if (promisedReturn && humanId !== null && route[0] !== humanId) route.unshift(humanId);
-    return route[0] ?? null;
+    // A ride to YOUR court is a story event, never a coincidence. The tribe
+    // arrives the first time because the spawn sends it, and comes back only
+    // on a return it PROMISED to a friendly court — so a RANDOM leg skips
+    // your gate once you have refused them (or turned them). Before this the
+    // shuffle could drop the horde back on your city a few rounds after a
+    // "pass", which is exactly the return visit the refusal was supposed to
+    // deny. Every rival dead and you are the only court left? Then the road
+    // still leads back to you — a tribe must never simply vanish.
+    const earned = route.filter((id) => id !== humanId || promisedReturn);
+    const road = earned.length > 0 ? earned : route;
+    if (road.length === 0 && humanId !== null) road.push(humanId);
+    if (promisedReturn && humanId !== null && road[0] !== humanId) road.unshift(humanId);
+    return road[0] ?? null;
   }
 
   /**
@@ -2849,26 +2943,24 @@ export class NomadManager {
       .map((id) => this.unitById(id))
       .filter((u): u is Unit => u !== undefined);
     if (alive.length === 0) return null;
-    // Prefer the unit standing ON a player city — that is the place the
-    // dialog is about ("their units appearing on your city").
+    // Prefer the unit standing beside a player city — that is the place the
+    // dialog is about (the nomads' camp at the city's edge).
     const humanId = this.humanCivId();
-    const onCourt = humanId === null ? undefined : alive.find((u) =>
+    const besideCourt = humanId === null ? undefined : alive.find((u) =>
       (this.gameEngine.cities ?? []).some(
-        (c) => c.civilizationId === humanId && c.col === u.col && c.row === u.row,
+        (c) => c.civilizationId === humanId
+          && Math.max(Math.abs(c.col - u.col), Math.abs(c.row - u.row)) <= 1,
       ),
     );
-    const u = onCourt ?? alive[0];
+    const u = besideCourt ?? alive[0];
     return { col: u.col, row: u.row };
   }
 
   /**
-   * THE VISIT'S TRIGGER: a nomad unit standing ON a host city's tile —
+   * THE VISIT'S TRIGGER: a nomad unit standing beside a host city's tile —
    * or within one tile of one of its units (the city-less settler visit).
-   * The message binds to the nomads APPEARING ON THE CITY: they walk in,
-   * and only then does the envoy speak. A city holds garrisons, so
-   * standing inside one is how a visitor appears; a FIELD tile is never
-   * shared across civs — the game's oldest invariant — so meeting a unit
-   * means standing beside it. No meeting, no envoy.
+   * The camp stays outside the city walls; once its riders reach the gate,
+   * the envoy speaks. No meeting, no envoy.
    *
    * The same predicate, per unit, is what the hire door sells
    * (`meetingUnitIds`): one rule for "they are here" and for "you may buy
@@ -2902,15 +2994,32 @@ export class NomadManager {
 
   /**
    * ONE RIDER'S WALK toward `target`: the wander (most steps close in,
-   * some drift sideways — a walk that meanders yet always lands) with the
-   * last step onto a city PLACED, never moved: `moveUnit` would resolve it
-   * as an assault, and visitors do not storm cities. Shared by the camp's
-   * wander and by the ride between courts.
+   * some drift sideways — a walk that meanders yet always lands) stops at
+   * the city's edge. Visitors do not enter or assault cities. Shared by
+   * the camp's wander and by the ride between courts.
    */
   private rideStep(unit: Unit, target: { col: number; row: number }, stopAt = 0): void {
     unit.isFortified = false;
     unit.movesRemaining = unit.maxMoves ?? unit.movesRemaining;
     const maxSteps = Math.max(1, unit.maxMoves ?? 1);
+
+    // Repair an old visitor position if the unit is already on its court's
+    // city tile: move it to an open neighboring tile before continuing.
+    const cityAtTarget = this.gameEngine.getCityAt?.(target.col, target.row);
+    if (cityAtTarget && unit.col === target.col && unit.row === target.row) {
+      const exits = this.gameEngine.squareGrid?.getNeighbors?.(target.col, target.row) ?? [];
+      const exit = exits.find((n) =>
+        !this.gameEngine.getUnitAt?.(n.col, n.row)
+        && !this.gameEngine.getCityAt?.(n.col, n.row)
+        && (this.gameEngine.canUnitMoveTo?.(unit.id, n.col, n.row) ?? false),
+      );
+      if (exit) {
+        unit.col = exit.col;
+        unit.row = exit.row;
+        unit.movesRemaining = Math.max(0, (unit.movesRemaining ?? 1) - 1);
+      }
+    }
+
     for (let stepNo = 0; stepNo < maxSteps; stepNo++) {
       const d = Math.max(Math.abs(unit.col - target.col), Math.abs(unit.row - target.row));
       if (d <= stopAt) {
@@ -2934,15 +3043,7 @@ export class NomadManager {
       }
       if ((unit.movesRemaining ?? 0) <= 0) break;
       if (d === 1) {
-        if (this.gameEngine.getCityAt?.(target.col, target.row)) {
-          // The step INTO the city: PLACED, never moved — visitors do not
-          // storm cities; the message binds to them APPEARING on the tile.
-          unit.col = target.col;
-          unit.row = target.row;
-          unit.movesRemaining = Math.max(0, (unit.movesRemaining ?? 1) - 1);
-        }
-        // A unit target (the city-less visit): stand BESIDE it — two
-        // civs never share a field tile.
+        // Stop at the city's edge or beside the unit target — no shared tile.
         break;
       }
       const next = this.wanderStepToward(unit, target);

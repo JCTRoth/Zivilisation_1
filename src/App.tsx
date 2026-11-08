@@ -19,6 +19,7 @@ import PauseScreen from "./components/ui/PauseScreen";
 import HotseatHandoffScreen from "./components/ui/HotseatHandoffScreen";
 import GameSpeedControls from "./components/ui/GameSpeedControls";
 import TopBar from "./components/ui/TopBar";
+import DevOverlayPanel from "./components/ui/DevOverlayPanel";
 import NotificationCenter from "./components/ui/NotificationCenter";
 import GameMenuSheet, {
   type GameMenuName,
@@ -195,9 +196,9 @@ function App() {
           console.log("[App] Developer mode:", gameSettings.devMode);
         }
 
-        // Every AI-vs-AI scenario is a spectator mode, so Dev Mode is FORCED
-        // on: the whole map is observable, and nothing in the game ever waits
-        // for a human. Covers all four scenario types, not just the duel.
+        // Every AI-vs-AI scenario is a spectator mode, so Dev Mode is forced
+        // on for spectator controls and the Forge overlay. With a civilization
+        // selected there, the canvas still shows that side's regular fog.
         if (isAIVsAI) {
           gameSettings.devMode = true;
           actions.updateSettings({ devMode: true });
@@ -205,6 +206,25 @@ function App() {
 
         const engine = new GameEngine(actions);
         await engine.initialize(gameSettings);
+
+        // The Forge of War defaults to the barbarian horde's plan, but most
+        // spectator scenarios have no horde. Start on a real AI war plan and
+        // enable the overlay so it is useful as soon as the map opens.
+        if (isAIVsAI) {
+          const firstAi = engine.civilizations.find(
+            (civ) => civ.isAlive !== false && civ.isAI && civ.id >= 0,
+          );
+          const overlays = useGameStore.getState().settings.devOverlays;
+          actions.updateSettings({
+            devOverlays: {
+              forgeOfWar: true,
+              aiTargets: overlays?.aiTargets ?? false,
+              cityRadii: overlays?.cityRadii ?? false,
+              sightRadius: overlays?.sightRadius ?? false,
+            },
+            devViewPlayerId: firstAi?.id ?? null,
+          });
+        }
 
         // Start the per-round progression tracker for this game session.
         gameProgression.startSession(engine, gameSettings);
@@ -1391,6 +1411,9 @@ function App() {
         {/* Main Map Area */}
         <div className="game-canvas flex-grow-1 position-relative">
           <GameCanvas onExamineHex={handleExamineHex} gameEngine={gameEngine} />
+          {/* Development mode only: the overlay checkboxes (Forge of War, AI
+              targets, city radii, sight radius). */}
+          {settings.devMode && gameState.isGameStarted && <DevOverlayPanel />}
         </div>
       </div>
 

@@ -12,6 +12,7 @@ import type { Technology, Unit, City, Civilization, VillageOutcome, AudienceNoti
 import { trackAIAnimation } from '@/game/rendering/GlideAnimation';
 import { getWonder } from '@/data/WonderData';
 import { debugLog } from './DevLog';
+import { recordAiTarget, clearAiTargetMarkers } from './DevOverlayState';
 import { playSfx, type SfxCue } from './Sfx';
 import { unitAttackCue, cityAssaultCue } from './SoundEngine';
 import { t } from '../i18n';
@@ -592,6 +593,9 @@ export class EngineEventRouter {
     this.lastQueueLengths.clear();
     this.endTurnPromptShown.clear();
     this.lastMovementCueTurn.clear();
+    // A fresh game starts with a clean dev overlay — markers from the last
+    // run must not bleed onto the new map.
+    clearAiTargetMarkers();
     (eventData.civilizations as Civilization[]).forEach((civ: Civilization, index: number) => {
       if (!civ.capital) {
         const firstCity = (eventData.cities as City[]).find((c: City) => c.civilizationId === index);
@@ -2307,6 +2311,18 @@ export class EngineEventRouter {
 
   private onAITargetHighlight(eventData: Record<string, unknown>) {
     debugLog('[EngineEventRouter] AI_TARGET_HIGHLIGHT:', eventData);
+    // Dev-mode overlay ("AI targets" checkbox): remember the tile so the
+    // canvas can flash it. Kept out of the React store — the AI fires this
+    // once per unit per round, which would re-render the app per event.
+    const col = Number(eventData?.col);
+    const row = Number(eventData?.row);
+    if (Number.isFinite(col) && Number.isFinite(row)) {
+      recordAiTarget(
+        col,
+        row,
+        typeof eventData?.color === 'string' ? eventData.color : 'rgba(255,0,0,0.4)',
+      );
+    }
     // Optionally, highlight the target tile in the UI (red overlay, etc.)
     // For now, just log and update visibility
     this.actions.updateVisibility();
@@ -2685,7 +2701,7 @@ export class EngineEventRouter {
    * `GameEngine.nomadManager.resolveParley(choiceId)` (see
    * GameModals.handleAudienceChoice) — the engine event only PRESENTS it.
    */
-  private onNomadParley(eventData: Record<string, unknown>) {
+  private async onNomadParley(eventData: Record<string, unknown>) {
     if (this.isAIVsAI) return;
     const choices = Array.isArray(eventData?.choices)
       ? (eventData.choices as AudienceChoice[])
@@ -2720,16 +2736,20 @@ export class EngineEventRouter {
       goldAmount: typeof eventData.goldAmount === 'number' ? eventData.goldAmount : undefined,
     };
     // The audience is ABOUT a place — take the viewer there (the meeting
-    // at the gate, the camp for the market and the plea). An automated
-    // pan, so it honors the player's autoCamera setting; keepZoom keeps
-    // their zoom. No coordinates in the payload = no pan (nothing to see).
+    // at the gate, the camp for the market and the plea), and zoom in on
+    // the arriving caravan before the audience covers the map. This story
+    // focus is part of the blocking audience, even when normal auto-camera
+    // is disabled. No coordinates = no pan.
     const col = Number(eventData.col);
     const row = Number(eventData.row);
-    if (Number.isFinite(col) && Number.isFinite(row)) {
-      this.actions.focusCameraOnTile?.(col, row);
-    }
-    this.actions.openAudience?.(notice);
+    const hasFocusTile = Number.isFinite(col) && Number.isFinite(row);
+    if (hasFocusTile) this.actions.focusCameraOnTile?.(col, row, false, true);
     this.syncState();
+    // Let the camera arrive first so the player sees the caravan and camp
+    // before the blocking audience opens. Headless runs and disabled camera
+    // animation resolve immediately (or use CameraGlideGate's short timeout).
+    if (hasFocusTile && isCameraGliding()) await awaitCameraGlide();
+    this.actions.openAudience?.(notice);
   }
 
   private syncState() {

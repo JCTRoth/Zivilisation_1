@@ -127,8 +127,10 @@ interface Tile {
   village?: boolean;
   /** A nomad settlement planted beside a city (drains its food, raises defenders). */
   nomadSettlement?: boolean;
-  /** A nomad pitch — their camp's tent, drawn beside the tents (visual only). */
+  /** A nomad pitch — its map marker and defensive cover. */
   nomadTent?: boolean;
+  /** Clan whose mark appears on a nomad camp or settlement tile. */
+  nomadTentClanId?: string;
   visible: boolean;
   explored: boolean;
   col: number;
@@ -363,6 +365,10 @@ export interface AudienceChoice {
   labelKey: string;
   /** Interpolation params for the label ({ tech, gold }). */
   labelParams?: Record<string, string | number>;
+  /** Optional explanatory line shown below this choice. */
+  detailKey?: string;
+  /** Interpolation params for the explanatory line. */
+  detailParams?: Record<string, string | number>;
   /** Visual weight: a deal is primary, walking away is the quiet option. */
   variant?: 'accept' | 'pass';
 }
@@ -914,6 +920,85 @@ export interface Notification {
   civId?: number;
 }
 
+/**
+ * What the barbarian horde decided on its last round — the "Forge of War".
+ *
+ * The engine (`BarbarianManager`) owns the numbers, the dev-mode overlay
+ * only draws them, so this lives with the other shared game shapes instead
+ * of inside the renderer.
+ */
+export interface ForgeOfWarPlan {
+  /** Round the decision was taken. 0 = no decision yet (no horde / new game). */
+  round: number;
+  /**
+   * 'assault' = every raider converges on `target`, 'scout' = the horde hunts
+   * for a city it can take, 'idle' = there is no barbarian horde on the map.
+   */
+  mode: 'assault' | 'scout' | 'idle';
+  /** Assault target; null while scouting or idle. */
+  target: { col: number; row: number; name: string } | null;
+  /** Estimated defense of the target when the decision was taken. */
+  defense: number;
+  /** Total offensive strength of the horde at decision time. */
+  hordeStrength: number;
+  /** One entry per horde unit: where that unit is heading right now. */
+  objectives: Array<{ unitId: string; col: number; row: number }>;
+}
+
+/**
+ * One AI player's current military objective — its own "forge of war". Read
+ * live from the AI turn storage by `AIManager.getWarPlan`; the dev overlay only
+ * draws it.
+ *
+ * A civilization with no committed plan still yields a record (`target: null`)
+ * so the overlay can show its current posture instead of going blank.
+ */
+export interface AiWarPlan {
+  civilizationId: number;
+  /** Round the plan was prepared (0 when the civ has no plan). */
+  round: number;
+  /** Army group targets are real current movement orders, but not a committed offensive. */
+  source?: 'offensive' | 'army_group';
+  /** Current formation state when this view comes from an army group. */
+  groupStatus?: 'forming' | 'marching' | 'attacking';
+  /** Where the army is going, or null while the civ is only defending. */
+  target: {
+    col: number;
+    row: number;
+    kind: 'city' | 'unit';
+    /** City name when the target is a city; null for a unit. */
+    name: string | null;
+    /** Owner of the target, when the AI knows it. */
+    civId: number | null;
+  } | null;
+  /** Minimum force the AI estimated it needs. */
+  requiredUnits: number;
+  /** Units the plan has actually committed so far. */
+  assignedUnitIds: string[];
+  /** Estimated defense of the target at plan time (0 for unit targets). */
+  targetDefense: number;
+  /** 'sea' = the target is on another island (a naval invasion). */
+  reachableBy: 'land' | 'sea';
+  posture: 'defensive' | 'aggressive';
+  /** Situational aggression score (0–100). */
+  aggression: number;
+}
+
+/**
+ * Switches of the floating Development-Mode overlay panel. Every flag is
+ * false by default: a player without dev mode on never renders one of them.
+ */
+export interface DevOverlayFlags {
+  /** Forge of War — the barbarian horde or a selected AI's military objective. */
+  forgeOfWar: boolean;
+  /** Tiles the AI picked as targets this round (fading markers). */
+  aiTargets: boolean;
+  /** Work radius of *every* city, not just the selected one. */
+  cityRadii: boolean;
+  /** Sight square of every unit — the tiles that unit reveals. */
+  sightRadius: boolean;
+}
+
 interface Settings {
   uiScale: number;
   /**
@@ -940,6 +1025,18 @@ interface Settings {
    */
   skipHotseatHandoff: boolean;
   devMode: boolean; // Developer mode: see all players on minimap and switch between them
+  /**
+   * Switches of the floating dev panel (only rendered while `devMode` is on).
+   * Optional so a settings object built elsewhere without them stays valid —
+   * undefined means "every overlay off".
+   */
+  devOverlays?: DevOverlayFlags;
+  /**
+   * Which civilization's Forge of War plan the dev panel shows. `null` means
+   * the barbarian horde's plan; an AI civilization id shows its own objective.
+   * Only read while dev mode is on.
+   */
+  devViewPlayerId?: number | null;
   /** Master switch for all movement/combat/camera animations. When false, durations are 0 (instant). */
   enableAnimations: boolean;
   /**
@@ -1150,6 +1247,8 @@ interface CameraPanRequest {
   row: number;
   /** Keep the current zoom (true) or also animate zoom to a target (false). */
   keepZoom: boolean;
+  /** Destination zoom when `keepZoom` is false. */
+  targetZoom?: number;
   /** Unique id so a newer request supersedes an older one. */
   requestId: string;
 }

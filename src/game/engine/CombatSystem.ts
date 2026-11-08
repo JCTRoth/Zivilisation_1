@@ -13,7 +13,8 @@
  *
  * Rules (Civ1-flavoured, as implemented by this clone):
  *   - Strength = stat × health% × rank multiplier, defender additionally gets
- *     terrain defence, +50% when fortified or inside a city, and the fortress
+ *     terrain defence, +50% when fortified, in a city, or on a nomad camp,
+ *     and the fortress
  *     multiplier.
  *   - The attacker wins the round with probability A / (A + D).
  *   - Only the side that LOSES the round takes damage:
@@ -59,6 +60,8 @@ interface CombatTerrainLike {
   type?: string;
   terrain?: string;
   improvement?: string | null;
+  nomadTent?: boolean;
+  nomadSettlement?: boolean;
 }
 
 /** Minimal unit shape this module needs (engine units have optional stats). */
@@ -91,7 +94,7 @@ export interface UnitCombatContext {
   defenderTile?: CombatTerrainLike | null;
   /** Pre-resolved terrain key (falls back to the tile's type/terrain). */
   defenderTerrainKey?: string;
-  /** Whether the defender stands inside a city (+50% fortification). */
+  /** Whether the defender stands inside a city or nomad camp (+50% fortification). */
   defenderInCity?: boolean;
   /** Random source returning [0, 1) — injectable for deterministic tests. */
   random?: () => number;
@@ -167,7 +170,7 @@ export class CombatSystem {
       * Math.max(1, terrainDefense)
       * this.rankMultiplier(defender);
 
-    // Units inside a city are automatically fortified (+50%).
+    // Cities and nomad camps provide automatic fortification (+50%).
     if (defender.isFortified || context.defenderInCity) {
       strength *= 1.5;
     }

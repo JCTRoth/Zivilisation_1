@@ -104,7 +104,7 @@ import {
 import { chooseAction, scoreCandidates } from '../diplomacy/AIDiplomacyPolicy';
 import { chooseEspionageAction, type EspionageContext } from '../diplomacy/EspionagePolicy';
 import { wouldProposeExchange } from '../diplomacy/TechTradeEvaluator';
-import type { Unit, City, Civilization } from '../../../../types/game';
+import type { Unit, City, Civilization, AiWarPlan } from '../../../../types/game';
 import GameEngine, { NUCLEAR_BLAST_RADIUS, type PlayerTurnStorage, type MapTile } from '../GameEngine';
 import { getShuffledAdjacentTiles } from '../MovementHelper';
 import { awaitPendingAnimations } from '../../rendering/GlideAnimation';
@@ -683,6 +683,107 @@ export class AIManager {
       }
     }
     return false;
+  }
+
+  /**
+   * The civilization's current military objective — its "forge of war".
+   *
+   * This reads the same offensive plan and army groups the AI itself marches
+   * with, so the dev overlay reflects its real orders. A civ with no active
+   * target still returns its aggression posture, so "defending" is distinct
+   * from "no data".
+   */
+  getWarPlan(civilizationId: number): AiWarPlan {
+    const storage = this.gameEngine.getPlayerStorage?.(civilizationId);
+    const plan = storage?.turnData?.offensivePlan as AIState['offensivePlan'] | null | undefined;
+    const aiState = storage?.turnData?.aiState as AIState | undefined;
+    const aggression = aiState?.aggression ?? null;
+    const units: Unit[] = this.gameEngine.units ?? [];
+
+    // A defensive civ may still be moving an army group toward a known enemy.
+    // That is a real military order, even though it is not an offensive plan
+    // (and must not be used to make the civ declare war). Use the first live,
+    // still-hostile group as the overlay fallback so AI-vs-AI shows what its
+    // selected side is actually doing.
+    const armyGroup = plan?.target
+      ? null
+      : aiState?.armyGroups?.find((group) => {
+          const hasLiveUnits = group.unitIds.some((unitId) =>
+            units.some(
+              (unit: Unit) =>
+                unit.id === unitId &&
+                unit.civilizationId === civilizationId &&
+                !unit.isDefeated,
+            ),
+          );
+          if (!hasLiveUnits) return false;
+          const city = this.gameEngine.getCityAt?.(
+            group.targetLocation.col,
+            group.targetLocation.row,
+          );
+          const unit = this.gameEngine.getUnitAt?.(
+            group.targetLocation.col,
+            group.targetLocation.row,
+          );
+          return (
+            (!!city && city.civilizationId !== civilizationId) ||
+            (!!unit && unit.civilizationId !== civilizationId && !unit.isDefeated)
+          );
+        }) ?? null;
+
+    let target: AiWarPlan['target'] = null;
+    if (plan?.target) {
+      const city =
+        plan.targetType === 'city'
+          ? this.gameEngine.getCityAt?.(plan.target.col, plan.target.row) ?? null
+          : null;
+      target = {
+        col: plan.target.col,
+        row: plan.target.row,
+        kind: plan.targetType,
+        name: city?.name ?? null,
+        civId: plan.targetCivId ?? city?.civilizationId ?? null,
+      };
+    } else if (armyGroup) {
+      const { col, row } = armyGroup.targetLocation;
+      const city = this.gameEngine.getCityAt?.(col, row) ?? null;
+      const unit = this.gameEngine.getUnitAt?.(col, row) ?? null;
+      target = {
+        col,
+        row,
+        kind: city ? 'city' : 'unit',
+        name: city?.name ?? null,
+        civId: city?.civilizationId ?? unit?.civilizationId ?? null,
+      };
+    }
+    const armyGroupUnitIds = armyGroup?.unitIds.filter((unitId) =>
+      units.some(
+        (unit: Unit) =>
+          unit.id === unitId &&
+          unit.civilizationId === civilizationId &&
+          !unit.isDefeated,
+      ),
+    ) ?? [];
+
+    return {
+      civilizationId,
+      round:
+        plan?.roundPrepared ??
+        armyGroup?.formedRound ??
+        this.gameEngine.roundManager?.getRoundNumber?.() ??
+        0,
+      source: plan?.target ? 'offensive' : armyGroup ? 'army_group' : undefined,
+      groupStatus: armyGroup?.status,
+      target,
+      requiredUnits: plan?.requiredUnits ?? armyGroupUnitIds.length,
+      assignedUnitIds: [
+        ...(plan?.assignedUnitIds ?? armyGroupUnitIds),
+      ],
+      targetDefense: plan?.targetDefense ?? 0,
+      reachableBy: plan?.reachableBy ?? 'land',
+      posture: aggression?.posture ?? 'defensive',
+      aggression: aggression?.score ?? 0,
+    };
   }
 
   /**
@@ -10330,7 +10431,9 @@ export class AIManager {
    */
   private evaluateAttackOdds(unit: Unit, defender: Unit): AiAttackDecision {
     const defenderTile = this.gameEngine.getTileAt(defender.col, defender.row);
-    const defenderInCity = this.gameEngine.getCityAt(defender.col, defender.row) !== null;
+    const defenderInCity = this.gameEngine.getCityAt(defender.col, defender.row) !== null
+      || defenderTile?.nomadTent === true
+      || defenderTile?.nomadSettlement === true;
     return decideAiAttack(unit, defender, {
       defenderTile: defenderTile as { type?: string; improvement?: string | null } | null,
       defenderInCity,

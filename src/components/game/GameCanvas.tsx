@@ -56,6 +56,9 @@ import { unlockAudio } from '@/utils/Sfx';
 import { playUnitSelection } from '@/utils/SoundEngine';
 import { UNIT_TYPES } from '@/data/UnitConstants';
 import { debugLog } from '@/utils/DevLog';
+import { getAiTargetMarkers } from '@/utils/DevOverlayState';
+import { computeDevPlayerVision } from '@/utils/DevPlayerVision';
+import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
 
 /**
  * Frame rate of the single render loop that drives the map. Animations are
@@ -226,6 +229,55 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   );
   const civilizations = useGameStore((state) => state.civilizations);
   const devMode = useGameStore((state) => !!state.settings?.devMode);
+  // Floating dev panel switches (see `DevOverlayPanel`). Only ever read while
+  // devMode is on, so a normal game renders exactly as it did before them.
+  const devOverlays = useGameStore((state) => state.settings?.devOverlays);
+  const devViewPlayerId = useGameStore(
+    (state) => state.settings?.devViewPlayerId ?? null,
+  );
+  const devOverlayActive =
+    devMode &&
+    !!devOverlays &&
+    (devOverlays.forgeOfWar || devOverlays.aiTargets || devOverlays.sightRadius);
+  const devCityRadiiActive = devMode && !!devOverlays?.cityRadii;
+
+  // The Forge of War selector can pin the spectator map to one player's eyes.
+  // In AI-vs-AI the engine already stores each civ's exact current/explored
+  // fog; the helper falls back to matching unit/city sight if no storage exists.
+  const devViewCiv =
+    devViewPlayerId === null
+      ? null
+      : civilizations.find((civ) => civ.id === devViewPlayerId) ?? null;
+  const devViewStorage = devViewCiv
+    ? gameEngine?.getPlayerStorage?.(devViewCiv.id)
+    : undefined;
+  const devPlayerFogActive =
+    devMode && !!devOverlays?.forgeOfWar && devViewPlayerId !== null && !!devViewCiv;
+  const devPlayerVision = useMemo(() => {
+    if (!devOverlayActive || !devOverlays?.forgeOfWar || !devViewCiv) return null;
+    return computeDevPlayerVision({
+      playerId: devViewCiv.id,
+      units,
+      cities,
+      civilizations,
+      width: mapData.width,
+      height: mapData.height,
+      visibility: devViewStorage?.visibility,
+      explored: devViewStorage?.explored,
+    });
+  }, [
+    devOverlayActive,
+    devOverlays?.forgeOfWar,
+    devViewCiv,
+    units,
+    cities,
+    civilizations,
+    mapData.width,
+    mapData.height,
+    devViewStorage,
+    gameState.currentTurn,
+    gameState.activePlayer,
+  ]);
   const currentQueueUnitId = useGameStore(
     (state) => state.uiState.currentQueueUnitId,
   );
@@ -318,8 +370,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const cameraTweenRef = useRef<{
     startX: number;
     startY: number;
+    startZoom: number;
     targetX: number;
     targetY: number;
+    targetZoom: number;
     startTime: number;
     duration: number;
   } | null>(null);
@@ -522,6 +576,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         h = ((h << 5) - h + (t.village ? 1 : 0)) | 0;
         h = ((h << 5) - h + (t.nomadTent ? 1 : 0)) | 0;
         h = ((h << 5) - h + (t.nomadSettlement ? 1 : 0)) | 0;
+        mix(t.nomadTentClanId ?? "");
       }
     }
     return String(h);
@@ -727,6 +782,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             village?: boolean;
             nomadTent?: boolean;
             nomadSettlement?: boolean;
+            nomadTentClanId?: string;
           }>
         | undefined,
       width: number,
@@ -757,6 +813,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             village: tile.village ?? false,
             nomadTent: tile.nomadTent ?? false,
             nomadSettlement: tile.nomadSettlement ?? false,
+            nomadTentClanId: tile.nomadTentClanId,
           };
         }
       }
@@ -1515,13 +1572,16 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
    */
   const isUnitVisibleToHuman = useCallback(
     (unit: Unit): boolean => {
+      if (devPlayerFogActive && devPlayerVision) {
+        return devPlayerVision.isVisible(unit.col, unit.row);
+      }
       if (devMode) return true;
       if ((gameState.humanPlayerIds ?? [0]).includes(unit.civilizationId)) return true;
       const width = mapData?.width ?? 0;
       if (!width) return false;
       return !!mapData?.visibility?.[unit.row * width + unit.col];
     },
-    [devMode, mapData, gameState.humanPlayerIds],
+    [devMode, mapData, gameState.humanPlayerIds, devPlayerFogActive, devPlayerVision],
   );
 
   const renderStaticContent = useCallback(() => {
@@ -1608,6 +1668,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       combatAnimations,
       promotionEffects,
       movementAnimations,
+      devCityRadii: devCityRadiiActive,
     });
   }, [
     minimap,
@@ -1629,6 +1690,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     movementAnimations,
     renderTerrainToOffscreen,
     syncCanvasRect,
+    devCityRadiiActive,
   ]);
 
   /**
@@ -1671,23 +1733,84 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
               u.civilizationId === gameState.activePlayer &&
               (u.movesRemaining || 0) > 0,
           ));
-      if (!hasPulsingUnit) return;
+      if (hasPulsingUnit) {
+        mapRendererRef.current.renderPulsingUnits({
+          ctx: overlayCtx,
+          map: mapData as MapState,
+          units,
+          gameState: gameState as GameState,
+          civilizations,
+          currentTime,
+          squareToScreen,
+          cameraZoom: camera.zoom,
+          currentQueueUnitId: currentQueueUnitId ?? undefined,
+          selectedUnitId,
+          selectedUnitIds: gameState.selectedUnitIds ?? [],
+          combatAnimations,
+          movementAnimations,
+        });
+      }
 
-      mapRendererRef.current.renderPulsingUnits({
-        ctx: overlayCtx,
-        map: mapData as MapState,
-        units,
-        gameState: gameState as GameState,
-        civilizations,
-        currentTime,
-        squareToScreen,
-        cameraZoom: camera.zoom,
-        currentQueueUnitId: currentQueueUnitId ?? undefined,
-        selectedUnitId,
-        selectedUnitIds: gameState.selectedUnitIds ?? [],
-        combatAnimations,
-        movementAnimations,
-      });
+      // In spectator games, dev mode keeps an omniscient board by default.
+      // Selecting a civilization under Forge of War applies that civilization's
+      // regular current/remembered fog to the whole map layer, including units
+      // that dev mode otherwise draws for inspection. Forge annotations are
+      // drawn afterward so the selected AI's own plan remains visible.
+      if (devPlayerFogActive && devPlayerVision) {
+        const tileSize = TILE_SIZE * camera.zoom;
+        const half = tileSize / 2;
+        for (let row = 0; row < devPlayerVision.height; row++) {
+          for (let col = 0; col < devPlayerVision.width; col++) {
+            const explored = devPlayerVision.isExplored(col, row);
+            const visible = devPlayerVision.isVisible(col, row);
+            if (explored && visible) continue;
+
+            const { x, y } = squareToScreen(col, row);
+            if (
+              x + half < 0 ||
+              y + half < 0 ||
+              x - half > overlay.width ||
+              y - half > overlay.height
+            ) {
+              continue;
+            }
+            overlayCtx.fillStyle = explored ? "rgba(0, 0, 0, 0.42)" : "#111118";
+            overlayCtx.fillRect(x - half, y - half, tileSize, tileSize);
+          }
+        }
+      }
+
+      // Forge, AI targets and sight radii sit above the viewer-specific fog.
+      if (devOverlayActive && devOverlays) {
+        mapRendererRef.current.renderDevOverlays({
+          ctx: overlayCtx,
+          units,
+          squareToScreen,
+          cameraZoom: camera.zoom,
+          currentTime,
+          canvasSize: { width: overlay.width, height: overlay.height },
+          overlays: devOverlays,
+          forgeOfWar: devOverlays.forgeOfWar
+            ? (gameEngine?.barbarianManager?.plan ?? null)
+            : null,
+          aiTargets: devOverlays.aiTargets ? getAiTargetMarkers(currentTime) : undefined,
+          devPlayerView:
+            devOverlays.forgeOfWar && devPlayerVision && devViewCiv
+              ? {
+                  playerName: devViewCiv.name,
+                  isVisible: (col: number, row: number) =>
+                    devPlayerVision.isVisible(col, row),
+                  // A normal AI player is shown its own active military
+                  // objective; other viewers see the barbarian plan through
+                  // their selected fog.
+                  warPlan:
+                    devViewCiv.isAI && devViewCiv.id !== BARBARIAN_CIV_ID
+                      ? (gameEngine?.aiManager?.getWarPlan?.(devViewCiv.id) ?? null)
+                      : undefined,
+                }
+              : null,
+        });
+      }
     },
     [
       camera.zoom,
@@ -1699,6 +1822,12 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       movementAnimations,
       squareToScreen,
       units,
+      devOverlayActive,
+      devOverlays,
+      devPlayerFogActive,
+      devPlayerVision,
+      devViewCiv,
+      gameEngine,
     ],
   );
 
@@ -2175,6 +2304,18 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         } catch {
           unitAt = null;
           cityAt = undefined;
+        }
+
+        // Dev mode normally allows inspecting every live entity. When the
+        // Forge selector pins the map to a civilization, preserve that view's
+        // fog for clicks too so an unseen unit or city's current details do
+        // not leak through the spectator controls.
+        if (devPlayerFogActive && devPlayerVision) {
+          const visibleToView = devPlayerVision.isVisible(hex.col, hex.row);
+          if (!visibleToView) {
+            unitAt = null;
+            cityAt = null;
+          }
         }
 
         // Clicking an already-selected *empty* hex clears the selection. Unit
@@ -3482,14 +3623,23 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     overlayActiveRef.current =
       queueUnitCanPulse ||
       selectedUnitCanPulse ||
-      (citizenReassign !== null && citizenReassign !== undefined);
+      (citizenReassign !== null && citizenReassign !== undefined) ||
+      devOverlayActive;
   }, [
     units,
     currentQueueUnitId,
     gameState.selectedUnit,
     gameState.activePlayer,
     citizenReassign,
+    devOverlayActive,
   ]);
+
+  // Ticking a box in the dev panel changes what the map draws — ask for one
+  // static repaint so a switched-on (or off) city-radius layer shows up
+  // without waiting for the next turn or camera move.
+  useEffect(() => {
+    triggerRender();
+  }, [devOverlays, devMode, triggerRender]);
 
   useEffect(() => {
     if (minimap || !gameState.isGameStarted) return;
@@ -3514,7 +3664,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         const eased = MathUtils.fade(t);
         if (t >= 1) {
           cameraTweenRef.current = null;
-          actions.updateCamera({ x: tween.targetX, y: tween.targetY });
+          actions.updateCamera({ x: tween.targetX, y: tween.targetY, zoom: tween.targetZoom });
           actions.clearCameraPanRequest();
           // Camera has arrived — release anything waiting on the pan.
           finishCameraGlide();
@@ -3522,6 +3672,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           actions.updateCamera({
             x: MathUtils.lerp(tween.startX, tween.targetX, eased),
             y: MathUtils.lerp(tween.startY, tween.targetY, eased),
+            zoom: MathUtils.lerp(tween.startZoom, tween.targetZoom, eased),
           });
         }
       }
@@ -3612,10 +3763,13 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       canvasRectRef.current.height ||
       canvas?.clientHeight ||
       window.innerHeight;
+    const targetZoom = cameraPanRequest.keepZoom
+      ? cam.zoom
+      : clampZoom(cameraPanRequest.targetZoom ?? cam.maxZoom ?? 3, state.settings.devMode);
     const target = centerCameraOnTile({
       col: cameraPanRequest.col,
       row: cameraPanRequest.row,
-      zoom: cam.zoom,
+      zoom: targetZoom,
       viewportWidth,
       viewportHeight,
       mapWidth: map?.width ?? 0,
@@ -3637,7 +3791,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     if (duration <= 0) {
       // Animations disabled / set to instant: commit and finish immediately.
       cameraTweenRef.current = null;
-      actions.updateCamera({ x: target.x, y: target.y });
+      actions.updateCamera({ x: target.x, y: target.y, zoom: targetZoom });
       actions.clearCameraPanRequest();
       finishCameraGlide();
       return;
@@ -3646,8 +3800,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     cameraTweenRef.current = {
       startX: cam.x,
       startY: cam.y,
+      startZoom: cam.zoom,
       targetX: target.x,
       targetY: target.y,
+      targetZoom,
       startTime: performance.now(),
       duration,
     };

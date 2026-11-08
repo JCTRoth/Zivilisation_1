@@ -1253,7 +1253,12 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                   onClick={() => handleNomadHallChoice(choice.id)}
                 >
                   {NOMAD_CHOICE_ICONS[choice.id] ? `${NOMAD_CHOICE_ICONS[choice.id]} ` : ''}
-                  {t(choice.labelKey as TranslationKey, params)}
+                  <span>{t(choice.labelKey as TranslationKey, params)}</span>
+                  {choice.detailKey && (
+                    <small className="diplomacy-nomad-door__detail">
+                      {t(choice.detailKey as TranslationKey, choice.detailParams)}
+                    </small>
+                  )}
                 </button>
               );
             })}

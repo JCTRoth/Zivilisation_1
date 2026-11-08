@@ -28,14 +28,16 @@ import { TILE_SIZE, TERRAIN_TYPES } from '@/data/TerrainData';
 import { TERRAIN_RESOURCES, TERRAIN_PROPERTIES, getResourceYields, RESOURCE_GLYPHS } from '@/data/TerrainConstants';
 import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES, ImprovementDisplayConfig } from '@/data/TileImprovementConstants';
 import { UNIT_PROPERTIES } from '@/data/UnitConstants';
-import { NOMAD_CIV_ID } from '@/data/NomadConstants';
+import { NOMAD_CAMP_MARKS, NOMAD_CIV_ID } from '@/data/NomadConstants';
 import { SPECIALIST_YIELDS } from '@/data/GameConstants';
 import { getUnitIcon } from '@/utils/UnitIconLoader';
 import { TERRAIN_FONT_FAMILY } from '@/utils/TerrainFont';
 import { MathUtils } from '@/utils/MathUtils';
 import { computeTurnMarkers, type TileLookup } from '@/utils/MovementPreview';
 import { UNIT_RANK, UNIT_RANK_INFO, getUnitRank } from '../engine/UnitRankSystem';
-import type { MapState, CameraState, Unit, City, GameState, Civilization, CombatAnimation, MovementAnimation, PromotionEffect, SpecialistType, TurnMarker } from '../../../types/game';
+import { AI_TARGET_TTL_MS, type AiTargetMarker } from '@/utils/DevOverlayState';
+import { t } from '@/i18n';
+import type { MapState, CameraState, Unit, City, GameState, Civilization, CombatAnimation, MovementAnimation, PromotionEffect, SpecialistType, TurnMarker, ForgeOfWarPlan, DevOverlayFlags, AiWarPlan } from '../../../types/game';
 import { TerrainTextureManager } from './TerrainTextureManager';
 
 /**
@@ -175,6 +177,8 @@ export interface TerrainTileRenderInfo {
   nomadTent?: boolean;
   /** A nomad settlement planted beside a city. */
   nomadSettlement?: boolean;
+  /** Clan whose mark appears on this tent/settlement. */
+  nomadTentClanId?: string;
 }
 
 /**
@@ -272,6 +276,11 @@ export interface RenderStaticFrameParams {
   movementAnimations?: MovementAnimation[];
   /** Active promotion flourishes (gold ring + floating rank name) */
   promotionEffects?: PromotionEffect[];
+  /**
+   * Development mode: outline the work radius of *every* city instead of only
+   * the selected one (floating dev panel → "City radii").
+   */
+  devCityRadii?: boolean;
 }
 
 /**
@@ -304,6 +313,62 @@ export interface RenderPulsingUnitsParams {
   combatAnimations?: CombatAnimation[];
   /** Active unit-movement glides (position interpolation between tiles) */
   movementAnimations?: MovementAnimation[];
+}
+
+/**
+ * Parameters for the Development-Mode overlay — the layer drawn **above** the
+ * units, driven by the checkboxes of the floating dev panel. A normal game
+ * never calls this: `GameCanvas` only renders it while `devMode` is on and at
+ * least one box is ticked.
+ */
+export interface RenderDevOverlayParams {
+  /** Canvas 2D rendering context of the above-unit overlay canvas. */
+  ctx: CanvasRenderingContext2D;
+  /** All units — the horde lines and the sight squares are drawn from them. */
+  units: Unit[];
+  /** Function to convert map coordinates to screen coordinates. */
+  squareToScreen: (col: number, row: number) => { x: number; y: number };
+  /** Current camera zoom level. */
+  cameraZoom: number;
+  /** Animation clock: drives the target-ring pulse and the marker fades. */
+  currentTime: number;
+  /** Size of the overlay canvas in pixels (its backing store matches CSS px). */
+  canvasSize: { width: number; height: number };
+  /** Which boxes of the floating dev panel are ticked. */
+  overlays: DevOverlayFlags;
+  /** The horde's last decision; read only while `overlays.forgeOfWar`. */
+  forgeOfWar?: ForgeOfWarPlan | null;
+  /** Fading "the AI aims here" markers; read only while `overlays.aiTargets`. */
+  aiTargets?: readonly AiTargetMarker[];
+  /**
+   * Forge of War through one player's eyes (dev panel player selector). When
+   * set, a raider's line is drawn only while that raider stands on a tile the
+   * player currently sees, the target ring only when the target tile is
+   * visible, and the read-out reports the visible share of the horde.
+   *
+   * For a normal AI civilization the selected player's *own* committed
+   * offensive or active army-group objective is drawn instead (see `warPlan`):
+   * lines from the assigned units to the target, in a fixed high-contrast accent.
+   *
+   * `null`/undefined = the AI's own (omniscient) truth.
+   */
+  devPlayerView?: {
+    playerName: string;
+    isVisible: (col: number, row: number) => boolean;
+    /**
+     * Present only when the selected player is a normal AI civ: show that
+     * civ's current military objective rather than the barbarian horde. `null`
+     * means it has no committed offensive or active army group right now.
+     */
+    warPlan?: AiWarPlan | null;
+  } | null;
+}
+
+/** One line of a dev-overlay read-out box. */
+type DevReadoutKind = 'title' | 'player' | 'body';
+interface DevReadoutLine {
+  text: string;
+  kind: DevReadoutKind;
 }
 
 /**
@@ -392,6 +457,11 @@ interface DynamicContentParams {
   movementAnimations?: MovementAnimation[];
   /** Active promotion flourishes (gold ring + floating rank name) */
   promotionEffects?: PromotionEffect[];
+  /**
+   * Development mode: outline the work radius of *every* city instead of only
+   * the selected one (floating dev panel → "City radii").
+   */
+  devCityRadii?: boolean;
 }
 
 /**
@@ -733,7 +803,7 @@ export class MapRenderer {
     // settlement they planted) leaves a tent on the ground — the marker
     // that says why their riders stand still out there.
     if (tile.nomadTent || tile.nomadSettlement) {
-      this.drawTentMarker(ctx, centerX, centerY, scale);
+      this.drawTentMarker(ctx, centerX, centerY, scale, tile.nomadTentClanId);
     }
 
     this.drawTerrainSymbol(ctx, centerX, centerY, tile, { scale });
@@ -807,7 +877,8 @@ export class MapRenderer {
       previewTurnMarkers,
       combatAnimations,
       movementAnimations,
-      promotionEffects
+      promotionEffects,
+      devCityRadii
     } = params;
 
     const canvasSize = this.ensureCanvasSize(canvas);
@@ -882,7 +953,8 @@ export class MapRenderer {
       previewTurnMarkers,
       combatAnimations,
       movementAnimations,
-      promotionEffects
+      promotionEffects,
+      devCityRadii
     });
 
     this.drawUnitPaths(ctx, unitPaths, units, cities, map, gameState.selectedUnit ?? null, squareToScreen, cameraZoom);
@@ -991,6 +1063,486 @@ export class MapRenderer {
         }
       }
     });
+  }
+
+  /**
+   * Development-Mode overlay: everything the dev panel can switch on, drawn on
+   * the above-units layer so it sits over the map without hiding the units
+   * underneath. Called only while `devMode` is on and a box is ticked.
+   *
+   *  - **Forge of War** — the barbarian horde's last decision: an assault line
+   *    per raider converging on the weakest city (pulsing target ring), or the
+   *    dashed scouting routes while the horde is still hunting, plus a read-out
+   *    box with the numbers the AI compared.
+   *  - **AI targets** — tiles the AI picked as its objective this round, fading
+   *    out a few seconds after the last unit claimed them.
+   *  - **Unit sight radius** — the square of tiles each unit reveals.
+   */
+  renderDevOverlays(params: RenderDevOverlayParams): void {
+    const {
+      ctx,
+      units,
+      squareToScreen,
+      cameraZoom,
+      currentTime,
+      canvasSize,
+      overlays,
+      forgeOfWar,
+      aiTargets,
+      devPlayerView,
+    } = params;
+    const tileSize = this.tileSize * cameraZoom;
+
+    // ── Sight squares ────────────────────────────────────────────────────
+    if (overlays.sightRadius) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      for (const unit of units) {
+        if (unit.isDefeated) continue;
+        // Same floor as GameEngine's reveal pass (radius 2); the wonder vision
+        // bonus is deliberately not added — this shows the base sight only.
+        const sight = Math.max(
+          2,
+          typeof unit.sightRange === 'number'
+            ? unit.sightRange
+            : UNIT_PROPERTIES[String(unit.type).toLowerCase()]?.sightRange ?? 2,
+        );
+        const { x, y } = squareToScreen(unit.col, unit.row);
+        const half = (sight + 0.5) * tileSize;
+        if (
+          x + half < 0 ||
+          y + half < 0 ||
+          x - half > canvasSize.width ||
+          y - half > canvasSize.height
+        ) {
+          continue;
+        }
+        ctx.strokeRect(x - half, y - half, half * 2, half * 2);
+      }
+      ctx.restore();
+    }
+
+    // ── Tiles the AI is aiming at ────────────────────────────────────────
+    if (overlays.aiTargets && aiTargets && aiTargets.length > 0) {
+      const half = tileSize / 2;
+      ctx.save();
+      for (const marker of aiTargets) {
+        const alpha = Math.max(0, 1 - (currentTime - marker.atMs) / AI_TARGET_TTL_MS);
+        if (alpha <= 0) continue;
+        const { x, y } = squareToScreen(marker.col, marker.row);
+        if (
+          x + half < 0 ||
+          y + half < 0 ||
+          x - half > canvasSize.width ||
+          y - half > canvasSize.height
+        ) {
+          continue;
+        }
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = marker.color;
+        ctx.fillRect(x - half, y - half, tileSize, tileSize);
+        ctx.strokeStyle = 'rgba(255, 70, 70, 0.95)';
+        ctx.lineWidth = Math.max(1.5, cameraZoom * 1.5);
+        ctx.strokeRect(x - half, y - half, tileSize, tileSize);
+        // Crosshair so a marker is still readable on a red-tinted tile.
+        ctx.beginPath();
+        ctx.moveTo(x - half * 0.45, y);
+        ctx.lineTo(x + half * 0.45, y);
+        ctx.moveTo(x, y - half * 0.45);
+        ctx.lineTo(x, y + half * 0.45);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // ── Forge of War: the horde's plan + read-out ────────────────────────
+    if (!overlays.forgeOfWar) return;
+
+    const view = devPlayerView ?? null;
+
+    // A normal AI civilization selected in the dev panel gets its own forge of
+    // war: the committed offensive its army is currently executing. This is
+    // what makes the overlay useful in an AI-vs-AI game, where there is no
+    // human seat and the barbarian horde may not exist at all.
+    if (view && view.warPlan !== undefined) {
+      this.drawDevAiWarPlan({
+        ctx,
+        units,
+        squareToScreen,
+        cameraZoom,
+        currentTime,
+        canvasSize,
+        playerName: view.playerName,
+        warPlan: view.warPlan,
+      });
+      return;
+    }
+
+    const plan = forgeOfWar ?? null;
+    const unitById = new Map(units.map((u) => [u.id, u]));
+    const pulse = 0.5 + 0.5 * Math.sin(currentTime / 220);
+    const isSeen = (col: number, row: number) => !view || view.isVisible(col, row);
+
+    // With a player view selected, a raider only appears if that player
+    // currently has its tile in sight — the fog decides what is drawn, exactly
+    // like the real UI would.
+    const objectives = (plan?.objectives ?? []).filter((objective) => {
+      const from = unitById.get(objective.unitId);
+      return !!from && !from.isDefeated && isSeen(from.col, from.row);
+    });
+
+    ctx.save();
+    for (const objective of objectives) {
+      const from = unitById.get(objective.unitId)!;
+      const a = squareToScreen(from.col, from.row);
+      const b = squareToScreen(objective.col, objective.row);
+      const isAssault = plan?.mode === 'assault';
+      // Both ends far off-screen: nothing to draw.
+      if (
+        (a.x < -tileSize && b.x < -tileSize) ||
+        (a.x > canvasSize.width + tileSize && b.x > canvasSize.width + tileSize) ||
+        (a.y < -tileSize && b.y < -tileSize) ||
+        (a.y > canvasSize.height + tileSize && b.y > canvasSize.height + tileSize)
+      ) {
+        continue;
+      }
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      if (isAssault) {
+        ctx.strokeStyle = `rgba(255, 122, 26, ${0.55 + 0.35 * pulse})`;
+        ctx.lineWidth = Math.max(2, cameraZoom * 2);
+        ctx.setLineDash([]);
+      } else {
+        ctx.strokeStyle = 'rgba(255, 196, 92, 0.45)';
+        ctx.lineWidth = Math.max(1, cameraZoom);
+        ctx.setLineDash([6, 6]);
+      }
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+
+    if (plan?.mode === 'assault' && plan.target && isSeen(plan.target.col, plan.target.row)) {
+      const target = squareToScreen(plan.target.col, plan.target.row);
+      const radius = tileSize * (0.8 + 0.12 * pulse);
+      ctx.strokeStyle = `rgba(255, 90, 20, ${0.7 + 0.3 * pulse})`;
+      ctx.lineWidth = Math.max(2, cameraZoom * 2.5);
+      ctx.beginPath();
+      ctx.arc(target.x, target.y, radius, 0, Math.PI * 2);
+      ctx.stroke();
+      // Outer echo so the target stays findable when the camera is zoomed out.
+      ctx.globalAlpha = 0.45;
+      ctx.lineWidth = Math.max(1, cameraZoom);
+      ctx.beginPath();
+      ctx.arc(target.x, target.y, radius * 1.6, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+
+    this.drawDevForgeReadout(
+      ctx,
+      plan,
+      canvasSize,
+      view
+        ? {
+            playerName: view.playerName,
+            visibleRaiders: objectives.length,
+            totalRaiders: plan?.objectives.length ?? 0,
+            targetVisible: plan?.target
+              ? isSeen(plan.target.col, plan.target.row)
+              : false,
+          }
+        : null,
+    );
+  }
+
+  /**
+   * Forge of War, AI-player mode: the selected AI civilization's own committed
+   * offensive. Dashed lines run from every assigned unit to the target, and a
+   * pulsing ring marks it; both use a fixed high-contrast accent so the plan
+   * reads even when the civ colour (Romans' near-black) would not.
+   */
+  private drawDevAiWarPlan(params: {
+    ctx: CanvasRenderingContext2D;
+    units: Unit[];
+    squareToScreen: (col: number, row: number) => { x: number; y: number };
+    cameraZoom: number;
+    currentTime: number;
+    canvasSize: { width: number; height: number };
+    playerName: string;
+    warPlan: AiWarPlan | null;
+  }): void {
+    const {
+      ctx,
+      units,
+      squareToScreen,
+      cameraZoom,
+      currentTime,
+      canvasSize,
+      playerName,
+      warPlan,
+    } = params;
+    const tileSize = this.tileSize * cameraZoom;
+    // A fixed high-contrast accent, not the civ colour: several civ colours
+    // (Romans' near-black, Chinese' yellow) either vanish on the map or blend
+    // into the normal unit-path lines.
+    const color = '#4fd6ff';
+    const pulse = 0.5 + 0.5 * Math.sin(currentTime / 220);
+    const target = warPlan?.target ?? null;
+
+    if (warPlan && target) {
+      const unitById = new Map(units.map((unit) => [unit.id, unit]));
+      const end = squareToScreen(target.col, target.row);
+
+      // Collect every assigned unit's segment first: one path stroked twice
+      // (dark underlay, then the accent) keeps the plan readable on top of
+      // the normal unit-path lines, which can share the same colour.
+      ctx.save();
+      ctx.beginPath();
+      let hasSegment = false;
+      for (const unitId of warPlan.assignedUnitIds) {
+        const unit = unitById.get(unitId);
+        if (!unit || unit.isDefeated) continue;
+        const from = squareToScreen(unit.col, unit.row);
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(end.x, end.y);
+        hasSegment = true;
+      }
+      if (hasSegment) {
+        ctx.setLineDash([8, 5]);
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
+        ctx.lineWidth = Math.max(4, cameraZoom * 4);
+        ctx.stroke();
+        ctx.strokeStyle = color;
+        ctx.globalAlpha = 0.55 + 0.35 * pulse;
+        ctx.lineWidth = Math.max(2, cameraZoom * 2);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+
+      const radius = tileSize * (0.8 + 0.12 * pulse);
+      // Dark halo first, coloured ring second — same reason as the lines.
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
+      ctx.lineWidth = Math.max(5, cameraZoom * 5);
+      ctx.beginPath();
+      ctx.arc(end.x, end.y, radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = Math.max(2, cameraZoom * 2.5);
+      ctx.beginPath();
+      ctx.arc(end.x, end.y, radius, 0, Math.PI * 2);
+      ctx.stroke();
+      // Outer echo so the target stays findable when the camera is zoomed out.
+      ctx.globalAlpha = 0.4;
+      ctx.lineWidth = Math.max(1, cameraZoom);
+      ctx.beginPath();
+      ctx.arc(end.x, end.y, radius * 1.6, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    const lines: DevReadoutLine[] = [
+      { text: '🔥 FORGE OF WAR', kind: 'title' },
+      { text: t('dev.forge.viewingAs', { player: playerName }), kind: 'player' },
+    ];
+
+    if (!warPlan || !warPlan.target) {
+      lines.push({ text: t('dev.forge.planNone'), kind: 'body' });
+      if (warPlan) {
+        lines.push({
+          text: t('dev.forge.posture', {
+            posture:
+              warPlan.posture === 'aggressive'
+                ? t('dev.forge.aggressive')
+                : t('dev.forge.defensive'),
+            score: warPlan.aggression,
+          }),
+          kind: 'body',
+        });
+      }
+    } else if (warPlan.source === 'army_group') {
+      const targetName =
+        warPlan.target.name ??
+        `(${warPlan.target.col}, ${warPlan.target.row})`;
+      lines.push({
+        text: t('dev.forge.planGroup', { target: targetName }),
+        kind: 'body',
+      });
+      lines.push({
+        text: t('dev.forge.planGroupMeta', {
+          round: warPlan.round,
+          assigned: warPlan.assignedUnitIds.length,
+          status: t(
+            warPlan.groupStatus === 'attacking'
+              ? 'dev.forge.groupAttacking'
+              : warPlan.groupStatus === 'forming'
+                ? 'dev.forge.groupForming'
+                : 'dev.forge.groupMarching',
+          ),
+        }),
+        kind: 'body',
+      });
+    } else {
+      lines.push({
+        text:
+          warPlan.target.kind === 'unit'
+            ? t('dev.forge.planUnit')
+            : t('dev.forge.planCity', {
+                target:
+                  warPlan.target.name ??
+                  `(${warPlan.target.col}, ${warPlan.target.row})`,
+              }),
+        kind: 'body',
+      });
+      if (warPlan.reachableBy === 'sea') {
+        lines.push({
+          text: t('dev.forge.planMetaSea', {
+            round: warPlan.round,
+            required: warPlan.requiredUnits,
+          }),
+          kind: 'body',
+        });
+      } else if (warPlan.target.kind === 'city') {
+        lines.push({
+          text: t('dev.forge.planMeta', {
+            round: warPlan.round,
+            assigned: warPlan.assignedUnitIds.length,
+            required: warPlan.requiredUnits,
+            defense: warPlan.targetDefense.toFixed(1),
+          }),
+          kind: 'body',
+        });
+      } else {
+        lines.push({
+          text: t('dev.forge.planMetaUnit', {
+            round: warPlan.round,
+            assigned: warPlan.assignedUnitIds.length,
+            required: warPlan.requiredUnits,
+          }),
+          kind: 'body',
+        });
+      }
+    }
+
+    this.drawDevReadoutBox(ctx, lines, canvasSize);
+  }
+
+  /**
+   * The Forge of War numbers, in a box pinned to the bottom-left corner of the
+   * canvas (the floating dev panel owns the top-left). Shown even with no horde
+   * on the map so "nothing is coming" is a visible state rather than an empty
+   * corner. With a player view selected, the player's name and the share of the
+   * horde that player can actually see replace the AI's total numbers.
+   */
+  private drawDevForgeReadout(
+    ctx: CanvasRenderingContext2D,
+    plan: ForgeOfWarPlan | null,
+    canvasSize: { width: number; height: number },
+    view: {
+      playerName: string;
+      visibleRaiders: number;
+      totalRaiders: number;
+      targetVisible: boolean;
+    } | null,
+  ): void {
+    const lines: DevReadoutLine[] = [{ text: '🔥 FORGE OF WAR', kind: 'title' }];
+    if (view) {
+      lines.push({
+        text: t('dev.forge.viewingAs', { player: view.playerName }),
+        kind: 'player',
+      });
+    }
+
+    if (!plan || plan.mode === 'idle') {
+      lines.push({ text: t('dev.forge.idle'), kind: 'body' });
+      // In an AI-vs-AI game there may simply be no horde at all — point the
+      // developer at the selector, where every AI player has its own war plan.
+      if (!view) {
+        lines.push({ text: t('dev.forge.idleHint'), kind: 'body' });
+      }
+    } else {
+      if (view && view.visibleRaiders === 0) {
+        lines.push({ text: t('dev.forge.noRaidersInSight'), kind: 'body' });
+      } else if (plan.mode === 'assault' && plan.target) {
+        lines.push({
+          text:
+            view && !view.targetVisible
+              ? t('dev.forge.targetUnseen')
+              : t('dev.forge.assault', {
+                  target: plan.target.name,
+                  defense: plan.defense.toFixed(1),
+                }),
+          kind: 'body',
+        });
+      } else {
+        lines.push({ text: t('dev.forge.scout'), kind: 'body' });
+      }
+      lines.push({
+        text: view
+          ? t('dev.forge.visibleMeta', {
+              round: plan.round,
+              visible: view.visibleRaiders,
+              count: view.totalRaiders,
+            })
+          : t('dev.forge.meta', {
+              round: plan.round,
+              count: plan.objectives.length,
+              horde: plan.hordeStrength.toFixed(1),
+            }),
+        kind: 'body',
+      });
+    }
+
+    this.drawDevReadoutBox(ctx, lines, canvasSize);
+  }
+
+  /**
+   * Shared read-out box: bottom-left of the canvas, auto-sized to its longest
+   * line. The dev panel owns the top-left corner.
+   */
+  private drawDevReadoutBox(
+    ctx: CanvasRenderingContext2D,
+    lines: DevReadoutLine[],
+    canvasSize: { width: number; height: number },
+  ): void {
+    const fontFor = (kind: DevReadoutKind) =>
+      kind === 'title' ? '700 13px system-ui, sans-serif' : '500 12px system-ui, sans-serif';
+    const colorFor = (kind: DevReadoutKind) =>
+      kind === 'title' ? '#ff9b3d' : kind === 'player' ? '#9fd8ff' : 'rgba(255, 235, 210, 0.92)';
+    const padX = 12;
+    const padY = 9;
+    const lineH = 17;
+
+    ctx.save();
+    let boxWidth = 0;
+    for (const line of lines) {
+      ctx.font = fontFor(line.kind);
+      boxWidth = Math.max(boxWidth, ctx.measureText(line.text).width);
+    }
+    const boxW = boxWidth + padX * 2;
+    const boxH = lines.length * lineH + padY * 2;
+    const x = 12;
+    const y = canvasSize.height - boxH - 12;
+
+    this.roundedRectPath(ctx, x, y, boxW, boxH, 8);
+    ctx.fillStyle = 'rgba(12, 10, 16, 0.86)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 140, 40, 0.75)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    lines.forEach((line, index) => {
+      ctx.font = fontFor(line.kind);
+      ctx.fillStyle = colorFor(line.kind);
+      ctx.fillText(line.text, x + padX, y + padY + index * lineH);
+    });
+    ctx.restore();
   }
 
   /**
@@ -1313,7 +1865,8 @@ export class MapRenderer {
       previewTurnMarkers,
       combatAnimations,
       movementAnimations,
-      promotionEffects
+      promotionEffects,
+      devCityRadii
     } = params;
 
     const margin = this.tileSize * 2;
@@ -1539,6 +2092,40 @@ export class MapRenderer {
           this.drawTileYieldPreview(ctx, x, y, scaledTileSize, yields);
         }
       }
+    }
+
+    // ── Development mode: work radius of EVERY city ───────────────────────
+    // Toggled from the floating dev panel ("City radii"). A thin outline per
+    // radius tile only, so a board full of cities stays readable and the
+    // selected city's own gold/green layer still reads on top of it.
+    if (devCityRadii) {
+      ctx.save();
+      ctx.lineWidth = Math.max(1, cameraZoom);
+      ctx.strokeStyle = 'rgba(255, 224, 102, 0.40)';
+      for (const city of cities) {
+        if (selectedCity && city.id === selectedCity.id) continue; // drawn in full above
+        const center = squareToScreen(city.col, city.row);
+        if (
+          this.isOutsideViewport(
+            center.x,
+            center.y,
+            canvasSize.width,
+            canvasSize.height,
+            margin + scaledTileSize * 2,
+          )
+        ) {
+          continue;
+        }
+        const half = scaledTileSize / 2;
+        for (let dCol = -2; dCol <= 2; dCol++) {
+          for (let dRow = -2; dRow <= 2; dRow++) {
+            if (Math.abs(dCol) === 2 && Math.abs(dRow) === 2) continue; // civ1 radius corners
+            const { x, y } = squareToScreen(city.col + dCol, city.row + dRow);
+            ctx.strokeRect(x - half, y - half, scaledTileSize, scaledTileSize);
+          }
+        }
+      }
+      ctx.restore();
     }
 
     // Draw movement range overlay first (so it's under everything else)
@@ -2285,12 +2872,13 @@ this.roundedRectPath(ctx, x - half - 1, y - half - 1, scaledTileSize + 2, scaled
     }
   }
 
-  /** The nomads' pitch: a tent on the tile (same emoji trade as villages). */
+  /** A tent icon with a small clan badge, distinct from the village marker. */
   private drawTentMarker(
     ctx: CanvasRenderingContext2D,
     centerX: number,
     centerY: number,
     scale: number,
+    clanId?: string,
   ): void {
     try {
       const iconScale = Math.max(0.5, scale);
@@ -2300,6 +2888,20 @@ this.roundedRectPath(ctx, x - half - 1, y - half - 1, scaledTileSize + 2, scaled
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('⛺', centerX, centerY - 4 * iconScale);
+      const mark = clanId ? NOMAD_CAMP_MARKS[clanId] : undefined;
+      if (mark) {
+        const badgeX = centerX + 8 * iconScale;
+        const badgeY = centerY + 7 * iconScale;
+        ctx.beginPath();
+        ctx.arc(badgeX, badgeY, 7 * iconScale, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(12, 15, 18, 0.9)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(235, 188, 108, 0.9)';
+        ctx.lineWidth = Math.max(1, iconScale);
+        ctx.stroke();
+        ctx.font = `${Math.max(8, Math.round(10 * iconScale))}px "Noto Color Emoji", "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
+        ctx.fillText(mark, badgeX, badgeY);
+      }
       ctx.restore();
     } catch (err) {
       console.warn('[MapRenderer] drawTentMarker fillText failed', err);

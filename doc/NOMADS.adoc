@@ -25,9 +25,10 @@ fortified, **announced** to the player (`NOMAD_SIGHTED`) — and NOT revealed:
 the tents stand 9–13 tiles out, beyond your sight, so lighting them up would
 paint ~50 never-walked tiles as explored (gray fog where you have never
 been). Fog is earned by walking it; you meet them the honest way, when their
-riders walk onto your city. They do not
+riders stop beside your city. They do not
 stay with you: when the visit is over they strike camp and **ride on to the
-next court** — every alive court in turn (see *The route* below).
+next court** — every alive court in turn, though a *random* leg skips your
+gate (only a promised return brings them back; see *The route* below).
 
 One faction is rolled per game — the SAME people return on a return visit
 (they are who you met). The three are drawn from real nomadic history, not
@@ -57,11 +58,10 @@ The visit is **contact-based**: the camp never sends an envoy on a timer.
 Its units **wander the map toward your court** (nearest city, else nearest
 unit) — the walk zig-zags: most steps close in, some drift sideways, and
 the distance to the court never grows. The message binds to the nomads
-**appearing ON your city**: the parley opens only when a nomad unit
-stands on your city's tile (or on the same tile as your unit) — no nomad
-on the tile, no envoy, and the final step onto the court is *placed*
-rather than fought (`moveUnit` would storm it — visitors do not storm
-cities). On contact the audience screen opens with the faction's big art
+**reaching your gate**: the parley opens only when a nomad unit
+stands beside your city (or beside one of your units) — no nomad at the
+gate, no envoy, and the riders never enter your city. On contact the
+audience screen opens with the faction's big art
 (see `src/game/engine/nomad/FACTIONS_README.md`), name, epithet and a lead
 line in the
 clan's own voice, offering:
@@ -83,27 +83,30 @@ tables no knowledge and no maps at all.
 player. No other game source reveals fog without walking it. (Not while
 angry: no trade with a tribe you turned hostile.)
 
-|Let them settle *(random, per clan chance)*
-|A settlement is planted beside your city: the settlement TILE drains
+|Let them settle *(random offer, per clan chance)*
+|Only after you explicitly agree, a settlement is planted on a tile
+directly beside your city: the settlement TILE drains
 **2 food/turn** from the city's balance (`cityFoodBalance`), raises
-**defenders** (one warrior per settlement, yours) — **and buys that city
+**defenders** (one warrior per settlement, yours), who stand on the city
+perimeter and intercept attackers when the shared combat-odds calculation
+approves the fight — **and buys that city
 one extra trade-route slot** (`maxTradeRoutesFor`: 3 → 4, for as long as
 the settlement stands). The camp **keeps producing**: one wanderer of its
-own every 12 rounds (at most 2 alive), those roam the land within 6 tiles
-of the stakes, and the camp's day market pays your treasury **2 gold per
+own every 12 rounds (at most 2 alive), those patrol open tiles on the city's
+perimeter, and the camp's day market pays your treasury **2 gold per
 turn** for the food it eats (`NOMAD_SETTLEMENT_TRADE_GOLD`). The wanderers
 are home — the standing camp is gone.
 
 |Refuse the settlement *(same table)*
-|They asked to stay and you said no: **a closed hand**. `refusals += 1`,
+|No camp is planted. They asked to stay and you said no: **a closed hand**. `refusals += 1`,
 their prices rise by `NOMAD_REFUSAL_PRICE_PENALTY` (25 %) for every door
 afterwards, and past the clan's tolerance the refusal turns them hostile.
 (The door only appears when the settlement was rolled — refusing is a
 choice, not taking the other doors by default.)
 
 |Hire the riders you met
-|**Only the camp units that stand with you right now** — on your city's
-tile, or within one tile of one of your units — at build cost × **5** ×
+|**Only the camp units that stand with you right now** — beside your city,
+or within one tile of one of your units — at build cost × **5** ×
 the faction's factor × the refusal penalty (a lone rider you met: 50 gold
 at peace; the spawned three, if they all came to the gate: 175 — 245 for
 the Mongols). Those units convert
@@ -168,9 +171,12 @@ The tribe does not live at your gate: it travels. When a visit ends — a
 deal, a refusal, the linger, or the 60-round contact window — the camp
 strikes tents and **rides to the next court**, in a shuffled cycle of every
 ALIVE court: **you first** (the story opens at your gate), then the
-rivals, then round again. A friendly court keeps its promised return
-(+30 rounds) and goes to the FRONT of the route; an angry court is torn
-off it (they owe you nothing).
+rivals, then round again. A *random* leg, though, never lands on YOUR
+gate — the human seat is dropped from the route — so a refusal is not
+undone a few rounds later. You are rejoined only by a promised return, or
+when every rival is dead and you are the last court standing. A friendly
+court keeps its promised return (+30 rounds) and goes to the FRONT of the
+route; an angry court is torn off it (they owe you nothing).
 
 The ride is a RIDE: the riders stay on the map and walk it step by step
 (`marchRoad`), never a travel spell — you watch them cross the country
@@ -226,7 +232,7 @@ linger and its own answer (`NomadCamp`). When one group strikes tents:
   underneath stays unexplored and stays black, so looking at them lifts no
   fog (the grey-on-unvisited-tiles bug this replaced).
 * **A standing camp pitches a tent** on the first free tile beside its
-  tents (`tile.nomadTent`, drawn ⛺): beside YOUR city when the group
+  tents (`tile.nomadTent`, drawn with the clan's icon over ⛺): beside YOUR city when the group
   camps at your gate — the visible "somebody lives here" that says why
   their riders stand still — and out in the country at the spawn. The
   pitch is struck with the tents; a settlement keeps one forever (it is
@@ -369,8 +375,8 @@ involved**.
 |Settled camp production
 |A settlement keeps producing: one wanderer of its own every
 `NOMAD_SETTLEMENT_MUSTER_ROUNDS` (12), at most
-`NOMAD_SETTLEMENT_MUSTER_LIMIT` (2) alive — those wander the land within
-`NOMAD_ROAM_LEASH` (6) tiles of the stakes (never onto a city) and are
+`NOMAD_SETTLEMENT_MUSTER_LIMIT` (2) alive — those patrol open tiles on the
+host city's perimeter (never entering the city) and are
 NEVER part of the camp machinery (no parley, no anger, no departing).
 Its day market pays the host **`NOMAD_SETTLEMENT_TRADE_GOLD` (2) gold
 per turn** — the trade half of the deal, against the tile's food drain
@@ -470,12 +476,17 @@ never earns a return visit.
 
 == 4. Rules and boundaries
 
-* **One human seat, every court visited.** The feature only runs in a
-  game with exactly one human (hotseat would have to pick whose screen
-  opens; all-AI has nobody to talk to) — but inside such a game the tribe
-  travels **player to player**: your court first, then every AI rival, in
-  a shuffled cycle. Your court gets the audience; the rivals get the deal
-  struck in code.
+* **One human seat (or none), every court visited.** The feature runs in a
+  game with exactly one human — hotseat is still out (it would have to pick
+  whose screen opens) — and in an **all-AI spectator game**, where there is
+  nobody to talk to: the tribe spawns once at an AI court and rides between
+  them, but no sighting and no audience ever fires. Inside a single-human
+  game the tribe travels **player to player**: your court first, then every
+  AI rival, in a shuffled cycle. Your court gets the audience; the rivals
+  get the deal struck in code. A later leg only leads back to your gate on
+  a return the tribe *promised* to a friendly court (§3) — a random ride
+  skips you after a refusal, unless every rival is dead and you are the only
+  court left.
 * **Their own player, neutral by default.** Civ id `-2` — deliberately NOT
   the barbarians' `-1`, which `BarbarianManager` drives (it would
   commandeer the camp, and would put bought cities under barbarian AI
@@ -493,7 +504,7 @@ never earns a return visit.
   survive saves.
 * **Dismissal is not refusal — and silence is not an option.** Closing
   the audience without answering leaves the parley open: it re-offers on
-  its 3-round cooldown while the camp **stands with you** (on your city or
+  its 3-round cooldown while the camp **stands with you** (beside your city or
   beside a unit) or you stand within 2 of its tents, never every round and
   never not at all. A dismissed city offer (or plea) re-tables the same
   way, and dies with the camp (or its city) so the serialization slot can
@@ -590,7 +601,9 @@ settlement's tile flag persists, so the slot survives a save.
 |The route
 |`NomadManager.currentTargetCivId` + `travelQueue` + `nextTravelAt`:
 after every visit `scheduleNextVisit` picks the next alive court (a
-friendly human court first), `spawnVisit` raises the camp there, and the
+friendly human court first; a *random* leg skips your gate — you are only
+ever re-joined by a promised return, or when every rival is dead),
+`spawnVisit` raises the camp there, and the
 meeting opens either the audience (your court) or `resolveAiMeeting` (a
 rival's — in code). The camp's `departAt` starts at the contact window, so
 a court that never opens its door cannot stall the route.
@@ -598,8 +611,10 @@ a court that never opens its door cannot stall the route.
 
 == 6. Tests
 
-`tests/nomads.test.ts` (20) — trigger and spawn (distance, landmass,
-neutral id, fortification, no-city fallback, hotseat/AI skip) **plus the two
+`tests/nomads.test.ts` (21) — trigger and spawn (distance, landmass,
+neutral id, fortification, no-city fallback, the hotseat skip, and the
+all-AI run: one spawn at an AI court, never a sighting or an audience)
+**plus the two
 fog pins**: the spawn lifts no fog (the camp in your fog stays unexplored)
 and a rider's step never paints the *active* player's fog, the doors
 and their promised terms (forced rolls for the settlement door), the
@@ -661,6 +676,6 @@ costs food forever and buys its city a fourth trade-route slot
 (`maxTradeRoutesFor` 3 → 4); and refusing their settlement is a closed
 hand — the next audience prices the riders at the refusal penalty; and
 after the split ONE GROUP rides on to the next court while the other keeps
-standing (a nomad group is always on the map); a camp on your city never
+standing (a nomad group is always on the map); a camp beside your city never
 stays without a dialog (the farewell audience comes round on its own), and
 the city screen can table the audience itself (`speakAtGate`).

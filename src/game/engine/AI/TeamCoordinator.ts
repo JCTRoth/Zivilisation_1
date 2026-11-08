@@ -40,6 +40,7 @@
 import type GameEngine from '../GameEngine';
 import type { Unit } from '../../../../types/game';
 import { UNIT_PROPS } from '@/utils/Constants';
+import { isSpectatorGame } from '@/data/GameConstants';
 import {
   assessCityThreat,
   calculateDangerThreshold,
@@ -156,7 +157,7 @@ export class TeamCoordinator {
    */
   processRound(roundNumber: number): void {
     this.currentRound = roundNumber;
-    if (!this.enabled || this.gameEngine.devMode) {
+    if (!this.enabled || this.hasDeveloperGameplayOverrides()) {
       this.claimsByTeam.clear();
       this.poiByTeam.clear();
       this.warPlanByTeam.clear();
@@ -755,7 +756,7 @@ export class TeamCoordinator {
    * pruning in {@link prunePois}.
    */
   publishPoi(poi: TeamPoi): void {
-    if (!this.enabled || this.gameEngine.devMode) return;
+    if (!this.enabled || this.hasDeveloperGameplayOverrides()) return;
     const list = this.poiByTeam.get(poi.teamId) ?? [];
     // One entry per cell+kind: re-sighting refreshes rather than duplicates.
     const existing = list.find((p) => p.kind === poi.kind && p.col === poi.col && p.row === poi.row);
@@ -765,6 +766,11 @@ export class TeamCoordinator {
     }
     list.push({ ...poi });
     this.poiByTeam.set(poi.teamId, list);
+  }
+
+  /** Spectator mode uses dev UI, but the AI still needs normal team strategy. */
+  private hasDeveloperGameplayOverrides(): boolean {
+    return this.gameEngine.devMode && !isSpectatorGame(this.gameEngine.gameSettings);
   }
 
   /** All (unexpired) points of interest of a team. Empty in FFA. */

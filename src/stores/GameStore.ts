@@ -265,6 +265,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     autoEndTurn: false, // Automatically end turn when all human player units are done (default disabled)
     autoCamera: true,   // Automatically move camera to focused unit / event
     devMode: false,     // Developer mode: see all players on minimap and switch between them
+    devOverlays: { forgeOfWar: false, aiTargets: false, cityRadii: false, sightRadius: false }, // Floating dev panel switches (dev mode only)
+    devViewPlayerId: null, // Forge of War through one player's fog (dev panel); null = AI truth
     enableAnimations: true, // Master switch for movement/combat/camera animations
     enableSoundEffects: true, // Synthesized UI sound effects (diplomacy, espionage, capture)
     enableBackgroundMusic: true, // Background music (BGM) — streamed, one track per game state
@@ -727,16 +729,15 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       if (!force && state.settings?.autoCamera === false) {
         return state;
       }
-      // Tell the engine a pan is in flight: any animation triggered while the
-      // camera travels waits for it (see CameraGlideGate / awaitCameraGlide).
-      if (state.settings?.enableAnimations && state.settings.cameraGlideSpeed > 0) {
-        beginCameraGlide();
-      }
+      // Tell the engine a pan is pending, including instant pans: event
+      // dialogs can wait until the requested focus has actually committed.
+      beginCameraGlide();
       return {
         cameraPanRequest: {
           col,
           row,
           keepZoom,
+          ...(!keepZoom ? { targetZoom: MAX_ZOOM } : {}),
           requestId: `camera-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
         }
       };

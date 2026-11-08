@@ -1056,3 +1056,20 @@
 .city-nomad .btn {
   font-size: 13px;
 }
+
+.city-nomad-doors .btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  white-space: normal;
+  text-align: left;
+}
+
+.city-nomad-door__detail {
+  display: block;
+  margin-top: 3px;
+  color: var(--color-text-muted, #b7c3cf);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.35;
+}

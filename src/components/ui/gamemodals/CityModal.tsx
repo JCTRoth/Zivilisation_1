@@ -23,6 +23,7 @@ import {
   NOMAD_SETTLEMENT_DEFENDERS,
   NOMAD_SETTLEMENT_DRAIN_RADIUS,
   NOMAD_SETTLEMENT_FOOD_COST,
+  NOMAD_SETTLEMENT_TRADE_GOLD,
   NOMAD_STANDING_COLORS,
   NOMAD_TRADE_ROUTE_SLOT_BONUS,
 } from '@/data/NomadConstants';
@@ -369,6 +370,7 @@ const CityModal: React.FC<CityModalProps> = ({
                     <div className="gm-kv">
                       {t('city.nomad.settlement', {
                         food: NOMAD_SETTLEMENT_FOOD_COST,
+                        gold: NOMAD_SETTLEMENT_TRADE_GOLD,
                         defenders: NOMAD_SETTLEMENT_DEFENDERS,
                         routes: NOMAD_TRADE_ROUTE_SLOT_BONUS,
                       })}
@@ -393,7 +395,12 @@ const CityModal: React.FC<CityModalProps> = ({
                             variant={choice.variant === 'pass' ? 'outline-secondary' : 'outline-warning'}
                             onClick={() => answerNomadDoor(choice.id)}
                           >
-                            {t(choice.labelKey as TranslationKey, params)}
+                            <span>{t(choice.labelKey as TranslationKey, params)}</span>
+                            {choice.detailKey && (
+                              <small className="city-nomad-door__detail">
+                                {t(choice.detailKey as TranslationKey, choice.detailParams)}
+                              </small>
+                            )}
                           </Button>
                         );
                       })}

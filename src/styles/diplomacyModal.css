@@ -1160,6 +1160,15 @@
   text-align: left;
 }
 
+.diplomacy-nomad-door__detail {
+  display: block;
+  margin: 4px 0 1px 22px;
+  color: var(--color-text-muted, #b7c3cf);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
 .diplomacy-nomad-door:disabled {
   opacity: 0.45;
   cursor: not-allowed;

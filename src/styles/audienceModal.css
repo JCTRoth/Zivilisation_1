@@ -293,5 +293,15 @@
 
 .audience-choice__label {
   flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   text-align: left;
+}
+
+.audience-choice__detail {
+  color: var(--color-text-muted, #b7c3cf);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
 }

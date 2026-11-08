@@ -36,6 +36,13 @@ export const NOMAD_MOUNT_ICONS: Record<string, string> = {
   mongol: '🏇',
   sami: '🦌',
 };
+
+/** Small faction marks shown on the map's nomad tent and settlement icons. */
+export const NOMAD_CAMP_MARKS: Record<string, string> = {
+  bedouin: '🐫',
+  mongol: '🐎',
+  sami: '🦌',
+};
 /**
  * Hire price = the MEETED units' build cost × this × the clan's factor.
  *
@@ -97,7 +104,8 @@ export const NOMAD_PROXIMITY_DISTANCE = 2;
 /**
  * The tribe does not stay with one court: after a visit ends it strikes
  * camp and RIDES ON to the next one (every alive court in turn — the human
- * first, then the AI rivals, then around again). This is the travel spell
+ * first, then the AI rivals, then around again; a *random* leg skips the
+ * human gate, which only a promised return re-joins). This is the travel spell
  * between two camps: long enough that a visit reads as an event, short
  * enough that every court sees them within a game.
  */
@@ -283,8 +291,8 @@ export const NOMAD_RAID_GOLD_MAX = 30;
 /** Rounds between two raids on the same city. */
 export const NOMAD_RAID_COOLDOWN_ROUNDS = 3;
 
-/** A settlement sits within this of a city and drains its food. */
-export const NOMAD_SETTLEMENT_MAX_DISTANCE = 2;
+/** A settlement sits directly beside its host city and drains its food. */
+export const NOMAD_SETTLEMENT_MAX_DISTANCE = 1;
 export const NOMAD_SETTLEMENT_FOOD_COST = 2;
 /** The city notices a settlement this close (food drain lookup radius). */
 export const NOMAD_SETTLEMENT_DRAIN_RADIUS = 3;
@@ -339,6 +347,7 @@ export const NOMAD_CHOICE_ICONS: Record<string, string> = {
   maps: '🗺️',
   hire: '🗡️',
   settle: '⛺',
+  refuse_settle: '🚫',
   pass: '🚶',
   farewell: '🚶',
   buy_city: '🏙️',

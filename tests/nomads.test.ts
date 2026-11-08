@@ -15,7 +15,9 @@
  *   * the four doors and their promised terms (price/tech are what the
  *     BUTTON said, never re-rolled),
  *   * the AI hire race and the departure timer,
- *   * the skip conditions (hotseat, all-AI) and the no-city fallback,
+ *   * the skip condition (hotseat) and the all-AI run — the tribe still
+ *     spawns and rides between AI courts, but never opens an audience,
+ *   * the no-city fallback,
  *   * dismissal re-offers on proximity, never every round.
  */
 import { describe, it, expect, vi } from 'vitest';
@@ -258,7 +260,7 @@ describe('Nomads — trigger and spawn', () => {
     expect(standingThere, 'the spot is where the horde stands').toBe(true);
   });
 
-  it('never spawns in hotseat or all-AI games', async () => {
+  it('never spawns in a hotseat game (two humans are still unsupported)', async () => {
     const hot = await makeEngine({
       numberOfCivilizations: 3, seed: 4242, humanPlayerIds: [0, 1],
     });
@@ -266,14 +268,29 @@ describe('Nomads — trigger and spawn', () => {
     hot.settle('H', hotSpot.col, hotSpot.row, 0);
     for (let r = 4; r < 20; r++) hot.engine.nomadManager.processRound(r);
     expect(hot.engine.nomadManager.isSpawned).toBe(false);
+  });
 
+  it('runs in an all-AI game: one spawn at an AI court, and no parley', async () => {
+    // A spectator game has no "your court", but the tribe is part of the
+    // world: it still rides between the AI courts — it just never opens an
+    // audience, because there is nobody to open one to.
     const ai = await makeEngine({
       numberOfCivilizations: 3, seed: 4242, humanPlayerIds: [],
     });
+    const events: Array<{ type: string; data: any }> = [];
+    (ai.engine as any).onStateChange = (type: string, data: any) => events.push({ type, data });
     const spot = ai.landNear(10, 10, 8);
     ai.settle('H', spot.col, spot.row, 0, 1);
-    for (let r = 4; r < 20; r++) ai.engine.nomadManager.processRound(r);
-    expect(ai.engine.nomadManager.isSpawned).toBe(false);
+    for (let r = 4; r < 60; r++) ai.engine.nomadManager.processRound(r);
+
+    const nm = ai.engine.nomadManager;
+    expect(nm.isSpawned, 'the tribe still travels in an all-AI game').toBe(true);
+    // Spawned once — the camp must not re-open on every round.
+    expect(nm.visits, 'exactly one opening visit').toBe(1);
+    // No human seat: neither the sighting (a human-facing story beat) nor the
+    // audience modal may ever fire.
+    expect(eventsOf(events, 'NOMAD_SIGHTED')).toHaveLength(0);
+    expect(eventsOf(events, 'NOMAD_PARLEY')).toHaveLength(0);
   });
 });
 

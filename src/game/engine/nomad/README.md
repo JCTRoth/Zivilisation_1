@@ -5,7 +5,9 @@ tempers, a relationship with a memory, and — since the AI-player work —
 **their own economy** (a war chest, trade routes, a city market and
 bribes). They are their own player: civ id **`-2`**, deliberately not the
 barbarians' `-1` (the `BarbarianManager` drives every `-1` unit and city
-and would commandeer the camp).
+and would commandeer the camp). In an **all-AI spectator game** they still
+spawn once and ride between the AI courts — there is simply no audience to
+open (hotseat stays unsupported).
 
 Full reference: [`doc/NOMADS.adoc`](../../../../doc/NOMADS.adoc) ·
 The three factions (history, temperament, art prompts):
@@ -35,19 +37,19 @@ Clan portrait prompts: [`doc/NOMAD_ART_PROMPTS.adoc`](../../../../doc/NOMAD_ART_
    fortified and **announced** (`NOMAD_SIGHTED`) — but never *revealed*:
    their tents stand outside your sight, and lighting them up would grey
    ~50 tiles you have never walked. Fog is earned by walking it; you meet
-   them when their riders walk onto your city (or ask the hall's
+   them when their riders reach the edge of your city (or ask the hall's
    "Locate their camp").
 2. **The wander**: until the envoy has spoken, the group wanders toward the
    player's court — nearest city, else nearest unit — zig-zagging (most
    steps close in, some drift sideways, the distance never grows). The
-   final step ONTO the court is *placed*, never moved: `moveUnit` would
-   resolve it as an assault — *visitors do not storm cities*.
+   final step stops beside the court: `moveUnit` would resolve entering a
+   city as an assault — *visitors do not storm cities*.
 3. **The message binds to the appearance**: the parley opens only when a
-   nomad unit stands **ON your city's tile** — or on the same tile as a
-   player unit (the city-less settler visit). No nomad on the tile, no
+   nomad unit stands **beside your city** — or beside one of your units
+   (the city-less settler visit). No nomad at the gate, no
    envoy — and there is no timer.
 4. **They never stay at your gate unannounced.** After the answer the
-   tents move to the tile the envoy stood on (your city pays their food),
+   tents move to the tile the envoy stood beside (your city pays their food),
    and a *dismissed* parley comes round again on its 3-round cooldown
    whenever the camp **stands with you** or you walk up to its tents —
    dismissal is not refusal, and silence is not an option. The city
@@ -56,8 +58,11 @@ Clan portrait prompts: [`doc/NOMAD_ART_PROMPTS.adoc`](../../../../doc/NOMAD_ART_
 5. **They ride on — for real.** Once the visit is over — deal, refusal,
    the linger or the 60-round contact window — the tribe strikes camp and
    its RIDERS cross the map step by step to the **next court**
-   (`marchRoad`, no travel spell): every alive court in turn (you first,
-   then the rivals, then round again), and never AT that court before
+   (`marchRoad`, no travel spell): the next ALIVE court — your gate first
+   (the opening visit), then the rivals in a shuffled cycle. A *random*
+   leg never lands on your gate: after a refusal the tribe rejoins you
+   only on the promised return of a friendly court, or when every rival is
+   dead — and never AT that court before
    `NOMAD_TRAVEL_ROUNDS` (12; +30 for a promised return) — a group that
    arrives early holds a couple of tiles out and mills there until its
    hour. The camp raised at the destination is built around the SAME
@@ -80,9 +85,9 @@ modal is open):
 |---|---|
 | Buy their knowledge | one tech the court lacks, half raw cost (clan factor, clamped 25–100); free if the treasury cannot pay |
 | Accept their maps | radius-10 reveal around the camp (first visit only) |
-| Let them settle *(random, per clan)* | a settlement beside your city: −2 food/turn in the city balance **forever**, defenders raised for you — **and one extra trade-route slot** for that city (3 → 4) |
-| Refuse the settlement *(same table)* | a closed hand: `refusals += 1`, their prices rise by `NOMAD_REFUSAL_PRICE_PENALTY` (25 %) per refusal, and past the clan's tolerance they turn hostile |
-| Hire the riders you met | **only the units standing with you** (on your city's tile or beside your unit) — build cost × **5** × clan factor × the refusal penalty; the payment lands in **their** chest. The rest of the tribe keeps its tents |
+| Let them settle *(random offer, per clan)* | only after you choose **Agree**: a camp on a tile directly beside your city, −2 food and +2 gold per turn, one warrior raised for you, and **one extra trade-route slot** for that city (3 → 4). Its guards stay on the city perimeter and intercept attackers when the shared combat-odds calculation approves the fight |
+| Refuse the settlement *(same table)* | no camp is built; this counts as a closed hand: `refusals += 1`, their prices rise by `NOMAD_REFUSAL_PRICE_PENALTY` (25 %) per refusal, and past the clan's tolerance they turn hostile |
+| Hire the riders you met | **only the units standing with you** (beside your city or beside your unit) — build cost × **5** × clan factor × the refusal penalty; the payment lands in **their** chest. The rest of the tribe keeps its tents |
 | Pass in peace | departure after 6 rounds instead of 20 — and refusals accumulate |
 
 **What a camp costs you while it stands**: every rider of a visiting camp

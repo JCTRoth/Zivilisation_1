@@ -39,6 +39,7 @@ const MiniMap: React.FC<MiniMapProps> = ({ gameEngine = null }) => {
   const units = useGameStore(state => state.units);
   const civilizations = useGameStore(state => state.civilizations);
   const settings = useGameStore(state => state.settings);
+  const devViewPlayerId = useGameStore(state => state.settings?.devViewPlayerId ?? null);
   const activePlayer = useGameStore(state => state.gameState.activePlayer);
   // Also get civilizations from gameEngine if available (more reliable)
   const gameEngineCivilizations = gameEngine?.civilizations || [];
@@ -86,21 +87,47 @@ const MiniMap: React.FC<MiniMapProps> = ({ gameEngine = null }) => {
 
       const civilizationsSource = effectiveCivilizations && effectiveCivilizations.length > 0 ? effectiveCivilizations : civilizations;
 
+      // Spectator dev mode keeps an all-map minimap unless a civ is selected
+      // under Forge of War. In that case render the selected civ's own stored
+      // current and explored fog, just like a normal player's minimap.
+      const selectedForgeCivId =
+        settings.devMode && settings.devOverlays?.forgeOfWar
+          ? devViewPlayerId
+          : null;
+      const selectedStorage =
+        selectedForgeCivId === null
+          ? undefined
+          : gameEngine?.getPlayerStorage?.(selectedForgeCivId);
+      const viewMap = selectedStorage
+        ? {
+            ...dataSource,
+            visibility: Array.from(
+              { length: dataSource.width * dataSource.height },
+              (_, index) => !!selectedStorage.visibility[index],
+            ),
+            revealed: Array.from(
+              { length: dataSource.width * dataSource.height },
+              (_, index) => !!selectedStorage.explored[index],
+            ),
+            knownCities: Object.fromEntries(selectedStorage.lastKnownCities),
+          }
+        : dataSource;
+
       // Show all units and cities, rely on fog-of-war visibility in renderer.
       // This ensures enemy movement appears on the minimap only when inside player vision.
       miniMapRendererRef.current.renderMinimap({
         ctx,
-        map: dataSource,
+        map: viewMap,
         cssWidth,
         cssHeight,
         camera,
         units,
         cities,
         civilizations: civilizationsSource || [],
-        ignoreFog: !!settings.devMode
+        ignoreFog: !!settings.devMode && !selectedStorage,
       });
     }
-  }, [camera, mapData, cities, units, civilizations, effectiveCivilizations, settings.devMode, activePlayer, sizeKey]);
+  }, [camera, mapData, cities, units, civilizations, effectiveCivilizations, gameEngine, settings.devMode, settings.devOverlays?.forgeOfWar, devViewPlayerId, activePlayer, sizeKey]);
 
   // Resize observer to redraw when container width changes
   useEffect(() => {

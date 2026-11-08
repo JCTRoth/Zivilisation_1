@@ -192,3 +192,59 @@ describe('Barbarian AI — captured cities', () => {
     expect(cities[0].productionStored).toBe(15);
   });
 });
+
+describe('Barbarian AI — Forge of War read-out (dev overlay)', () => {
+  it('records the assault: target, defense, horde strength and an objective per raider', () => {
+    const { engine, units, cities } = createMockEngine();
+    units.push(barb('b1', 10, 10), barb('b2', 10, 11), barb('b3', 11, 10), barb('b4', 11, 11));
+    cities.push({ id: 'cA', civilizationId: 0, col: 30, row: 30, population: 8, buildings: ['city_walls'], name: 'A' });
+    cities.push({ id: 'cB', civilizationId: 1, col: 2, row: 2, population: 2, buildings: [], name: 'B' });
+
+    const manager = new BarbarianManager(engine);
+    manager.processBarbarians();
+
+    expect(manager.plan.mode).toBe('assault');
+    expect(manager.plan.target).toMatchObject({ col: 2, row: 2, name: 'B' });
+    expect(manager.plan.defense).toBeGreaterThan(0);
+    expect(manager.plan.hordeStrength).toBeGreaterThan(0);
+    // No roundManager in this mock: the plan falls back to round 0.
+    expect(manager.plan.round).toBe(0);
+    expect(manager.plan.objectives).toHaveLength(4);
+    for (const objective of manager.plan.objectives) {
+      expect(objective).toMatchObject({ col: 2, row: 2 });
+    }
+  });
+
+  it('records the scouting routes while the horde is too weak to assault', () => {
+    const { engine, units, cities } = createMockEngine();
+    units.push(barb('b1', 10, 10));
+    cities.push({ id: 'cA', civilizationId: 0, col: 12, row: 10, population: 8, buildings: [], name: 'A' });
+    cities.push({ id: 'cB', civilizationId: 1, col: 2, row: 2, population: 2, buildings: [], name: 'B' });
+
+    const manager = new BarbarianManager(engine);
+    manager.processBarbarians();
+
+    expect(manager.plan.mode).toBe('scout');
+    expect(manager.plan.target).toBeNull();
+    // One objective per raider, pointing at its own nearest target.
+    expect(manager.plan.objectives).toEqual([{ unitId: 'b1', col: 12, row: 10 }]);
+  });
+
+  it('goes idle again once the horde is wiped off the map', () => {
+    const { engine, units, cities } = createMockEngine();
+    units.push(barb('b1', 10, 10));
+    cities.push({ id: 'cA', civilizationId: 0, col: 12, row: 10, population: 8, buildings: [], name: 'A' });
+
+    const manager = new BarbarianManager(engine);
+    manager.processBarbarians();
+    expect(manager.plan.mode).toBe('scout');
+
+    units.length = 0;
+    cities.length = 0;
+    manager.processBarbarians();
+
+    expect(manager.plan.mode).toBe('idle');
+    expect(manager.plan.target).toBeNull();
+    expect(manager.plan.objectives).toEqual([]);
+  });
+});

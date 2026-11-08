@@ -2138,12 +2138,17 @@ come from, how they play and how they are drawn — is
   barbarians' `-1`. They get their own treasury, their own routes and no
   entry in `civilizations`, so rendering falls back to the neutral colour and
   their riders carry **no colour circle** on the map.
-* The feature runs only in a game with **exactly one human seat** (hotseat has
-  no one screen to open, all-AI nobody to talk to) — but inside such a game
-  they travel **player to player**: after every visit the tribe strikes camp
+* The feature runs in a game with **exactly one human seat** (hotseat has
+  no one screen to open) *and* in an **all-AI spectator game** — there the
+  tribe spawns once at an AI court and rides between them, but no sighting
+  and no audience ever fires. In a single-human game they travel
+  **player to player**: after every visit the tribe strikes camp
   and RIDES to the next ALIVE court — on the map, step by step, visible the
   whole way (nomad units are drawn through the fog; the ground stays dark),
-  your court first, then the rivals, in a shuffled cycle. They may not raise
+  your court first, then the rivals, in a shuffled cycle. A random leg never
+  lands on your gate: you are re-joined only by the promised return of a
+  friendly court, or when every rival is dead and you are the only court
+  left. They may not raise
   tents at that court before `NOMAD_TRAVEL_ROUNDS` = 12 (+30 for a friendly
   court's promised return, which goes to the front of the route and never
   re-routes away; an angry court is torn off it): a group that arrives early
@@ -2198,7 +2203,8 @@ come from, how they play and how they are drawn — is
   when they ride on. A **settlement** costs `NOMAD_SETTLEMENT_FOOD_COST` (2)
   per turn for ever, raises `NOMAD_SETTLEMENT_DEFENDERS` (1) warrior for you
   and grants that city `NOMAD_TRADE_ROUTE_SLOT_BONUS` (+1) trade route (see
-  *Trade routes*).
+  *Trade routes*). Settlement guards stay around the city and intercept
+  nearby attackers when the shared combat-odds calculation favors them.
 * Their books: opening purse **300** (`NOMAD_START_GOLD`), a travelling
   bazaar for **100** every **8** rounds (max 2 in flight, one rides in with
   the envoy), **6** trade routes (`NOMAD_TRADE_ROUTE_LIMIT`), the city market

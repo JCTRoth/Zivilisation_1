@@ -311,6 +311,11 @@ const AudienceModal: React.FC<AudienceModalProps> = ({
                   )}
                   <span className="audience-choice__label">
                     {t(choice.labelKey as TranslationKey, params)}
+                    {isNomad && choice.detailKey && (
+                      <small className="audience-choice__detail">
+                        {t(choice.detailKey as TranslationKey, choice.detailParams)}
+                      </small>
+                    )}
                   </span>
                 </button>
               );

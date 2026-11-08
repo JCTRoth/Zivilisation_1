@@ -1,0 +1,120 @@
+/* Floating Development-Mode overlay panel — rendered only while devMode is on.
+   It sits over the top-left corner of the map (the Forge of War read-out owns
+   the bottom-left of the canvas, notification toasts the top-right). */
+
+.dev-overlay-panel {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 1000;
+  min-width: 210px;
+  max-width: min(300px, 70vw);
+  padding-bottom: 2px;
+  background: rgba(12, 10, 16, 0.88);
+  border: 1px solid rgba(255, 170, 60, 0.55);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  color: #ffe6c7;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.dev-overlay-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 170, 60, 0.25);
+  border-radius: 8px 8px 0 0;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.dev-overlay-panel__header:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.dev-overlay-panel__chevron {
+  opacity: 0.7;
+}
+
+.dev-overlay-panel__body {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 8px 8px;
+}
+
+.dev-overlay-panel__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.dev-overlay-panel__row:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.dev-overlay-panel__row input[type='checkbox'] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: #ff9b3d;
+  cursor: pointer;
+}
+
+.dev-overlay-panel__icon {
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+/* Player selector under the Forge of War box: whose fog the overlay uses. */
+.dev-overlay-panel__view {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 6px 4px 2px;
+  border-top: 1px solid rgba(255, 170, 60, 0.22);
+}
+
+.dev-overlay-panel__view-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0.85;
+}
+
+.dev-overlay-panel__select {
+  width: 100%;
+  padding: 3px 4px;
+  border: 1px solid rgba(255, 170, 60, 0.45);
+  border-radius: 4px;
+  background: rgba(20, 16, 24, 0.95);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.dev-overlay-panel__select:focus {
+  outline: 1px solid #ff9b3d;
+  outline-offset: 1px;
+}
+
+@media (max-width: 576px) {
+  .dev-overlay-panel {
+    min-width: 168px;
+    font-size: 0.72rem;
+  }
+}

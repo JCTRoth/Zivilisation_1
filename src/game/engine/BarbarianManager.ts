@@ -1,10 +1,23 @@
-import type { Unit, City } from '../../../types/game';
+import type { Unit, City, ForgeOfWarPlan } from '../../../types/game';
 import GameEngine from './GameEngine';
 import { UNIT_PROPS } from '@/utils/Constants';
 import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
 import { debugLog } from '../../utils/DevLog';
 import { getUnitRank, rankStrengthMultiplier } from './UnitRankSystem';
 import { cityBuildingEffects } from './BuildingEffects';
+
+/**
+ * The "no horde" plan — also the value a fresh game starts with, so the dev
+ * overlay has something to read before the first barbarian round has run.
+ */
+const idleForgeOfWarPlan = (round = 0): ForgeOfWarPlan => ({
+  round,
+  mode: 'idle',
+  target: null,
+  defense: 0,
+  hordeStrength: 0,
+  objectives: [],
+});
 
 /**
  * Barbarian AI — "Forge of War" aggressive controller for the phantom
@@ -23,11 +36,21 @@ import { cityBuildingEffects } from './BuildingEffects';
  *     restricted to MILITARY UNITS ONLY (see AutoProduction).
  */
 export class BarbarianManager {
+  /**
+   * The horde's most recent decision, kept as plain data so the dev-mode
+   * "Forge of War" overlay (`DevOverlayPanel` → Forge of War checkbox) can
+   * draw the assault lines and read the numbers back without re-running the
+   * AI's arithmetic. 'idle' until the first round with a horde on the map.
+   */
+  plan: ForgeOfWarPlan = idleForgeOfWarPlan();
+
   constructor(private readonly gameEngine: GameEngine) {}
 
   /** Reset any per-game state when starting a new game. */
   reset(): void {
-    // Stateless — everything is derived from the engine's current units/cities.
+    // Stateless apart from the dev read-out — everything else is derived from
+    // the engine's current units/cities.
+    this.plan = idleForgeOfWarPlan();
   }
 
   /** Called once per round from the turn cycle. */
@@ -35,7 +58,11 @@ export class BarbarianManager {
     const engine = this.gameEngine;
     const units = (engine.units ?? []).filter((u) => u.civilizationId === BARBARIAN_CIV_ID);
     const barbarianCities = (engine.cities ?? []).filter((c) => c.civilizationId === BARBARIAN_CIV_ID);
-    if (units.length === 0 && barbarianCities.length === 0) return;
+    const round = engine.roundManager?.getRoundNumber?.() ?? 0;
+    if (units.length === 0 && barbarianCities.length === 0) {
+      this.plan = idleForgeOfWarPlan(round);
+      return;
+    }
 
     // Activate all units (reset move budget).
     for (const unit of units) {
@@ -55,13 +82,31 @@ export class BarbarianManager {
     if (shouldAssault) {
       // FORGE OF WAR: all troops converge on the weakest city.
       debugLog(`[BARB] 🔥 FORGE OF WAR — ${units.length} barbarians (str ${hordeStrength.toFixed(1)}) assault ${weakest!.defName ?? 'city'} (def ${weakest!.defense.toFixed(1)})`);
+      this.plan = {
+        round,
+        mode: 'assault',
+        target: { col: weakest!.col, row: weakest!.row, name: weakest!.defName ?? 'city' },
+        defense: weakest!.defense,
+        hordeStrength,
+        objectives: units.map((u) => ({ unitId: u.id, col: weakest!.col, row: weakest!.row })),
+      };
       this.assaultCity(units, weakest!);
     } else {
       // Scout phase: each unit independently scouts for enemy cities/units.
+      const objectives: ForgeOfWarPlan['objectives'] = [];
       for (const unit of units) {
         const target = this.nearestEnemyCity(unit) ?? this.nearestEnemyUnit(unit);
+        if (target) objectives.push({ unitId: unit.id, col: target.col, row: target.row });
         this.act(unit, target);
       }
+      this.plan = {
+        round,
+        mode: units.length > 0 ? 'scout' : 'idle',
+        target: null,
+        defense: 0,
+        hordeStrength,
+        objectives,
+      };
     }
 
     // Captured cities: sell everything, produce scouts then raiders.

@@ -222,8 +222,10 @@ export interface MapTile {
   village?: boolean;
   /** A nomad settlement planted beside a city (drains its food, raises defenders). */
   nomadSettlement?: boolean;
-  /** A nomad pitch — their camp's tent, drawn beside the tents (visual only). */
+  /** A nomad pitch — its map marker and defensive cover. */
   nomadTent?: boolean;
+  /** Clan whose mark appears on a nomad camp or settlement tile. */
+  nomadTentClanId?: string;
   visible: boolean;
   explored: boolean;
   col: number;
@@ -4901,6 +4903,34 @@ const occupiedLandmasses = new Set(
     return true;
   }
 
+  /** Let the settled nomads intercept a city assault when their odds allow it. */
+  private interceptCityAssaultWithNomads(
+    unitId: string,
+    attacker: Unit,
+    city: City,
+  ): { success: boolean; reason: string; combat: true } | null {
+    if (!this.nomadManager.defendCityAgainst(city, attacker)) return null;
+
+    if (this.diplomacyManager) {
+      const dipStatus = this.diplomacyManager.getStatus(attacker.civilizationId, city.civilizationId);
+      if (dipStatus !== 'war') {
+        this.diplomacyManager.declareWar(attacker.civilizationId, city.civilizationId);
+      }
+    }
+    attacker.movesRemaining = 0;
+    attacker.hasMovedThisTurn = true;
+    this.updateUnitTurnsDoneFlag(attacker);
+    this.unitTurnQueue?.checkUnitStatus(unitId);
+    if (this.activePlayer === attacker.civilizationId) {
+      this.checkAndEndTurnIfNoMoves('nomad-city-defense');
+    }
+    return {
+      success: attacker.isDefeated !== true,
+      reason: 'nomad_intercepted_city_attack',
+      combat: true,
+    };
+  }
+
   /**
    * Move unit to new position
    */
@@ -4982,6 +5012,12 @@ const occupiedLandmasses = new Set(
           combat: true,
         };
       }
+      const cityAtTarget = this.getCityAt(targetCol, targetRow);
+      const civilianAttackers = new Set(['settler', 'worker', 'diplomat', 'caravan']);
+      if (cityAtTarget && !isFriendlyCiv(cityAtTarget.civilizationId) && !civilianAttackers.has(unit.type)) {
+        const intercepted = this.interceptCityAssaultWithNomads(unitId, unit, cityAtTarget);
+        if (intercepted) return intercepted;
+      }
       // Combat. combatUnit auto-declares war at its start, so we must NOT gate
       // on 'not_at_war' here — that pre-check made UI attacks impossible while
       // the civilizations were still at peace.
@@ -5045,6 +5081,11 @@ const occupiedLandmasses = new Set(
 
       // Scout rush check: only works if the city has NO defending units.
       if (isScout) {
+        // A settled nomad guard gets the same chance to intercept a scout
+        // before the undefended-city rush can bypass the normal assault path.
+        const intercepted = this.interceptCityAssaultWithNomads(unitId, unit, targetCity);
+        if (intercepted) return intercepted;
+
         const cityDefenders = this.units.filter(
           (u: Unit) => u.civilizationId === targetCity.civilizationId
             && u.col === targetCity.col
@@ -5149,6 +5190,12 @@ const occupiedLandmasses = new Set(
       // read BEFORE the call: resolveCityCombat flips `civilizationId` over
       // to the attacker, and the capture event needs the former owner's
       // colour for its flag.
+      // A settled nomad guard may intercept the attacker before the city
+      // fight. It only engages when AttackOdds says the counterattack is
+      // favorable, and the city assault pauses for that combat round.
+      const intercepted = this.interceptCityAssaultWithNomads(unitId, unit, targetCity);
+      if (intercepted) return intercepted;
+
       const ownerCivId = targetCity.civilizationId;
       const outcome = this.resolveCityCombat(unit, targetCity);
       const result = outcome.result;
@@ -6083,8 +6130,8 @@ const occupiedLandmasses = new Set(
    * Splash damage after a successful attack: every other exposed unit stacked
    * on the defender's tile takes 25% of the primary hit (min 1 HP).
    *
-   * Complete immunities (no splash at all): a city on the tile, or a fortress
-   * improvement on the tile. Per-unit immunity: fortified units hold their
+   * Complete immunities (no splash at all): a city or nomad camp on the tile,
+   * or a fortress improvement. Per-unit immunity: fortified units hold their
    * nerve (and their cover). Embarked cargo is never on the tile to begin
    * with (`getUnitsAt` excludes it), so boats shield their passengers
    * automatically. Splash kills run the same defeat pipeline as direct kills
@@ -6097,8 +6144,12 @@ const occupiedLandmasses = new Set(
   ): Array<{ unit: Unit; damage: number; destroyed: boolean }> {
     const splashed: Array<{ unit: Unit; damage: number; destroyed: boolean }> = [];
     if (primaryDamage <= 0) return splashed;
-    if (this.getCityAt(defender.col, defender.row)) return splashed;
     const tile = this.getTileAt(defender.col, defender.row);
+    if (
+      this.getCityAt(defender.col, defender.row)
+      || tile?.nomadTent
+      || tile?.nomadSettlement
+    ) return splashed;
     if (String((tile as { improvement?: unknown } | null)?.improvement ?? '').toLowerCase() === 'fortress') {
       return splashed;
     }
@@ -6210,17 +6261,29 @@ const occupiedLandmasses = new Set(
     // roll, the overrun rule and exactly how much damage each side takes.
     const defenderTile = this.getTileAt(defender.col, defender.row);
     const outcome = CombatSystem.resolveUnitRound(attacker, defender, {
-      defenderTile: defenderTile as { type?: string; terrain?: string; improvement?: string | null } | null,
+      defenderTile: defenderTile as {
+        type?: string;
+        terrain?: string;
+        improvement?: string | null;
+        nomadTent?: boolean;
+        nomadSettlement?: boolean;
+      } | null,
       defenderTerrainKey: defenderTile ? this.getTerrainKey(defenderTile) : undefined,
-      defenderInCity: this.getCityAt(defender.col, defender.row) !== null,
+      // Nomad stakes are fortified ground like a city: units there receive
+      // the same +50% defensive strength even if they are not individually
+      // marked as fortified.
+      defenderInCity:
+        this.getCityAt(defender.col, defender.row) !== null
+        || defenderTile?.nomadTent === true
+        || defenderTile?.nomadSettlement === true,
     });
 
     if (outcome.attackerWins) {
       const damage = outcome.defenderDamage;
       defender.health = Math.max(0, (defender.health ?? 100) - damage);
       defender.battleDamageTaken = (defender.battleDamageTaken ?? 0) + damage;
-      // Stacked mates on open ground eat 25% each (cities, fortresses,
-      // fortified units and embarked cargo are immune — see the helper).
+      // Stacked mates on open ground eat 25% each (cities, nomad camps,
+      // fortresses, fortified units and embarked cargo are immune).
       this.applySplashDamage(attacker, defender, damage);
 
       if (outcome.defenderDestroyed) {
