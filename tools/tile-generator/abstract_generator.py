@@ -697,6 +697,7 @@ def resolve_slot_bundle(
     anchors: dict[str, list[str]] | None = None,
     forbidden: list[str] | dict[str, list[str]] | None = None,
     help_overrides: dict[str, str] | None = None,
+    fixed: dict[str, str] | None = None,
     label: str = "",
 ) -> dict[str, str]:
     """Resolve every slot of one prompt with the local model.
@@ -707,11 +708,24 @@ def resolve_slot_bundle(
     ``anchors`` maps a slot name to the words that must appear in its value.
     ``forbidden`` is either a list of words that must not appear in any value
     or a mapping of slot name to its own word list.
+    ``fixed`` pins slot values from the request (``overrides``): those slots
+    are never asked for, never re-asked and never re-rolled - a pinned phrase
+    is the one thing of a request that must survive every run.
     """
     values: dict[str, str] = {}
     if not specs:
         return values
     anchors = anchors or {}
+    known = {spec["name"] for spec in specs}
+    pinned = {name: str(value) for name, value in (fixed or {}).items()
+              if str(value).strip()}
+    unknown = sorted(set(pinned) - known)
+    if unknown:
+        raise SpecError(
+            f"{label or 'overrides'}: not a slot of this prompt: "
+            + ", ".join(unknown))
+    values.update(pinned)
+    ask_specs = [spec for spec in specs if spec["name"] not in pinned]
 
     def slot_forbidden(name: str) -> list[str]:
         if isinstance(forbidden, dict):
@@ -725,39 +739,40 @@ def resolve_slot_bundle(
 
     all_forbidden = sorted({
         word
-        for name in (s["name"] for s in specs)
+        for name in (s["name"] for s in ask_specs)
         for word in slot_forbidden(name)
     })
 
-    instruction = (
-        "Fill the abstract slots of an image-generation prompt for ONE "
-        "asset of a fantasy strategy game. "
-        + (f"The asset is {identity}. It MUST stay clearly recognisable as "
-           f"{identity}. " if identity else "")
-        + (f"The art-direction theme of the set is '{theme}'. " if theme else "")
-        + "Be creative but concrete and visual - every value must be a short "
-          "English phrase an image model can draw, never a sentence that "
-          "contains instructions. "
-        + (f"Extra guidance: {context}. " if context else "")
-        + (f"The result must not contain any of these words: "
-           f"{', '.join(all_forbidden)}. " if all_forbidden else "")
-        + "Return ONLY a JSON object mapping each key below to one short "
-          "English visual phrase (3-12 words, no quotes inside the value, no "
-          "labels, no explanation):\n"
-        + _slot_lines(specs, help_overrides)
-    )
-
     raw = ""
-    try:
-        raw = run_llama_prompt(instruction, max_tokens=420)
-    except Exception as exc:
-        print(f"    [!] slot resolution for {label} failed: {exc}")
+    if ask_specs:
+        instruction = (
+            "Fill the abstract slots of an image-generation prompt for ONE "
+            "asset of a fantasy strategy game. "
+            + (f"The asset is {identity}. It MUST stay clearly recognisable as "
+               f"{identity}. " if identity else "")
+            + (f"The art-direction theme of the set is '{theme}'. " if theme else "")
+            + "Be creative but concrete and visual - every value must be a short "
+              "English phrase an image model can draw, never a sentence that "
+              "contains instructions. "
+            + (f"Extra guidance: {context}. " if context else "")
+            + (f"The result must not contain any of these words: "
+               f"{', '.join(all_forbidden)}. " if all_forbidden else "")
+            + "Return ONLY a JSON object mapping each key below to one short "
+              "English visual phrase (3-12 words, no quotes inside the value, no "
+              "labels, no explanation):\n"
+            + _slot_lines(ask_specs, help_overrides)
+        )
+
+        try:
+            raw = run_llama_prompt(instruction, max_tokens=420)
+        except Exception as exc:
+            print(f"    [!] slot resolution for {label} failed: {exc}")
 
     data = extract_json_object(raw) or {}
     if not data:
-        data = extract_key_values(raw, [s["name"] for s in specs])
+        data = extract_key_values(raw, [s["name"] for s in ask_specs])
 
-    for spec in specs:
+    for spec in ask_specs:
         name = spec["name"]
         value = ""
         for key in (name, name.lower(), name.capitalize()):
@@ -770,7 +785,7 @@ def resolve_slot_bundle(
         values[name] = value
 
     # --- re-ask unusable slots individually, with an explicit "different" nudge
-    for spec in specs:
+    for spec in ask_specs:
         name = spec["name"]
         if values.get(name):
             continue
@@ -791,7 +806,7 @@ def resolve_slot_bundle(
                 print(f"    [~] {label}: slot #{name}# fell back to its default")
 
     # --- force variation: a phrase that was already used is re-rolled once
-    for spec in specs:
+    for spec in ask_specs:
         name = spec["name"]
         value = values.get(name, "")
         if not value or registry.is_new_phrase(value):
@@ -949,7 +964,9 @@ def _fix_articles(text: str) -> str:
 def build_terrain_prompt(terrain: str, theme: str, global_values: dict[str, str],
                           registry: VariationRegistry,
                           style_desc: str = "",
-                          variant_note: str = "") -> tuple[str, dict[str, str]]:
+                          variant_note: str = "",
+                          fixed: dict[str, str] | None = None
+                          ) -> tuple[str, dict[str, str]]:
     """Resolve the terrain slots and assemble the full terrain prompt.
 
     A prompt that is already in the registry is re-rolled, so no two tiles of
@@ -989,6 +1006,7 @@ def build_terrain_prompt(terrain: str, theme: str, global_values: dict[str, str]
                 "COLOR_PALETTE": TERRAIN_PALETTE_ANCHORS.get(terrain, []),
             },
             forbidden=forbidden,
+            fixed=fixed,
             label=f"terrain '{terrain}'",
         )
 
@@ -1024,7 +1042,9 @@ def build_feature_prompt(stem: str, spec_key: str, twist: str, theme: str,
                          context_extra: str = "",
                          style_desc: str = "",
                          style_context: str = "",
-                         unit_style_desc: str = "") -> tuple[str, dict[str, str]]:
+                         unit_style_desc: str = "",
+                         fixed: dict[str, str] | None = None
+                         ) -> tuple[str, dict[str, str]]:
     """Resolve the feature slots and assemble the full feature prompt.
 
     A prompt that is already in the registry is re-rolled, so no two sprites
@@ -1033,6 +1053,8 @@ def build_feature_prompt(stem: str, spec_key: str, twist: str, theme: str,
     spec = UNIT_SPECS.get(spec_key) or FEATURE_SPECS[spec_key]
     fallbacks = dict(spec["fallbacks"])
     fallbacks.update({k: v for k, v in global_values.items()})
+    # slots pinned by the request keep the exact text the sender wrote
+    pinned = set(fixed or {})
 
     subject_template = spec.get("subject_template", FEATURE_SUBJECT_TEMPLATE)
     group_subject = "of #FEATURE_KIND#" in subject_template
@@ -1122,6 +1144,7 @@ def build_feature_prompt(stem: str, spec_key: str, twist: str, theme: str,
             anchors=spec.get("anchors") and {"FEATURE_KIND": spec["anchors"]},
             forbidden=FEATURE_FORBIDDEN.get(spec_key),
             help_overrides=help_overrides,
+            fixed=fixed,
             label=f"{'unit' if is_unit else 'feature'} '{stem}'",
         )
 
@@ -1129,7 +1152,7 @@ def build_feature_prompt(stem: str, spec_key: str, twist: str, theme: str,
         values.update(global_values)
         values.update(fallbacks)
         values.update(local)
-        if values.get("FEATURE_KIND"):
+        if values.get("FEATURE_KIND") and "FEATURE_KIND" not in pinned:
             values["FEATURE_KIND"] = _strip_article(_head_noun_phrase(
                 values["FEATURE_KIND"]))
             # the templates prepend "a single" themselves - a model answer
@@ -1149,7 +1172,7 @@ def build_feature_prompt(stem: str, spec_key: str, twist: str, theme: str,
         if values.get("FEATURE_LIGHTING"):
             values["FEATURE_LIGHTING"] = _end_sentence(
                 _capitalise(values["FEATURE_LIGHTING"].rstrip(".")))
-        if values.get("FEATURE_RENDERING"):
+        if values.get("FEATURE_RENDERING") and "FEATURE_RENDERING" not in pinned:
             values["FEATURE_RENDERING"] = _end_sentence(
                 _capitalise(values["FEATURE_RENDERING"].rstrip(".")))
             if (unit_style_desc or style_desc) and is_unit:
@@ -1250,12 +1273,18 @@ def shutdown_llama() -> None:
 
 def resolve_iteration_globals(theme_keyword: str, style_desc: str,
                               registry: VariationRegistry,
-                              style_name: str = "") -> tuple[dict[str, str], str]:
+                              style_name: str = "",
+                              fixed: dict[str, str] | None = None
+                              ) -> tuple[dict[str, str], str]:
     """Resolve the iteration-wide slots (theme, palette, lighting).
 
     Returns ``(global_values, theme)``; the caller writes theme.txt and
-    keywords_global.json itself.
+    keywords_global.json itself.  ``fixed`` pins global slots from the
+    request (``overrides.global``): a pinned theme is never re-asked for
+    being too similar to an earlier one and never gets the direction keyword
+    appended to it.
     """
+    pinned = set(fixed or {})
     global_context = (
         "These values are shared by every tile and sprite of one asset set, "
         "so they must work for all terrains at once. Describe mood, colour "
@@ -1279,17 +1308,19 @@ def resolve_iteration_globals(theme_keyword: str, style_desc: str,
         theme="",
         context=global_context,
         forbidden=GLOBAL_THEME_FORBIDDEN,
+        fixed=fixed,
         label="iteration globals",
     )
     theme = global_values.get("THEME_PHRASE") or GLOBAL_FALLBACKS["THEME_PHRASE"]
     theme = _strip_article(theme).rstrip(".")
-    if registry.themes:
+    if registry.themes and "THEME_PHRASE" not in pinned:
         theme = resolve_theme(registry, {"THEME_PHRASE": theme})
-    if theme_keyword and theme_keyword.lower() not in theme.lower():
+    if (theme_keyword and "THEME_PHRASE" not in pinned
+            and theme_keyword.lower() not in theme.lower()):
         theme = f"{theme}, {theme_keyword} shown only in sparse small accents"
     registry.remember_theme(theme)
     global_values["THEME_PHRASE"] = theme
-    if style_desc:
+    if style_desc and "STYLE_PHRASE" not in pinned:
         global_values["STYLE_PHRASE"] = f"{style_name}: {style_desc}"
     return global_values, theme
 
@@ -1386,18 +1417,47 @@ def validate_request(request: dict[str, Any] | None) -> dict[str, Any]:
         "selection", "theme", "style", "unitStyle", "overrides", "noLlm",
     }
     if unknown:
-        raise SpecError(f"request: unknown key(s): {', '.join(sorted(unknown))}")
+        raise SpecError("request: unknown key(s): "
+                        + ", ".join(sorted(map(str, unknown))))
+    for key in ("label", "theme", "style", "unitStyle"):
+        if key in req and req[key] is not None and not isinstance(req[key], str):
+            raise SpecError(f"request.{key}: expected a string")
+    for key in ("seed", "iterations"):
+        if key in req and (isinstance(req[key], bool)
+                           or not isinstance(req[key], int)):
+            raise SpecError(f"request.{key}: expected a whole number, "
+                            f"got {req[key]!r}")
+    if "noLlm" in req and not isinstance(req["noLlm"], bool):
+        raise SpecError(f"request.noLlm: expected true or false, "
+                        f"got {req['noLlm']!r}")
     categories = req.get("categories") or ["terrain", "features", "units"]
+    if not isinstance(categories, list):
+        raise SpecError("request.categories: expected an array of "
+                        "'terrain', 'features' and/or 'units'")
     bad = [c for c in categories if c not in ("terrain", "features", "units")]
     if bad:
-        raise SpecError(f"request.categories: unknown {', '.join(bad)}")
+        raise SpecError(f"request.categories: unknown {', '.join(map(str, bad))}")
     req["categories"] = categories
 
-    selection = dict(req.get("selection") or {})
+    raw_selection = req.get("selection") or {}
+    if not isinstance(raw_selection, dict):
+        raise SpecError("request.selection: expected an object with "
+                        "'terrains', 'features' and/or 'units'")
+    selection = dict(raw_selection)
     unknown_selection = set(selection) - {"terrains", "features", "units"}
     if unknown_selection:
         raise SpecError("request.selection: unknown key(s): "
-                        + ", ".join(sorted(unknown_selection)))
+                        + ", ".join(sorted(map(str, unknown_selection))))
+    for list_key in ("terrains", "features", "units"):
+        value = selection.get(list_key)
+        if value is None:
+            continue
+        if not isinstance(value, list):
+            raise SpecError(f"request.selection.{list_key}: expected an "
+                            f"array of names, got {value!r}")
+        if not all(isinstance(item, str) for item in value):
+            raise SpecError(f"request.selection.{list_key}: every entry must "
+                            "be a string")
     terrains = list(selection.get("terrains") or [])
     bad_terrains = [t for t in terrains if t not in TERRAINS]
     if bad_terrains:
@@ -1414,29 +1474,128 @@ def validate_request(request: dict[str, Any] | None) -> dict[str, Any]:
         if stem not in known_units and stem != "all":
             raise SpecError(f"request.selection.units: unknown {stem!r}")
 
-    overrides = dict(req.get("overrides") or {})
-    unknown_over = set(overrides) - {"global", "slots", "forbidden"}
+    raw_over = req.get("overrides") or {}
+    if not isinstance(raw_over, dict):
+        raise SpecError("request.overrides: expected an object with "
+                        "'global' and/or 'slots'")
+    overrides = dict(raw_over)
+    unknown_over = set(overrides) - {"global", "slots"}
     if unknown_over:
         raise SpecError("request.overrides: unknown key(s): "
                         + ", ".join(sorted(unknown_over)))
-    slot_names = (
-        _slot_names(GLOBAL_SLOT_SPECS)
-        | _slot_names(TERRAIN_SLOT_SPECS)
-        | _slot_names(FEATURE_SLOT_SPECS)
-    )
-    for asset_id, values in (overrides.get("slots") or {}).items():
+    global_slots = _slot_names(GLOBAL_SLOT_SPECS)
+    global_over = overrides.get("global") or {}
+    if not isinstance(global_over, dict):
+        raise SpecError("request.overrides.global: expected an object of "
+                        "slot -> value")
+    for key, value in global_over.items():
+        if key not in global_slots:
+            raise SpecError(f"request.overrides.global: {key!r} is not a "
+                            f"global slot (known: {', '.join(sorted(global_slots))})")
+        if not str(value).strip():
+            raise SpecError(f"request.overrides.global.{key}: empty value")
+
+    terrain_slots = _slot_names(TERRAIN_SLOT_SPECS)
+    feature_slots = _slot_names(FEATURE_SLOT_SPECS)
+    raw_slots = overrides.get("slots") or {}
+    if not isinstance(raw_slots, dict):
+        raise SpecError("request.overrides.slots: expected an object of "
+                        "asset id -> {slot: value}")
+    slots_over = dict(raw_slots)
+    known_units = set(UNIT_STEM_ORDER)
+    bare_units = {stem[5:] for stem in UNIT_STEM_ORDER}
+    normalised_slots: dict[str, Any] = {}
+    for asset_id, values in slots_over.items():
+        # accept the game key ('warrior') as well as the stem ('unit_warrior')
+        key = asset_id
+        if (key not in TERRAINS and key not in FEATURE_STEM_ORDER
+                and key not in known_units and key in bare_units):
+            key = f"unit_{key}"
+        if key in TERRAINS:
+            allowed, where = terrain_slots, f"terrain '{key}'"
+        elif key in FEATURE_STEM_ORDER or key in known_units:
+            allowed, where = feature_slots, f"asset '{key}'"
+        else:
+            raise SpecError(
+                "request.overrides.slots: unknown asset "
+                f"{asset_id!r} - use a terrain, a feature stem or a unit "
+                "stem such as 'unit_warrior'")
         if not isinstance(values, dict):
-            raise SpecError(f"request.overrides.slots.{asset_id}: expected "
+            raise SpecError(f"request.overrides.slots.{key}: expected "
                             f"an object of slot -> value")
-        for key in values:
-            if key not in slot_names:
-                raise SpecError(f"request.overrides.slots.{asset_id}: unknown "
-                                f"slot {key!r}")
+        for slot_name, value in values.items():
+            if slot_name not in allowed:
+                raise SpecError(
+                    f"request.overrides.slots.{key}: {slot_name!r} is not a "
+                    f"slot of {where} (iteration-wide slots such as "
+                    "THEME_PHRASE belong in overrides.global)")
+            if not str(value).strip():
+                raise SpecError(
+                    f"request.overrides.slots.{key}.{slot_name}: empty value")
+        normalised_slots[key] = values
+    if normalised_slots:
+        req["overrides"] = dict(overrides, slots=normalised_slots)
     req.setdefault("label", "classic")
     req.setdefault("seed", -1)
     req.setdefault("iterations", 1)
     req.setdefault("noLlm", False)
     return req
+
+
+def roster(req: dict[str, Any]) -> tuple[list[str], list[str], list[str], set[str]]:
+    """The terrains, feature stems and unit stems one request selects.
+
+    Returns ``(terrains, feature_stems, unit_stems, feature_wanted)``.
+    ``categories`` gates which of the three are planned at all; inside a
+    selected category an absent or empty ``selection`` means *everything*,
+    which is what the renderer's CLI does too.
+    """
+    categories = req["categories"]
+    selection = req.get("selection") or {}
+    terrains = (list(selection.get("terrains") or TERRAINS)
+                if "terrain" in categories else [])
+    feature_wanted = {str(s).lower() for s in (selection.get("features") or [])}
+    unit_wanted = {str(s).lower() for s in (selection.get("units") or [])}
+    feature_stems = (select_feature_stems(feature_wanted)
+                     if "features" in categories else [])
+    unit_stems = (select_unit_stems(unit_wanted)
+                  if "units" in categories else [])
+    return terrains, feature_stems, unit_stems, feature_wanted
+
+
+def describe_request(req: dict[str, Any]) -> None:
+    """Print what one request would generate - the whole job of ``--check``."""
+    terrains, features, units, _ = roster(req)
+    selection = req.get("selection") or {}
+
+    def counted(label: str, stems: list[str], wanted: Any) -> None:
+        if not stems:
+            print(f"    {label:<12} none (category not selected)")
+            return
+        note = f" (selected: {', '.join(wanted)})" if wanted else " (all)"
+        shown = ", ".join(stems[:6])
+        if len(stems) > 6:
+            shown += f", … ({len(stems)} total)"
+        print(f"    {label:<12} {len(stems)}{note}: {shown}")
+
+    print(f"[+] request OK - version {req['version']}, "
+          f"label {req['label']!r}, {req['iterations']} iteration(s), "
+          f"seed {req['seed']}")
+    print(f"    categories  {', '.join(req['categories'])}")
+    print(f"    direction   theme {req.get('theme') or '-'!r}  "
+          f"style {req.get('style') or '-'!r}  "
+          f"unit style {req.get('unitStyle') or '-'!r}")
+    counted("terrains", terrains, selection.get("terrains"))
+    counted("features", features, selection.get("features"))
+    counted("units", units, selection.get("units"))
+    overrides = req.get("overrides") or {}
+    if overrides.get("global"):
+        print("    pinned global: "
+              + ", ".join(sorted(overrides["global"])))
+    for asset_id, values in sorted((overrides.get("slots") or {}).items()):
+        print(f"    pinned {asset_id}: " + ", ".join(sorted(values)))
+    print("    (nothing was planned: no model was called. Plan it with "
+          "--request <file> --out <bundle>)")
 
 
 def generate(request: dict[str, Any] | None = None, *,
@@ -1466,16 +1625,10 @@ def generate(request: dict[str, Any] | None = None, *,
     if str(req.get("unitStyle") or "").strip():
         unit_style_name, unit_style_desc = resolve_style(req["unitStyle"])
 
-    categories = req["categories"]
-    selection = req.get("selection") or {}
-    terrains = list(selection.get("terrains") or TERRAINS)         if "terrain" in categories else []
-    feature_wanted = {str(s).lower() for s in (selection.get("features") or [])}
-    unit_wanted = ({str(s).lower() for s in (selection.get("units") or [])}
-                   if "units" in selection else None)
-    feature_stems = (select_feature_stems(feature_wanted)
-                     if "features" in categories else [])
-    unit_stems = (select_unit_stems(unit_wanted)
-                  if "units" in categories and unit_wanted is not None else [])
+    terrains, feature_stems, unit_stems, feature_wanted = roster(req)
+    overrides = req.get("overrides") or {}
+    global_over: dict[str, str] = dict(overrides.get("global") or {})
+    slots_over: dict[str, Any] = dict(overrides.get("slots") or {})
 
     registry = VariationRegistry()
     bundle: dict[str, Any] = {
@@ -1495,7 +1648,8 @@ def generate(request: dict[str, Any] | None = None, *,
 
     for i in range(1, int(req["iterations"]) + 1):
         global_values, theme = resolve_iteration_globals(
-            theme_keyword, style_desc, registry, style_name)
+            theme_keyword, style_desc, registry, style_name,
+            fixed=global_over)
         active, rolls, atmosphere, crazy = plan_stems(
             feature_stems, unit_stems, feature_wanted)
         iteration: dict[str, Any] = {
@@ -1511,6 +1665,7 @@ def generate(request: dict[str, Any] | None = None, *,
                 prompt, keywords = build_terrain_prompt(
                     terrain, theme, global_values, registry,
                     style_desc=style_desc, variant_note=variant_note,
+                    fixed=slots_over.get(terrain),
                 )
                 variants.append({
                     "variant": variant,
@@ -1537,6 +1692,7 @@ def generate(request: dict[str, Any] | None = None, *,
                     context_extra=THEME_ACCENT_CLAUSE,
                     style_desc=style_desc, style_context=style_context,
                     unit_style_desc=unit_style_desc,
+                    fixed=slots_over.get(stem),
                 )
                 variants.append({
                     "variant": variant,
@@ -1595,6 +1751,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help="bundle JSON file, or - for stdout")
     parser.add_argument("--no-llm", action="store_true",
                         help="never call Qwen; use the built-in fallback phrases")
+    parser.add_argument("--check", action="store_true",
+                        help="validate --request against the specs and print "
+                             "what it would generate (no LLM, no bundle)")
     parser.add_argument("--write-golden", action="store_true",
                         help="write specs/golden/bundle_no_llm.json from --selftest")
     parser.add_argument("--selftest", action="store_true",
@@ -1632,6 +1791,15 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         load_specs(args.specs)
+        if args.check:
+            request = _read_request(args.request) if args.request else {}
+            if not args.request:
+                print("[~] no --request given: checking the defaults "
+                      "(everything selected)")
+            if args.no_llm:
+                request["noLlm"] = True
+            describe_request(validate_request(request))
+            return 0
         if args.selftest or args.write_golden:
             global LLM_ENABLED
             LLM_ENABLED = False

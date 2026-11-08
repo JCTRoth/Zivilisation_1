@@ -434,17 +434,17 @@ def main() -> int:
                     "colour and light only - never a place, a story, an event, a "
                     "battle or an object"
                 )
-                global_values = gen.resolve_slot_bundle(
-                    gen.GLOBAL_SLOT_SPECS, gen.GLOBAL_FALLBACKS, registry,
+                global_values = _abstract.resolve_slot_bundle(
+                    _abstract.GLOBAL_SLOT_SPECS, _abstract.GLOBAL_FALLBACKS, registry,
                     theme="",
                     context=global_context,
-                    forbidden=gen.GLOBAL_THEME_FORBIDDEN,
+                    forbidden=_abstract.GLOBAL_THEME_FORBIDDEN,
                     label="iteration globals",
                 )
-                theme = global_values.get("THEME_PHRASE") or gen.GLOBAL_FALLBACKS["THEME_PHRASE"]
-                theme = gen._strip_article(theme).rstrip(".")
+                theme = global_values.get("THEME_PHRASE") or _abstract.GLOBAL_FALLBACKS["THEME_PHRASE"]
+                theme = _abstract._strip_article(theme).rstrip(".")
                 if registry.themes:
-                    theme = gen.resolve_theme(registry, {"THEME_PHRASE": theme})
+                    theme = _abstract.resolve_theme(registry, {"THEME_PHRASE": theme})
                 registry.remember_theme(theme)
                 global_values["THEME_PHRASE"] = theme
                 (iter_dir / "theme.txt").write_text(theme + "\n")

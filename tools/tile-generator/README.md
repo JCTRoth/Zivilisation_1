@@ -173,6 +173,15 @@ python3 generate_variated_tile_sets.py --emit-prompts bundle.json --dry-run
 `overrides`, `noLlm`), so a request can travel unchanged from the CLI to the
 web UI. `--spec-json` points both tools at an alternative `specs/` directory.
 
+**Want to ask for a set without running any of this?** Write a `request.json`
+and send it — link:../../doc/TILE_GENERATOR_REQUESTS.adoc[Tile Generator
+Requests] documents every key, the rosters, ready-made examples and
+`--check`, which validates a request without starting a model:
+
+```bash
+python3 tools/tile-generator/abstract_generator.py --check --request request.json
+```
+
 The web server exposes the same engine over HTTP:
 
 * `POST /api/prompts` — request JSON in, prompt bundle out (the server shells
@@ -473,6 +482,7 @@ are a renderer treatment, not generated art.
 | Variable | Default | Meaning |
 |---|---|---|
 | `ITERATIONS` | `10` | Number of tile sets to generate. |
+| `LABEL` | *(theme/style keyword)* | Names the run folder (`<label>_<timestamp>`, sanitised); wins over the theme/style keyword. |
 | `OUTPUT_ROOT` | `tools/tile-generator/tile_sets` | Base output directory. |
 | `STRENGTH` | `0.6` | Generic img2img denoising strength. |
 | `FEATURE_STRENGTH` | `0.7` | img2img denoising strength for feature sprites. |
@@ -495,7 +505,8 @@ are a renderer treatment, not generated art.
 | `SD_SERVER_BIN` / `SD_PORT` / `SD_LOG` | *see Prerequisites* | Where the `sd-server` binary lives, which port it uses and where it logs. |
 | `LLAMA_SERVER_BIN` / `QWEN_MODEL` / `LLAMA_PORT` / `LLAMA_LOG` | *see Prerequisites* | Same for `llama-server`; read by `abstract_generator.py`, so the CLI and the web server agree. |
 
-CLI flags `--iterations`, `--output-root`, `--strength`, `--feature-strength`,
+CLI flags `--iterations`, `--label`, `--output-root`, `--strength`,
+`--feature-strength`,
 `--steps`, `--cfg`, `--size`, `--feature-size`, `--seed`, `--retries`,
 `--bg-level`, `--bg-softness`, `--edge-crop`, `--edge-blend`, `--terrains`,
 `--features`, `--units`, `--dry-run`,
@@ -513,8 +524,9 @@ select *what* is planned rather than how:
 | `--prompts-from FILE` | render the prompts of an existing bundle; the local model is not consulted |
 | `--emit-prompts FILE` | write the planned prompts as a bundle and render nothing (implies `--dry-run`) |
 
-`abstract_generator.py` has its own, smaller set: `--specs`, `--request`,
-`--out`, `--no-llm`, `--selftest`, `--write-golden`.
+`abstract_generator.py` has its own, smaller set: `--check` (validate
+`--request` and print the roster — no model, no output), `--specs`,
+`--request`, `--out`, `--no-llm`, `--selftest`, `--write-golden`.
 
 ## Output layout
 

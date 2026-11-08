@@ -1,0 +1,355 @@
+= Tile Generator Requests — send a .json, I run it
+
+You do not need any of the machinery: the tile generator runs on one machine
+and needs the local language model (Qwen through `llama-server`) to resolve the
+abstract slots plus the local image model (`sd-server`) to render. What travels
+is a small JSON *request*. Write it, check it, send it — the request is the
+whole contract, and every key in it is validated before a single image is made.
+
+Companion documents: `tools/tile-generator/README.md` (the engine, `specs/*.json`,
+the bundle) and `doc/RENDERING_ASSETS.adoc` (assets, installing a run).
+
+== 1. The short version
+
+Write a file, e.g. `request.json`, and check it:
+
+[source,bash]
+----
+python3 tools/tile-generator/abstract_generator.py --check --request request.json
+----
+
+`--check` validates the document against the current `specs/*.json` and prints
+what the request would generate. It never starts a model, never renders, and
+never writes a file. On a problem it exits with code `2` and one `[-] …` line
+naming the offending key — fix that, run it again, and when it says
+`[+] request OK` send the file (attachment, paste into an issue, whatever).
+
+What I then run with it:
+
+[source,bash]
+----
+# one shot: resolve the slots with Qwen, render, write tile_sets/<label>_<timestamp>/
+python3 tools/tile-generator/generate_variated_tile_sets.py --request-json request.json
+
+# or split it: plan once into a bundle, render exactly those prompts later
+python3 tools/tile-generator/abstract_generator.py --request request.json --out bundle.json
+python3 tools/tile-generator/generate_variated_tile_sets.py --prompts-from bundle.json
+
+# put the result on the board
+npm run tiles:install -- tools/tile-generator/tile_sets/<label>_<timestamp>
+----
+
+== 2. The request document
+
+One JSON object, UTF-8, no comments, no trailing commas. Every key is
+optional; a key that is present must be right — unknown keys are an error, they
+are never silently ignored.
+
+[cols="1,1,1,3", options="header"]
+|===
+|Key |Type |Default |Meaning
+
+|`version`
+|number
+|`1`
+|Contract version. Anything else is rejected, so an old request never quietly means something new.
+
+|`label`
+|string
+|`"classic"`
+|Names the run folder: `tile_sets/<label>_<unix timestamp>/` (letters, digits and spaces are folded to `_`). Wins over the theme/style keyword.
+
+|`seed`
+|number
+|`-1`
+|`-1` = random. `0` or higher pins the generator's own dice rolls (the per-iteration mountain atmosphere and drama extras). With `noLlm` the bundle is then fully reproducible; with Qwen the model still rephrases every slot.
+
+|`iterations`
+|number
+|`1`
+|How many asset sets to plan — each iteration resolves its own theme.
+
+|`categories`
+|array
+|all three
+|Which of `terrain`, `features`, `units` are planned at all: any mix of `"terrain"`, `"features"`, `"units"`. A category left out is not planned, whatever `selection` says.
+
+|`selection`
+|object
+|everything
+|Which terrains / features / units — see below.
+
+|`theme`
+|string
+|`""`
+|Direction keyword such as `"Halloween"`: a few sparse small accents only. Terrain materials, natural colours, subject identities and neutral daylight stay unchanged.
+
+|`style`
+|string
+|`""`
+|One art style for terrain *and* features — a registry name (`pixel_art`, `manga`, `watercolor_storybook`, …,21 in total) or any free phrase.
+
+|`unitStyle`
+|string
+|`""`
+|Art style for the **unit sprites only**; wins over `style` for them (`original_game_icons` = the flat vector game-icon look).
+
+|`overrides`
+|object
+|—
+|Pin slot values instead of asking the model — see §5.
+
+|`noLlm`
+|boolean
+|`false`
+|Never call Qwen: every slot falls back to its built-in phrase. Deterministic and useful for checking plumbing, not for a real set.
+|===
+
+=== `selection`
+
+[cols="1,3,3", options="header"]
+|===
+|Key |Accepts |When absent or `[]`
+
+|`terrains`
+|one of the 12 terrain ids below
+|all 12 terrains
+
+|`features`
+|a stem (`forest_feature_2`), a variant base (`forest_feature` → renders `_1.._3`) or `"all"`
+|all 24 feature stems
+
+|`units`
+|a game key (`phalanx`), a stem (`unit_phalanx`) or `"all"`
+|all 35 units
+|===
+
+The rosters (authoritative copy: `tools/tile-generator/specs/assets.json`):
+
+*Terrains (12)* — `arctic`, `desert`, `forest`, `grassland`, `hills`, `jungle`,
+`mountains`, `ocean`, `plains`, `river`, `swamp`, `tundra`
+
+*Features (24 stems)* — `fish1`…`fish5`, `horses`, `horses_2`,
+`forest_feature_1..3`, `jungle_feature`, `hills_feature`, `swamp_feature`,
+`mountains_feature_1..4`, `seal`, `gems`, `gold`, `coal`, `oil`, `game`, `oasis`
+
+*Units (35)* — `warrior`, `scout`, `archer`, `phalanx`, `chariot`, `knights`,
+`legion`, `catapult`, `musketeer`, `riflemen`, `cavalry`, `mech_inf`, `cannon`,
+`artillery`, `tank`, `sail`, `trireme`, `caravel`, `frigate`, `ironclad`,
+`destroyer`, `cruiser`, `battleship`, `submarine`, `carrier`, `transport`,
+`fisher_boat`, `trade_ship`, `settler`, `diplomat`, `caravan`, `ferry`,
+`fighter`, `bomber`, `nuclear`
+
+== 3. Examples
+
+=== Nothing but a version — a full classic set
+
+[source,json]
+----
+{
+  "version": 1
+}
+----
+
+Everything: 12 terrains × 3 sibling ground tiles, 24 feature sprites, 35 units
+× 3 variants — the broadest single-iteration request. Raise `iterations` to
+plan several sets in one run.
+
+=== Two terrains, one theme, reproducible
+
+[source,json]
+----
+{
+  "version": 1,
+  "label": "misty coast",
+  "seed": 42,
+  "iterations": 2,
+  "categories": ["terrain"],
+  "selection": { "terrains": ["ocean", "river"] },
+  "theme": "autumn mist"
+}
+----
+
+=== Unit sprites only, in the original game's icon look
+
+[source,json]
+----
+{
+  "version": 1,
+  "label": "icon units",
+  "categories": ["units"],
+  "selection": { "units": ["warrior", "phalanx", "settler", "trireme"] },
+  "unitStyle": "original_game_icons"
+}
+----
+
+Every id is checked against the roster: a misspelling such as `trieme` is
+rejected with `request.selection.units: unknown 'trieme'` instead of silently
+rendering nothing.
+
+=== Themed and styled, with pinned slot values
+
+[source,json]
+----
+{
+  "version": 1,
+  "label": "halloween",
+  "seed": 7,
+  "categories": ["terrain", "features"],
+  "selection": {
+    "terrains": ["forest", "swamp", "hills"],
+    "features": ["forest_feature", "swamp_feature"]
+  },
+  "theme": "Halloween",
+  "style": "pixel_art",
+  "overrides": {
+    "global": { "GLOBAL_LIGHTING": "neutral overcast daylight" },
+    "slots": {
+      "forest": { "ACCENT_ELEMENT": "a few pale mushrooms" },
+      "swamp":  { "EDGE_ELEMENT": "dark still water" }
+    }
+  }
+}
+----
+
+What this produces: three terrains with three sibling tiles each and four
+feature sprites, all in pixel-art rendering, with a restrained Halloween
+accent; the forest tile always carries pale mushrooms and the swamp always
+ends in dark still water, because those two slots were pinned instead of
+rolled.
+
+=== Everything in one document
+
+[source,json]
+----
+{
+  "version": 1,
+  "label": "winter campaign",
+  "seed": 1234,
+  "iterations": 1,
+  "categories": ["terrain", "features", "units"],
+  "selection": {
+    "terrains": ["arctic", "tundra", "mountains"],
+    "features": ["seal", "gems"],
+    "units": ["phalanx", "cavalry", "transport"]
+  },
+  "theme": "harsh winter",
+  "style": "norse_woodcarving",
+  "unitStyle": "original_game_icons",
+  "overrides": {
+    "global": { "THEME_PHRASE": "harsh winter light over frozen ground" }
+  }
+}
+----
+
+== 4. What comes back
+
+For each iteration the run folder holds the resolved prompts and the renders:
+
+[source]
+----
+tile_sets/<label>_<unix timestamp>/
+├── run.json                     # summary of the whole run
+└── iteration_01/
+    ├── theme.txt                # the iteration's art-direction phrase
+    ├── keywords_global.json     # the resolved iteration-wide slots
+    ├── prompt_<terrain>.txt     # prompt + negative prompt, per asset
+    ├── keywords_<terrain>.json  # every slot value that went into it
+    ├── manifest.json            # prompts, keywords, outputs, unit provenance
+    ├── tiles/                   # terrain_<t>.png, _1, _2
+    ├── features/                # transparent feature sprites (+ backup/)
+    └── units/                   # unit_<key>.png, _2, _3 (+ backup/)
+----
+
+`--emit-prompts bundle.json` (planning only, nothing rendered) writes the same
+prompts as one JSON bundle instead, which `--prompts-from` can replay later.
+
+== 5. `overrides` — pinning a slot
+
+Two places to pin:
+
+* `overrides.global` — the three iteration-wide slots: `THEME_PHRASE`,
+  `GLOBAL_PALETTE`, `GLOBAL_LIGHTING`.
+* `overrides.slots.<asset>` — one asset at a time:
+** a **terrain** takes `SURFACE_FORM`, `BASE_MATERIAL`, `TEXTURE_DETAIL`,
+  `ACCENT_ELEMENT`, `EDGE_ELEMENT`, `LIGHTING_NOTE`, `COLOR_PALETTE`,
+** a **feature or unit** takes `FEATURE_KIND`, `FEATURE_FORM`, `FEATURE_DETAIL`,
+  `FEATURE_PALETTE`, `FEATURE_LIGHTING`, `FEATURE_RENDERING`
+  (units are keyed by their stem, `unit_warrior`; the bare game key `warrior`
+  is accepted too).
+
+Rules:
+
+* A pinned value is used as written — no re-roll, no re-ask, not even when an
+  earlier iteration already used the same phrase. The template may still
+  capitalise it and fix the article around it.
+* Pinned values also bypass the anchor and forbidden-word guards: those fence
+  in what the *model* may invent, not what you ask for.
+* Pinning a slot an asset does not have is an error at `--check` time, not a
+  silent no-op. Iteration-wide slots belong in `overrides.global`.
+* A pin for an asset that `selection` does not include simply never applies.
+* Values are short visual English phrases (3–12 words): something an image
+  model can draw, never an instruction.
+
+== 6. Errors
+
+Everything wrong with a request is reported as one line on stderr-ish output
+and exit code `2`:
+
+[cols="2,3", options="header"]
+|===
+|Message |Fix
+
+|`request: unknown key(s): typo`
+|A key that does not exist — check the table in §2. Keys are never ignored.
+
+|`request.version '2' != 1`
+|The request was written for a different contract version.
+
+|`request.selection.terrains: unknown wetland`
+|An id that is not in the roster (§2).
+
+|`request.selection.units: unknown 'trieme'`
+|Same for units — game key or stem, spelled exactly.
+
+|`request.overrides.slots.forestn: unknown asset …`
+|A pin for something that is not a terrain/feature/unit of this run.
+
+|`request.overrides.slots.forest: 'FEATURE_KIND' is not a slot of terrain 'forest' …`
+|Wrong slot family: terrain slots go on terrains, feature/unit slots on those.
+
+|`request.overrides.global: 'COLOR_PALETTE' is not a global slot (known: …)`
+|Only `THEME_PHRASE`, `GLOBAL_PALETTE`, `GLOBAL_LIGHTING` are global.
+
+|`request.seed: expected a whole number, got '42'`
+|Types matter: numbers are numbers, `noLlm` is `true`/`false`.
+
+|`specs invalid: …`
+|A `specs/*.json` problem on the receiving machine, not your request.
+|===
+
+A request that passes `--check` will not fail later for a contract reason. The
+only things that can still go wrong are environmental: the local models not
+starting, or the image model producing a bad image (the generator retries up
+to `--retries` per image and, if every attempt fails, keeps the original
+tile/input instead of writing a broken file).
+
+== 7. Notes and limits
+
+* `--check` needs no models at all. Planning needs Qwen, rendering needs
+  `sd-server`; both are started automatically where they are missing, and the
+  paths/ports are env-overridable (`LLAMA_SERVER_BIN`, `QWEN_MODEL`,
+  `LLAMA_PORT`, `SD_SERVER_BIN`, `SD_PORT` — see the tool README).
+* Every terrain renders as **three sibling tiles** (`terrain_<t>.png`,
+  `_1`, `_2`) that share one palette and one light but differ in the ground
+  pattern arrangement; every unit renders as **three variants**; features are
+  one sprite each.
+* The negative prompts travel with the bundle and are handed to the image model
+  as `negative_prompt` — which only has an effect while CFG > 1 (the shipped
+  presets run CFG `1.0`).
+* Unit ids come from `specs/assets.json`. The renderer also picks up units the
+  game gained later (automatic sync), but a *request* has to use ids
+  `--check` accepts: if it rejects a unit the game really has, the roster needs
+  one line — see "Adding a roster entry" in `tools/tile-generator/README.md`.
+* Requests are plain JSON: no comments, no trailing commas, one object per
+  file.

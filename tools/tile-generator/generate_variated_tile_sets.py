@@ -115,9 +115,6 @@ from abstract_generator import (
     FEATURE_STEM_SPECS,
     FEATURE_SUBJECT_MODE,
     FEATURE_TEXT_ONLY_STEMS,
-    GLOBAL_FALLBACKS,
-    GLOBAL_SLOT_SPECS,
-    GLOBAL_THEME_FORBIDDEN,
     LLAMA_LOG,
     LLAMA_PORT,
     LLAMA_SERVER_BIN,
@@ -144,21 +141,20 @@ from abstract_generator import (
     VariationRegistry,
     _UNIT_RELIABLE_LIGHT,
     _UNIT_RELIABLE_RENDER,
-    _strip_article,
     build_feature_prompt,
     build_terrain_prompt,
     http_ok,
     human,
     load_specs,
-    resolve_slot_bundle,
+    resolve_iteration_globals,
     resolve_style,
-    resolve_theme,
     roll_weighted,
     select_feature_stems,
     select_unit_stems,
     start_process,
     stop_process,
     style_clauses,
+    validate_request,
     wait_for,
 )
 
@@ -1382,6 +1378,9 @@ def build_parser() -> argparse.ArgumentParser:
                              "when requested without a list")
     parser.add_argument("--dry-run", action="store_true",
                         help="only resolve the prompts with the local model, render nothing")
+    parser.add_argument("--label", default=os.environ.get("LABEL", ""),
+                        help="names the run folder (<label>_<timestamp>); "
+                             "defaults to the theme/style keyword")
     parser.add_argument("--spec-json", default=None, metavar="DIR",
                         help="directory holding the specs/*.json source of truth "
                              "(default: the specs/ next to this script)")
@@ -1559,6 +1558,9 @@ def write_batch_script(runs: list[str], iterations: int,
 # --prompts-from, prompts recorded for --emit-prompts.
 _BUNDLE_SOURCE: dict[str, dict[str, Any]] = {}
 _BUNDLE_OUT: list[dict[str, Any]] = []
+# Slot pins from --request-json (`overrides`), applied by the same
+# `fixed=` plumbing abstract_generator uses.
+_OVERRIDES: dict[str, Any] = {}
 
 
 def plan_prompt(kind: str, asset_id: str, variant: int, negative: str,
@@ -1641,16 +1643,19 @@ def apply_request(args: argparse.Namespace, path: str) -> None:
         raise SpecError(f"request {path}: {exc}") from exc
     if not isinstance(request, dict):
         raise SpecError(f"request {path}: expected a JSON object")
-    if request.get("version", SPEC_VERSION) != SPEC_VERSION:
-        raise SpecError(f"request {path}: version "
-                        f"{request.get('version')!r} != {SPEC_VERSION}")
-    allowed = {"version", "label", "seed", "iterations", "categories",
-               "selection", "theme", "style", "unitStyle", "overrides",
-               "noLlm"}
-    unknown = set(request) - allowed
-    if unknown:
-        raise SpecError(f"request {path}: unknown key(s): "
-                        + ", ".join(sorted(unknown)))
+    # the same contract abstract_generator validates, so one request document
+    # behaves identically in both tools (validate_request works on a copy and
+    # leaves the raw keys here, which is what the CLI mapping below wants)
+    try:
+        validated = validate_request(request)
+    except SpecError as exc:
+        raise SpecError(f"request {path}: {exc}") from exc
+    global _OVERRIDES
+    # validate_request normalises asset ids (game key -> unit stem), so the
+    # pins are taken from what it returns, not from the raw document
+    _OVERRIDES = dict(validated.get("overrides") or {})
+    if "label" in request:
+        args.label = str(request["label"] or "")
     if "theme" in request:
         args.theme_keyword = str(request["theme"] or "")
     if "style" in request:
@@ -1680,6 +1685,10 @@ def main() -> int:
     # reads them — a contract problem exits here, with the offending key.
     try:
         load_specs(args.spec_json)
+        # Fold every unit the game defines into the roster first, so a unit
+        # added to UNIT_TYPES after the specs were written is both selectable
+        # in a --request-json and rendered.
+        sync_game_units()
         if args.request_json:
             apply_request(args, args.request_json)
         if args.prompts_from:
@@ -1716,9 +1725,13 @@ def main() -> int:
           f"wrap blend {args.edge_blend:.0%}"
           + (" (pixel palette preserved)" if pixel_art_terrain else ""))
 
-    # Folder name under tile_sets/: the theme/style keyword (sanitised), or
-    # "classic" when no keyword was given — so a run is findable by name.
-    if theme_keyword:
+    # Folder name under tile_sets/: an explicit label (--label / the request's
+    # "label"), else the theme/style keyword (sanitised), else "classic" —
+    # so a run is findable by name.
+    explicit_label = args.label.strip()
+    if explicit_label:
+        run_name = re.sub(r"[^a-z0-9]+", "_", explicit_label.lower()).strip("_") or "classic"
+    elif theme_keyword:
         run_name = re.sub(r"[^a-z0-9]+", "_", theme_keyword.lower()).strip("_") or "classic"
     elif args.style_keyword.strip():
         run_name = re.sub(r"[^a-z0-9]+", "_", args.style_keyword.strip().lower()).strip("_") or "classic"
@@ -1751,10 +1764,6 @@ def main() -> int:
         print(f"    start it in the background with:")
         print(f"    nohup bash \"{script}\" > \"{script.with_suffix('.out')}\" 2>&1 &")
         return 0
-
-    # Cover every unit the game actually defines - including ones added to
-    # UNIT_TYPES after this table was written - before anything is selected.
-    sync_game_units()
 
     terrains = [t.strip() for t in args.terrains.split(",") if t.strip()] or list(TERRAINS)
     unknown = [t for t in terrains if t not in TERRAINS]
@@ -1891,42 +1900,12 @@ def main() -> int:
             iter_started = time.time()
 
             # ---- 1. iteration-wide global slots --------------------------
-            global_context = (
-                "These values are shared by every tile and sprite of one "
-                "asset set, so they must work for all terrains at once. "
-                "Describe mood, colour and light only - never a place, a "
-                "story, an event, a battle or an object"
-            )
-            if theme_keyword:
-                global_context += (
-                    f". The run direction keyword is '{theme_keyword}': the "
-                    "theme phrase may name it, but the shared palette must "
-                    "contain only one or two restrained accent colors and "
-                    "lighting must remain neutral, even daylight. Do not "
-                    "alter natural terrain/material colors or subject identity"
-                )
-            else:
-                global_context += (
-                    ". Pick one or two restrained natural accent colors and "
-                    "clear neutral daylight; do not make the set dark or dramatic"
-                )
-            global_values = resolve_slot_bundle(
-                GLOBAL_SLOT_SPECS, GLOBAL_FALLBACKS, registry,
-                theme="",
-                context=global_context,
-                forbidden=GLOBAL_THEME_FORBIDDEN,
-                label="iteration globals",
-            )
-            theme = global_values.get("THEME_PHRASE") or GLOBAL_FALLBACKS["THEME_PHRASE"]
-            theme = _strip_article(theme).rstrip(".")
-            if registry.themes:
-                theme = resolve_theme(registry, {"THEME_PHRASE": theme})
-            if theme_keyword and theme_keyword.lower() not in theme.lower():
-                theme = f"{theme}, {theme_keyword} shown only in sparse small accents"
-            registry.remember_theme(theme)
-            global_values["THEME_PHRASE"] = theme
-            if style_desc:
-                global_values["STYLE_PHRASE"] = f"{style_name}: {style_desc}"
+            # Resolved by the shared helper, so `overrides.global` of a
+            # --request-json pins them here exactly as it does in
+            # abstract_generator.
+            global_values, theme = resolve_iteration_globals(
+                theme_keyword, style_desc, registry, style_name,
+                fixed=dict(_OVERRIDES.get("global") or {}))
             (iter_dir / "theme.txt").write_text(theme + "\n")
             (iter_dir / "keywords_global.json").write_text(
                 json.dumps(global_values, indent=2, sort_keys=True) + "\n"
@@ -1956,6 +1935,8 @@ def main() -> int:
                                 terrain, theme, global_values, registry,
                                 style_desc=style_desc,
                                 variant_note=variant_note,
+                                fixed=dict((_OVERRIDES.get("slots") or {})
+                                           .get(terrain) or {}),
                             ),
                         )
                         (iter_dir / f"prompt_{terrain}{suffix}.txt").write_text(
@@ -2148,6 +2129,8 @@ def main() -> int:
                                 style_desc=style_desc,
                                 style_context=style_context,
                                 unit_style_desc=unit_style_desc,
+                                fixed=dict((_OVERRIDES.get("slots") or {})
+                                           .get(stem) or {}),
                             ),
                         )
                         (iter_dir /
@@ -2270,7 +2253,8 @@ def main() -> int:
             servers.shutdown()
 
     if args.emit_prompts:
-        label = (args.theme_keyword.strip() or args.style_keyword.strip()
+        label = (args.label.strip() or args.theme_keyword.strip()
+                 or args.style_keyword.strip()
                  or args.unit_style_keyword.strip() or "classic")
         bundle = bundle_document(label, args)
         Path(args.emit_prompts).write_text(
