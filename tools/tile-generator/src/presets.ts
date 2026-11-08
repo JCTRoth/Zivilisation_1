@@ -78,30 +78,35 @@ export const TERRAIN_PRESETS: Record<string, Preset> = {
 export const FEATURE_PRESETS: Record<string, Preset> = {
   forest: {
     name: 'Forest',
+    selection: { features: ['forest_feature'] },
     color: '#228B22',
     file: 'terrain_forest_feature',
     w: 256, h: 384,
   },
   jungle: {
     name: 'Jungle',
+    selection: { features: ['jungle_feature'] },
     color: '#1B7A3D',
     file: 'terrain_jungle_feature',
     w: 256, h: 384,
   },
   hills: {
     name: 'Hills',
+    selection: { features: ['hills_feature'] },
     color: '#8FBC8F',
     file: 'terrain_hills_feature',
     w: 256, h: 384,
   },
   mountains: {
     name: 'Mountains',
+    selection: { features: ['mountains_feature'] },
     color: '#696969',
     file: 'terrain_mountains_feature',
     w: 256, h: 384,
   },
   swamp: {
     name: 'Swamp',
+    selection: { features: ['swamp_feature'] },
     color: '#5B3A1E',
     file: 'terrain_swamp_feature',
     w: 256, h: 384,

@@ -59,6 +59,9 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import generate_variated_tile_sets as gen
+# The slot resolver (and therefore the restart hook it calls) lives in the
+# abstract generator now, not in the renderer.
+import abstract_generator as _abstract
 
 # ===========================================================================
 # THE TEN ILLUSTRATION STYLES
@@ -406,7 +409,7 @@ def main() -> int:
             print(f"\n########## art style {style_key}: {style['name']} "
                   f"({'freeform' if style['freeform'] else 'illustration'}) ##########")
             registry = gen.VariationRegistry()
-            gen.LLAMA_RESTART_HOOK = servers.restart_llama
+            _abstract.LLAMA_RESTART_HOOK = servers.restart_llama
             for i in range(1, args.iterations + 1):
                 run_dir = output_root / f"{style_key}_{int(time.time())}_{i:02d}"
                 iter_dir = run_dir / f"iteration_{i:02d}"

@@ -605,7 +605,7 @@ const server = createServer(async (req, res) => {
     // bundle is the contract with abstract_generator. A hand-typed `prompt`
     // still works and simply renders without a negative.
     const prompt = (bundleAsset && bundleAsset.prompt) || typedPrompt;
-    const negative = (bundleAsset && bundleAsset.negative) || '';
+    const negative = params.negative || (bundleAsset && bundleAsset.negative) || '';
     if (!prompt || !tileName) return json(res, { error: 'Missing prompt or tileName' }, 400);
 
     const w = width || 512;

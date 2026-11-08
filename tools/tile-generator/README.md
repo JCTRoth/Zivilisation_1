@@ -5,10 +5,32 @@ a unix-timestamped folder containing, per iteration, a full set of **terrain
 tiles** and **feature sprites** (isolated, transparent background), ready to
 drop into `public/assets/tiles`.
 
+## Layout
+
+```
+tools/tile-generator/
+├── abstract_generator.py            # planning: specs/*.json + request → prompt bundle
+├── generate_variated_tile_sets.py   # rendering: bundle → tiles / features / units
+├── generate_illustration_styles.py  # ten illustration styles, same slot engine
+├── specs/                           # SOURCE OF TRUTH — edit these, not Python
+│   ├── assets.json                  #   asset roster, variants, SVG map
+│   ├── slots.json                   #   slot specs, anchors, forbidden words, fallbacks
+│   ├── templates.json               #   prompt templates + style registry
+│   ├── negatives.json               #   negative prompts
+│   └── golden/bundle_no_llm.json    #   --selftest reference bundle
+├── server.mjs                       # web backend (/api/prompts, /api/assets, /api/generate)
+├── src/                             # React UI (presets carry no prompt text)
+├── compose_feature_tiles.mjs        # optional: features onto tiles
+├── generate_terrain_v4.mjs          # separate, hand-written prompts
+├── install_generated_assets.mjs     # backs `npm run tiles:install`
+└── tile_sets/                       # run output (git-ignored)
+```
+
 ## The abstract prompt system
 
 Nothing that reaches the image model is written by hand. Every prompt is a
-**template full of `#KEYWORD#` slots**, and at run time the local Qwen model
+**template full of `#KEYWORD#` slots** (the templates and the slot system
+live in `specs/*.json`, see below), and at run time the local Qwen model
 (`llama-server`) resolves every slot with a fresh, concrete English phrase.
 That is what makes every run of this script produce a genuinely different
 asset set — and it is why the same code yields a new art direction every
@@ -50,7 +72,8 @@ details ....: "A continuous surface of #BASE_MATERIAL# with broad #TEXTURE_DETAI
 ### Keeping the subject recognisable
 
 Free variation would eventually turn a forest into a desert, so every slot
-resolution is fenced in by four independent guards:
+resolution is fenced in by four independent guards (all of them live in
+`specs/slots.json`):
 
 | Guard | What it prevents |
 |---|---|
@@ -70,7 +93,8 @@ the material itself can never be misread.
   broken braces and a per-key regex fallback are all handled,
 * a slot that comes back unusable is re-asked individually,
 * whatever is still missing falls back to a per-slot default phrase
-  (`TERRAIN_FALLBACKS`, `FEATURE_FALLBACKS`, `GLOBAL_FALLBACKS`),
+  (the `fallbacks` blocks of `specs/slots.json`: terrain, feature and
+  global),
 * a phrase that was already used in this run is re-rolled, so no two tiles
   end up with the same description,
 * a full prompt that is already in the registry is re-rolled, so no two
@@ -78,6 +102,98 @@ the material itself can never be misread.
 * an iteration theme that is too similar to an earlier one is re-asked — the
   local model has a strong prior ("golden hour glow over …") and would
   otherwise paint every iteration in the same light.
+
+## Specs: JSON is the source of truth
+
+Everything the prompt engine needs lives in `specs/*.json` — the Python
+constants are gone, edit the JSON:
+
+| file | holds |
+| --- | --- |
+| `specs/assets.json` | asset roster: terrains, feature stems, the game's unit keys, SVG artwork map |
+| `specs/slots.json` | the abstract slot system: slot specs, anchors, forbidden words, fallbacks, identities |
+| `specs/templates.json` | the prompt templates (`subject` / `details` / art direction) and the style registry |
+| `specs/negatives.json` | the negative prompts (terrain / feature / unit + per-unit extras) |
+
+Each file carries a `version`; the loader rejects a version it does not know.
+Unknown keys, unknown `#SLOT#` placeholders, unknown template placeholders and
+unknown asset/spec ids are **hard errors** that name the offending key — a typo
+must never silently degrade a prompt.
+
+The negative prompts in `specs/negatives.json` are handed to the image model as
+`negative_prompt` when CFG > 1 (the shipped presets run CFG = 1.0, where a
+negative prompt has no effect at all).
+
+### Adding a roster entry
+
+* **Terrain** — add it to `terrains.order` in `specs/assets.json`, then give it
+  an entry in `specs/slots.json`: `TERRAIN_IDENTITIES` (hard requirement — the
+  prompt builder indexes it directly), `TERRAIN_ANCHORS`,
+  `TERRAIN_PALETTE_ANCHORS` and a `TERRAIN_FALLBACKS` block. No prompt text:
+  the templates fill the slots.
+* **Feature stem** — add it to `features.order`; `features.stemSpecs` maps it
+  to a spec in `slots.FEATURE_SPECS` plus the twist text it is rendered with
+  (a stem left out falls back to its variant base name, and finally to the
+  `fish` spec — so an entry is what makes it render *right*, not *at all*).
+  Set `features.outputNames` if the game expects a file name other than the
+  stem.
+* **Unit** — new units of `src/data/UnitConstants.ts` are picked up
+  automatically by `sync_game_units()` with a generic description; to
+  hand-tune one, add its entry to `slots.UNIT_SPECS` (every stem in
+  `assets.units.stems` must have one — that is a hard validation error).
+
+After any edit: `npm run test:generator` validates the contract, and
+`python3 abstract_generator.py --write-golden` refreshes the reference bundle
+once the change is intended.
+
+### Two tools, one bundle
+
+* `abstract_generator.py` — the *planning* half: JSON request in, prompt bundle
+  out. It touches no GPU, no image files, no post-processing.
+* `generate_variated_tile_sets.py` — the *rendering* half: it imports the
+  engine from the abstract generator and renders whatever prompts it planned.
+
+The contract between them is a **bundle** (`version`, `label`, `seed`, `assets`
+→ `kind` / `id` / `negative` / `variants[]` with `prompt` + `keywords`):
+
+```bash
+# plan only — the bundle is the artifact
+python3 abstract_generator.py --request request.json --out bundle.json
+python3 abstract_generator.py --request - --out - < request.json   # stdin/stdout (pure JSON)
+
+# render an existing bundle, no local model involved
+python3 generate_variated_tile_sets.py --prompts-from bundle.json --dry-run
+
+# resolve prompts with the renderer and write the bundle back out
+python3 generate_variated_tile_sets.py --emit-prompts bundle.json --dry-run
+```
+
+`--request` / `--request-json` accept the same document (`version`, `label`,
+`seed`, `iterations`, `categories`, `selection`, `theme`, `style`, `unitStyle`,
+`overrides`, `noLlm`), so a request can travel unchanged from the CLI to the
+web UI. `--spec-json` points both tools at an alternative `specs/` directory.
+
+The web server exposes the same engine over HTTP:
+
+* `POST /api/prompts` — request JSON in, prompt bundle out (the server shells
+  out to `abstract_generator.py`); the Generate panel's presets resolve their
+  prompt this way, so `presets.ts` carries no prompt text any more,
+* `GET /api/assets` — the raw `specs/assets.json` roster,
+* `POST /api/generate` — accepts a `bundleAsset` and renders its `prompt` **and**
+  its `negative` (a hand-typed `prompt` still works and renders without a
+  negative).
+
+### Testing
+
+```bash
+npm run test:generator     # from the repo root, or from tools/tile-generator/
+                           # = python3 abstract_generator.py --selftest
+```
+
+`--selftest` regenerates a fixed request twice (LLM disabled), asserts the two
+runs are identical and compares the result against
+`specs/golden/bundle_no_llm.json`. It only changes when a spec file changes —
+regenerate it deliberately with `--write-golden`.
 
 ## What it does
 
@@ -90,7 +206,7 @@ For every run:
    palette and the shared lighting mood. Every tile and sprite of that
    iteration uses them, so the set reads as one coherent art-direction pass.
 3. For **every terrain** (`arctic`, `desert`, `forest`, …) it renders
-   **three sibling ground tiles** (`TERRAIN_VARIANTS = 3`):
+   **three sibling ground tiles** (`terrains.variants` in `specs/assets.json`):
 
    - `terrain_<terrain>.png`, `terrain_<terrain>_1.png`,
      `terrain_<terrain>_2.png` — the game's `TerrainTextureManager` picks one
@@ -99,7 +215,7 @@ For every run:
      stamped over and over,
    - the three share one palette and one light (the iteration globals) and one
      material; they differ only in how the ground pattern is arranged and
-     scaled (`TERRAIN_VARIANT_NOTES`),
+     scaled (`terrains.variantNotes`),
    - after rendering, `harmonise_terrain_edges` copies the primary tile's
      outer ring onto its siblings through a soft cross-fade, so **any two of
      the three meet on the board without a seam** while each keeps its own
@@ -114,7 +230,8 @@ For every run:
       nearest-neighbor resizing and edge blends snap to the image palette;
     - `--edge-crop` and `--edge-blend` tune those steps, and can be set to `0`
       to disable either correction.
-4. For **every resource/terrain feature stem** of the fixed roster:
+4. For **every resource/terrain feature stem** of the fixed roster
+   (`features.order` in `specs/assets.json`):
 
    - five fish (`fish1..5`, img2img from the artwork),
    - two proud wild horses (txt2img),
@@ -132,14 +249,16 @@ For every run:
 5. For **every selected game unit** (`--units`; all 35 by default):
 
    - the unit list is synced with the game before every run: `UNIT_TYPES` in
-     `src/data/UnitConstants.ts` is read and any unit the table below does not
+     `src/data/UnitConstants.ts` is read and any unit the roster below does not
      cover yet is picked up automatically with a generic description, so a
      new playable unit can never be left without a sprite. A same-named SVG
-     in `src/assets/units/` makes it img2img even if `UNIT_SVG_FILES` does not
-     list it yet. Units the generator knows but the game does not define are
-     reported (a typo in the table would otherwise be invisible),
+     in `src/assets/units/` makes it img2img even if `units.svgFiles` in
+     `specs/assets.json` does not list it yet. Units the generator knows but
+     the game does not define are reported (a typo in the roster would
+     otherwise be invisible),
    - real game SVG artwork is rasterized for img2img when available; all
-     remaining units use identity-pinned descriptions from `UNIT_SPECS`,
+     remaining units use identity-pinned descriptions from `UNIT_SPECS`
+     (`specs/slots.json`),
    - each unit receives three distinct prompt/image variants in `units/`, with
      untouched renders under `units/backup/`,
    - the whole roster shares a serious, hand-drawn strategy-game direction:
@@ -242,8 +361,13 @@ water, horizon, a white or gradient background) but deliberately not the word
   already running):
   - `sd-server` (FLUX.2 Klein) — binary at
     `/home/jonas/Schreibtisch/Image_to_Image/GPZ/New/stable-diffusion.cpp/build/bin/sd-server`
+    (override with `SD_SERVER_BIN`, port with `SD_PORT`, log with `SD_LOG`)
   - `llama-server` (Qwen3-4B) — binary at
     `/home/jonas/git/Local_AI/source/llama.cpp/build/bin/llama-server`
+    (override with `LLAMA_SERVER_BIN`, model with `QWEN_MODEL`, port with
+    `LLAMA_PORT`, log with `LLAMA_LOG` — the paths live in
+    `abstract_generator.py`, so both tools and the web server use the same
+    ones)
 
 ## Usage
 
@@ -255,6 +379,13 @@ python3 tools/tile-generator/generate_variated_tile_sets.py --iterations 10
 
 # only resolve the prompts with the local model, render nothing
 python3 tools/tile-generator/generate_variated_tile_sets.py --dry-run
+
+# plan a bundle with the abstract generator, then render exactly those
+# prompts later (no local model needed for the second step)
+python3 tools/tile-generator/abstract_generator.py \
+    --request request.json --out bundle.json
+python3 tools/tile-generator/generate_variated_tile_sets.py \
+    --prompts-from bundle.json
 
 # one set, only some terrains and resource features
 python3 tools/tile-generator/generate_variated_tile_sets.py \
@@ -361,6 +492,8 @@ are a renderer treatment, not generated art.
 | `BG_SOFTNESS` | `30` | Background removal edge softness (0 = hard edge). |
 | `EDGE_CROP` | `0.10` | Fraction cropped from every terrain-image edge before resizing back. |
 | `EDGE_BLEND` | `0.08` | Fraction blended across opposite edges to make the terrain texture wrap seamlessly. |
+| `SD_SERVER_BIN` / `SD_PORT` / `SD_LOG` | *see Prerequisites* | Where the `sd-server` binary lives, which port it uses and where it logs. |
+| `LLAMA_SERVER_BIN` / `QWEN_MODEL` / `LLAMA_PORT` / `LLAMA_LOG` | *see Prerequisites* | Same for `llama-server`; read by `abstract_generator.py`, so the CLI and the web server agree. |
 
 CLI flags `--iterations`, `--output-root`, `--strength`, `--feature-strength`,
 `--steps`, `--cfg`, `--size`, `--feature-size`, `--seed`, `--retries`,
@@ -369,6 +502,19 @@ CLI flags `--iterations`, `--output-root`, `--strength`, `--feature-strength`,
 `--no-terrains`, `--no-features`, `--no-units`, `--use-rembg`, `--keep-servers`,
 `--theme-keyword`, `--style-keyword`, `--unit-style-keyword`, `--write-batch`
 and `--batch-iterations` override the environment.
+
+The four bundle/spec flags do not take a value from the environment — they
+select *what* is planned rather than how:
+
+| Flag | Meaning |
+|---|---|
+| `--spec-json DIR` | read `assets/slots/templates/negatives.json` from `DIR` instead of `specs/` |
+| `--request-json FILE` | overlay a request document (`-` = stdin) onto the command-line arguments |
+| `--prompts-from FILE` | render the prompts of an existing bundle; the local model is not consulted |
+| `--emit-prompts FILE` | write the planned prompts as a bundle and render nothing (implies `--dry-run`) |
+
+`abstract_generator.py` has its own, smaller set: `--specs`, `--request`,
+`--out`, `--no-llm`, `--selftest`, `--write-golden`.
 
 ## Output layout
 
@@ -415,10 +561,10 @@ the img2img source) plus `source` (`game svg artwork (img2img)` or
 - Feature sprites have **transparent backgrounds**.
 - Feature input pictures must themselves show only the feature. Full-tile
   scenes (like the VTracer SVGs) are rejected as inputs.
-- Stems in `FEATURE_TEXT_ONLY_STEMS` (horses, the three forests, jungle,
-  all four mountain variants) always render from the prompt alone, so the
-  composition (proud wild pose, tree group, peak range) comes from the
-  generator, not from the old artwork.
+- Stems in `features.textOnly` (`specs/assets.json` — horses, the three
+  forests, jungle, all four mountain variants) always render from the prompt
+  alone, so the composition (proud wild pose, tree group, peak range) comes
+  from the generator, not from the old artwork.
 - The output names are the ones the game expects
   (`terrain_ocean_fish.png`, `terrain_forest_feature_1.png`, …).
 - Important sprite shape and framing constraints are phrased **positively**;
@@ -430,7 +576,8 @@ the img2img source) plus `source` (`game svg artwork (img2img)` or
 ## Unit rules
 
 - **Three variants per unit and iteration** (`unit_<key>.png`,
-  `unit_<key>_2.png`, `unit_<key>_3.png`, `UNIT_VARIANTS = 3`), each with
+  `unit_<key>_2.png`, `unit_<key>_3.png`, `units.variants` in
+  `specs/assets.json`), each with
   its own freshly resolved prompt and manifest record under
   `variants` in the per-iteration manifest; variant 1 also carries the
   classic top-level `output`/`backup` fields.
@@ -440,7 +587,8 @@ the img2img source) plus `source` (`game svg artwork (img2img)` or
 - If the game ships artwork (`src/assets/units/*.svg`, referenced by
   `UnitIconConfig`), that artwork is rasterised with inkscape and used as
   the img2img input, so the sprite keeps the identity of the real game
-  picture. For those units the `UNIT_SPECS` description is written to match
+  picture. For those units the `UNIT_SPECS` entry (`specs/slots.json`) is
+  written to match
   the **actual source artwork**, not an idealised textbook design — e.g. the
   Trireme artwork is an ancient Mediterranean galley with **one** low bank of
   long parallel oars, a large **furled lateen sail** on a long diagonal
@@ -449,7 +597,8 @@ the img2img source) plus `source` (`game svg artwork (img2img)` or
   layers and hull artifacts, so the spec pins what the image already shows.
 - Everything else (legion, catapult, cavalry, destroyer, diplomat,
   fisher boat, mech. inf., nuclear, ...) is composed from the fixed,
-  hand-written descriptions in `UNIT_SPECS` — identity phrase, kind
+  hand-written descriptions in `UNIT_SPECS` (`specs/slots.json`) — identity
+  phrase, kind
   anchors and full slot fallbacks per unit. Single-figure units add a
   positively phrased limb-completeness clause; groups and crews use
   composition-specific instructions instead. The catapult, cannon
@@ -485,7 +634,7 @@ the img2img source) plus `source` (`game svg artwork (img2img)` or
 - A style is **not** a theme: it changes only HOW every asset is rendered
   (technique, linework, shading, medium), never any subject identity.
 - `--style-keyword <name|phrase>` accepts one of the registry names
-  (`STYLE_KEYS` in the script — `american_comic`, `manga`, `pixel_art`,
+  (`templates.clauses.styleKeys` in `specs/templates.json` — `american_comic`, `manga`, `pixel_art`,
   `papercraft`, `watercolor_storybook`, `stained_glass`, `byzantine_mosaic`,
   `greek_pottery`, `norse_woodcarving`, `illuminated_manuscript`,
   `constructivist_poster`, `art_deco_poster`, `linocut_print`,
@@ -542,8 +691,10 @@ Watercolor Illustration, Ink Wash / Sumi-e, Pixel Art, Low Poly, Comic Book
 / Graphic Novel Style, Art Nouveau, Paper Cut / Collage Illustration.
 
 - It reuses the whole abstract slot engine of
-  `generate_variated_tile_sets.py` (the `#KEYWORD#` templates, the identity
-  guards, the fallbacks, the prompt registry) and only swaps the art direction
+  `abstract_generator.py` (the `#KEYWORD#` templates, the identity
+  guards, the fallbacks, the prompt registry — reached through
+  `generate_variated_tile_sets.py`, so the same `specs/*.json` are the source
+  of truth) and only swaps the art direction
   (the `Style & Art Direction` prompt line) for the selected style descriptor.
   Subject identities are never re-rolled — a forest is still a forest, just
   drawn as line art now.

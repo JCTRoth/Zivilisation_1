@@ -466,6 +466,13 @@ regression reproduces exactly. Also supported: `?quickstart`, `?combatlab`,
 npm run lint && npm run type-check && npm run test && npm run knip
 ----
 
+If you touch `tools/tile-generator/`, add its golden check:
+
+[source,bash]
+----
+npm run test:generator      # tools/tile-generator: specs/*.json + prompt bundle
+----
+
 If you touch a balance number: change it in `src/data/`, update
 link:doc/GAME_RULES.adoc[Game Rules Reference] in the same commit, and say in
 the commit message which rule the number encodes.
@@ -510,7 +517,7 @@ the commit message which rule the number encodes.
 * link:doc/STORY.adoc[The Chronicle] — full-screen illustrated story cards: the queue, the moments, the promotion rules
 * link:doc/STATIC_MAPS.adoc[Static Maps] — static map format and registry
 * link:doc/NEW_MAP_GUIDE.adoc[Adding a New Map] — step by step with a checklist
-* link:doc/RENDERING_ASSETS.adoc[Rendering & Tile Assets] — layers, textures, tile generator
+* link:doc/RENDERING_ASSETS.adoc[Rendering & Tile Assets] — layers, textures, tile generator; the generator's own README (specs/*.json prompt engine, request → bundle) is `tools/tile-generator/README.md`
 * link:doc/SOUND_EFFECTS.adoc[Sound Effects] — every cue, when it plays, the shipped recordings, and how to drop in another
 * link:doc/I18N.adoc[I18n] — the six shipped languages, key namespaces, adding a language
 * link:doc/TEAM_COORDINATION.adoc[Team Coordination] — fixed-alliance attack/defence coordination and the team commands

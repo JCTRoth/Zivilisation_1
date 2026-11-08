@@ -122,8 +122,16 @@ re-run the script instead.
 . `TerrainTextureManager.ts`: `TERRAIN_TEXTURE_FILES`, optionally
    `FEATURE_TEXTURE_FILES`, plus `TERRAIN_PRIORITY` and `TERRAIN_BLEND_COLOR`
 . Put the base PNG (and feature sprite) into `public/assets/tiles/`.
-. Add a preset/prompt to `tools/tile-generator/src/presets.ts` and
-   `generate_terrain_v4.mjs` if the AI generator should produce it.
+. If the AI generator should produce it: add the terrain to `terrains.order`
+   in `tools/tile-generator/specs/assets.json`, plus its identity (required),
+   anchors, palette anchors and fallbacks in `specs/slots.json`. No prompt
+   text is written anywhere — `specs/templates.json` fills the `#SLOT#`s, and
+   `abstract_generator.py` validates the whole set. Then add a button in
+   `tools/tile-generator/src/presets.ts` — for terrains the button key is
+   already the roster id, so no prompt and no extra field is needed (feature
+   presets carry only `selection: { features: [...] }`). `generate_terrain_v4.mjs` is a
+   separate script with its own hand-written prompts — touch it only if that
+   one should draw the new terrain too.
 . Re-run the compose script so existing resources that may appear on the new
    terrain get a picture.
 

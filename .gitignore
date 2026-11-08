@@ -136,3 +136,7 @@ tools/tile-generator/tile_sets/*
 # Safety net taken by `npm run tiles:install` before it replaces the app's
 # tiles/features/units. Undo with `npm run tiles:install -- <folder> --restore`.
 public/assets/_generated_backup/
+
+# Python bytecode (the generator is a Python tool, its caches are not source).
+__pycache__/
+*.py[cod]

@@ -81,24 +81,52 @@ export default function GeneratePanel({ onGenerated, pendingSource, onPendingSou
     onPendingSourceConsumed?.();
   }, [pendingSource, onPendingSourceConsumed]);
 
+  /**
+   * Ask the abstract generator for one asset's prompt. The presets carry no
+   * prompt text of their own any more — the specs/*.json are the single
+   * prompt engine behind the CLI, this panel and the batch runner.
+   */
+  async function resolvePrompt(request: Record<string, unknown>, label: string) {
+    setPrompt('');
+    setNegative('');
+    setStatus({ text: `Resolving the ${label} prompt…`, type: 'idle' });
+    try {
+      const bundle = await api.prompts(request);
+      const asset = bundle.assets?.[0];
+      const variant = asset?.variants?.[0];
+      if (!variant?.prompt) throw new Error(bundle.error ?? 'the generator returned no asset');
+      setPrompt(variant.prompt);
+      setNegative(asset.negative ?? '');
+      setStatus({ text: `Prompt ready for ${label} — edit it if you like`, type: 'ok' });
+    } catch (err) {
+      setStatus({ text: `Prompt failed: ${(err as Error).message}`, type: 'error' });
+    }
+  }
+
   function applyTerrainPreset(key: string) {
     const p = TERRAIN_PRESETS[key];
-    setPrompt(p.prompt);
     setTileName(p.file);
     setWidth(p.w);
     setHeight(p.h);
     setActiveTerrainPreset(key);
     setActiveFeaturePreset(null);
+    void resolvePrompt(
+      { version: 1, categories: ['terrain'], selection: p.selection ?? { terrains: [key] } },
+      `terrain ${key}`,
+    );
   }
 
   function applyFeaturePreset(key: string) {
     const p = FEATURE_PRESETS[key];
-    setPrompt(p.prompt);
     setTileName(p.file);
     setWidth(p.w);
     setHeight(p.h);
     setActiveFeaturePreset(key);
     setActiveTerrainPreset(null);
+    void resolvePrompt(
+      { version: 1, categories: ['features'], selection: p.selection ?? { features: [key] } },
+      `feature ${key}`,
+    );
   }
 
   async function openSourcePicker() {
@@ -156,6 +184,7 @@ export default function GeneratePanel({ onGenerated, pendingSource, onPendingSou
         const result = await api.generate({
           model,
           prompt,
+          negative,
           tileName: tileName.trim(),
           width,
           height,

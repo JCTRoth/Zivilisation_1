@@ -9,6 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "tiles:install": "node tools/tile-generator/install_generated_assets.mjs",
+    "test:generator": "python3 tools/tile-generator/abstract_generator.py --selftest",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "knip": "knip",
     "type-check": "tsc --noEmit",

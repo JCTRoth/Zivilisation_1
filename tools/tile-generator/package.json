@@ -7,7 +7,8 @@
     "start": "node server.mjs",
     "build": "vite build",
     "preview": "vite preview",
-    "compose-features": "node compose_feature_tiles.mjs"
+    "compose-features": "node compose_feature_tiles.mjs",
+    "test:generator": "python3 abstract_generator.py --selftest"
   },
   "dependencies": {
     "react": "^18.3.1",
