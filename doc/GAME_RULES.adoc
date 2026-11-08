@@ -2138,6 +2138,20 @@ come from, how they play and how they are drawn — is
   barbarians' `-1`. They get their own treasury, their own routes and no
   entry in `civilizations`, so rendering falls back to the neutral colour and
   their riders carry **no colour circle** on the map.
+* **Nobody swings first.** `AIUtility.isHostileTo` is the one predicate
+  behind every AI attack, march and threat reading; for the tribe it answers
+  *yes* only when the camp has **turned angry** or that civ's **committed
+  war plan names it** — the same pipeline that starts its other wars. Until
+  then the ruler AI walks around the camp: a GoTo route that reaches it is
+  dropped rather than stepped into (`TurnManager.neutralNomadInWay`), the
+  AI's own step refuses the tile (`AIManager.moveAsAI`), and a camp beside a
+  city is not read as a siege (`collectCityThreatSamples`), so it neither
+  pulls the garrison out nor cancels an offensive for a camp that cannot
+  strike. Nobody `declare_war`s on a phantom seat either — `-2` and `-1`
+  have no diplomacy relation to declare. What the two sides do share: the
+  courts buy the knowledge the tribe brokers, and a court at war (or short
+  of troops) buys the riders standing at its gate more readily than a
+  peacetime court with an army of its own.
 * The feature runs in a game with **exactly one human seat** (hotseat has
   no one screen to open) *and* in an **all-AI spectator game** — there the
   tribe spawns once at an AI court and rides between them, but no sighting

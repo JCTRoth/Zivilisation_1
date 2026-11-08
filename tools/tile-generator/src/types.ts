@@ -50,9 +50,45 @@ export interface GenerateResult {
 
 export interface Preset {
   name: string;
-  prompt: string;
   color: string;
   file: string;
   w: number;
   h: number;
+  /**
+   * Roster ids this preset plans. Without it the preset key itself is the
+   * roster id (every terrain preset is named after its terrain); feature
+   * presets name the stem base their variants share (`forest_feature` →
+   * `forest_feature_1..3`).
+   */
+  selection?: { terrains?: string[]; features?: string[]; units?: string[] };
+}
+
+/** One asset kind the abstract generator can plan. */
+export interface PromptAssetVariant {
+  variant: number;
+  prompt: string;
+  keywords?: Record<string, string>;
+}
+
+export interface PromptAsset {
+  kind: 'terrain' | 'feature' | 'unit';
+  id: string;
+  spec?: string;
+  output?: string;
+  negative?: string;
+  source?: { kind: string; file?: string; glob?: string };
+  variants: PromptAssetVariant[];
+}
+
+/** What abstract_generator returns for a request (JSON in, bundle out). */
+export interface PromptBundle {
+  version: number;
+  label?: string;
+  seed?: number;
+  iterations?: number;
+  generatedAt?: string;
+  theme?: string;
+  style?: string;
+  assets: PromptAsset[];
+  error?: string;
 }

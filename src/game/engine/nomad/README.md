@@ -41,8 +41,12 @@ Clan portrait prompts: [`doc/NOMAD_ART_PROMPTS.adoc`](../../../../doc/NOMAD_ART_
    "Locate their camp").
 2. **The wander**: until the envoy has spoken, the group wanders toward the
    player's court — nearest city, else nearest unit — zig-zagging (most
-   steps close in, some drift sideways, the distance never grows). The
-   final step stops beside the court: `moveUnit` would resolve entering a
+   steps close in, some drift sideways, the distance never grows). It walks
+   as ONE pack: the rider nearest the court leads, the other two hold a
+   `NOMAD_GROUP_RADIUS` ring around it, and nobody takes more steps in a
+   round than the slowest rider (so the scout's second stride is spent
+   waiting instead of running ahead). The final step stops beside the
+   court: `moveUnit` would resolve entering a
    city as an assault — *visitors do not storm cities*.
 3. **The message binds to the appearance**: the parley opens only when a
    nomad unit stands **beside your city** — or beside one of your units

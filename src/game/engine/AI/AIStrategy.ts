@@ -2,6 +2,8 @@ import type { EnemyLocation } from '../EnemySearcher';
 import type { City, Unit } from '../../../../types/game';
 import type { PlayerTurnStorage } from '../GameEngine';
 import type GameEngine from '../GameEngine';
+import { AIUtility } from './AIUtility';
+import { NOMAD_CIV_ID } from '@/data/NomadConstants';
 
 const DIFFICULTY_THRESHOLD_MODIFIERS: Record<string, number> = {
   CHIEFTAIN: 1.4,
@@ -163,6 +165,13 @@ export function collectCityThreatSamples(
 
   for (const unit of gameEngine.units as Unit[]) {
     if (unit.civilizationId === civilizationId) continue;
+    // A neutral nomad camp beside the gate is a VISITOR, not a siege: the
+    // tribe is not at war with us, so counting it would pull the garrison
+    // out, read a camp that cannot strike as a critical threat (enough to
+    // cancel an offensive) and post a defender beside tents it may not
+    // attack. An ANGRY tribe, or one our war plan names, counts as before.
+    if (unit.civilizationId === NOMAD_CIV_ID
+      && !AIUtility.isHostileTo(gameEngine, civilizationId, NOMAD_CIV_ID)) continue;
     const distance = gameEngine.squareGrid.squareDistance(unit.col, unit.row, city.col, city.row);
     if (distance > maxDistance) continue;
     samples.push({
@@ -175,7 +184,9 @@ export function collectCityThreatSamples(
   }
 
   if (storage?.enemyLocations) {
-    for (const enemyList of storage.enemyLocations.values()) {
+    for (const [enemyCivId, enemyList] of storage.enemyLocations) {
+      if (enemyCivId === NOMAD_CIV_ID
+        && !AIUtility.isHostileTo(gameEngine, civilizationId, enemyCivId)) continue;
       for (const location of enemyList) {
         const age = roundNumber - (location.lastSeenRound ?? location.discoveredRound);
         if (age > 18) continue;

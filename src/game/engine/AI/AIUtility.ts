@@ -1,5 +1,8 @@
 import { TERRAIN_PROPS } from '@/utils/Constants';
+import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
+import { NOMAD_CIV_ID } from '@/data/NomadConstants';
 import type { SquareCoordinate } from '../../SquareGrid';
+import type GameEngine from '../GameEngine';
 
 // Type aliases for AI function parameters to avoid `any`
 type TileData = { type: string; explored?: boolean; resource?: string | null; fortress?: boolean; river?: boolean; passable?: boolean };
@@ -350,6 +353,38 @@ export class AIUtility {
       }
     }
     return null;
+  }
+
+  /**
+   * Whether `unitCivId` may strike `otherCivId` — the ONE predicate behind
+   * every AI attack, march and threat reading.
+   *
+   * Barbarians are always hostile; a real rival needs a war. The NEUTRAL
+   * TRIBE (`NOMAD_CIV_ID`) is the case that makes this more than `isAtWar`:
+   * it has no diplomacy relation to be at war with, so it counts as hostile
+   * only when it has turned on the world (the camp is ANGRY and raiding) or
+   * when this civ's committed war plan names it — a deliberate decision out
+   * of the same pipeline that starts ordinary wars. An unprovoked blow on a
+   * peaceful camp is taken as first blood (`NomadManager.wasAttacked`) and
+   * the tribe turns on the court that drew it, so the AI leaves the camp
+   * alone: it hires it, buys its knowledge and rides on.
+   */
+  static isHostileTo(
+    world: GameEngine | null | undefined,
+    unitCivId: number,
+    otherCivId: number | null | undefined,
+  ): boolean {
+    if (otherCivId == null || otherCivId === unitCivId) return false;
+    if (otherCivId === BARBARIAN_CIV_ID) return true;
+    if (otherCivId === NOMAD_CIV_ID) {
+      if (world?.nomadManager?.isAngry) return true;
+      const plan = world?.getPlayerStorage?.(unitCivId)?.turnData?.offensivePlan as
+        | { targetCivId?: number }
+        | null
+        | undefined;
+      return plan?.targetCivId === NOMAD_CIV_ID;
+    }
+    return world?.diplomacyManager?.isAtWar(unitCivId, otherCivId) === true;
   }
 
   /**

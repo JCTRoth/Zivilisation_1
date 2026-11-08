@@ -56,6 +56,9 @@ const TEXTURES_DIR = join(__dirname, 'textures');
 // compose_feature_tiles.mjs; copied to OUTPUT_DIR via "Use in Game".
 const COMPOSED_DIR = join(__dirname, 'tiles');
 const COMPOSE_SCRIPT = join(__dirname, 'compose_feature_tiles.mjs');
+// The abstract prompt generator (JSON in, prompt bundle out) and its specs.
+const GENERATOR = join(__dirname, 'abstract_generator.py');
+const SPECS_DIR = join(__dirname, 'specs');
 
 /** Parse "terrain_grassland_3.png" → { group: "terrain_grassland", n: 3 } */
 function parseTextureName(filename) {
@@ -252,9 +255,10 @@ async function sdFetchWithRetry(path, body, retries = 2) {
 }
 
 /** Generate an image via the local SD server (txt2img) and return a PNG buffer. */
-function sdTxt2img(prompt, width, height, steps = SD_STEPS) {
+function sdTxt2img(prompt, width, height, steps = SD_STEPS, negative = '') {
   return sdFetchWithRetry('/sdapi/v1/txt2img', {
     prompt,
+    negative_prompt: negative || undefined,
     width,
     height,
     steps,
@@ -265,10 +269,11 @@ function sdTxt2img(prompt, width, height, steps = SD_STEPS) {
 }
 
 /** Generate an image via the local SD server (img2img) and return a PNG buffer. */
-function sdImg2img(prompt, initDataUri, width, height, steps, denoisingStrength) {
+function sdImg2img(prompt, initDataUri, width, height, steps, denoisingStrength, negative = '') {
   const strength = Math.max(0, Math.min(1, Number(denoisingStrength) || 0.6));
   return sdFetchWithRetry('/sdapi/v1/img2img', {
     prompt,
+    negative_prompt: negative || undefined,
     init_images: [initDataUri],
     width,
     height,
@@ -543,6 +548,50 @@ const server = createServer(async (req, res) => {
     catch { return json(res, { ok: false, error: 'Delete failed' }, 500); }
   }
 
+  // ─── API: the asset roster (specs/assets.json) ───────────────────────
+  if (pathname === '/api/assets' && req.method === 'GET') {
+    try {
+      const spec = JSON.parse(readFileSync(join(SPECS_DIR, 'assets.json'), 'utf8'));
+      return json(res, spec);
+    } catch (err) {
+      return json(res, { error: `specs/assets.json unreadable: ${err.message}` }, 500);
+    }
+  }
+
+  // ─── API: plan prompts (abstract_generator: JSON in, bundle out) ─────
+  if (pathname === '/api/prompts' && req.method === 'POST') {
+    const body = await readBody(req);
+    let request;
+    try { request = JSON.parse(body || '{}'); } catch {
+      return json(res, { error: 'Invalid JSON' }, 400);
+    }
+    const proc = spawnSync(
+      PYTHON,
+      [GENERATOR, '--specs', SPECS_DIR, '--request', '-', '--out', '-'],
+      {
+        input: JSON.stringify(request),
+        encoding: 'utf8',
+        maxBuffer: 64 * 1024 * 1024,
+        timeout: 300_000,
+      },
+    );
+    if (proc.error) return json(res, { error: String(proc.error) }, 500);
+    if (proc.status !== 0) {
+      return json(res, {
+        error: (proc.stderr || proc.stdout || 'generator failed').trim().slice(0, 2000),
+      }, 500);
+    }
+    try {
+      return json(res, JSON.parse(proc.stdout));
+    } catch {
+      return json(res, {
+        error: 'generator returned no JSON',
+        detail: String(proc.stdout).slice(0, 500),
+        stderr: String(proc.stderr).slice(0, 500),
+      }, 500);
+    }
+  }
+
   // ─── API: generate tile (local Stable Diffusion) ────────────────────
   if (pathname === '/api/generate' && req.method === 'POST') {
     const body = await readBody(req);
@@ -551,7 +600,12 @@ const server = createServer(async (req, res) => {
       return json(res, { error: 'Invalid JSON' }, 400);
     }
 
-    const { prompt, tileName, width, height, useInGame, imageUrl, steps, strength } = params;
+    const { prompt: typedPrompt, bundleAsset, tileName, width, height, useInGame, imageUrl, steps, strength } = params;
+    // A planned asset carries its own prompt AND its negative prompt — the
+    // bundle is the contract with abstract_generator. A hand-typed `prompt`
+    // still works and simply renders without a negative.
+    const prompt = (bundleAsset && bundleAsset.prompt) || typedPrompt;
+    const negative = (bundleAsset && bundleAsset.negative) || '';
     if (!prompt || !tileName) return json(res, { error: 'Missing prompt or tileName' }, 400);
 
     const w = width || 512;
@@ -570,10 +624,10 @@ const server = createServer(async (req, res) => {
         const sourceDataUri = resolveSourceToDataUri(imageUrl);
         if (!sourceDataUri) return json(res, { error: 'Source image not found or unreadable' }, 404);
         console.log(`[sd] img2img "${prompt.slice(0, 80)}..." (${w}x${h}, steps=${sdSteps}, strength=${strength ?? 0.6})`);
-        buffer = await sdImg2img(prompt, sourceDataUri, w, h, sdSteps, strength);
+        buffer = await sdImg2img(prompt, sourceDataUri, w, h, sdSteps, strength, negative);
       } else {
         console.log(`[sd] txt2img "${prompt.slice(0, 80)}..." (${w}x${h}, steps=${sdSteps}, cfg=${SD_CFG}, sampler=${SD_SAMPLER})`);
-        buffer = await sdTxt2img(prompt, w, h, sdSteps);
+        buffer = await sdTxt2img(prompt, w, h, sdSteps, negative);
       }
 
       const safeBase = tileName.replace(/[^a-z0-9_-]/gi, '_');

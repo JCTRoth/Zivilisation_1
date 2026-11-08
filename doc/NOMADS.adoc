@@ -57,7 +57,10 @@ Enigmatic: knowledge ×0.9, settles sometimes (30%), two refusals.
 The visit is **contact-based**: the camp never sends an envoy on a timer.
 Its units **wander the map toward your court** (nearest city, else nearest
 unit) — the walk zig-zags: most steps close in, some drift sideways, and
-the distance to the court never grows. The message binds to the nomads
+the distance to the court never grows. They walk it **as a pack**: one
+leader, two riders inside `NOMAD_GROUP_RADIUS` of it, all of them limited
+to the pace of the slowest (see *The roaming horde* below). The message
+binds to the nomads
 **reaching your gate**: the parley opens only when a nomad unit
 stands beside your city (or beside one of your units) — no nomad at the
 gate, no envoy, and the riders never enter your city. On contact the
@@ -144,10 +147,17 @@ doors, plus a *Speak with them* button for the moments none is tabled.
 
 The camp is a LIVING group on the map, not a scenery piece:
 
-* **Three at the beginning.** The horde starts as the spawned three (two
-  warriors and a scout) and wanders in a group across the map on its way
-  to your court — zig-zagging, never receding from the target, so the
-  contact-based visit always lands.
+* **Three at the beginning, as one pack.** The horde starts as the spawned
+  three (two warriors and a scout) and wanders in a group across the map on
+  its way to your court — zig-zagging, never receding from the target, so
+  the contact-based visit always lands. It travels TOGETHER: the rider
+  nearest the court leads and the other two hold a `NOMAD_GROUP_RADIUS` (1)
+  ring around it, and nobody may take more steps in a round than the
+  slowest rider of the group — the scout walks 2 while the spears walk 1,
+  so without that shared pace it covered twice the ground and arrived alone
+  with its mates a long way behind. A leader blocked by a wall of swamp
+  releases the ring for a round, so the pack can slow down but never cages
+  itself.
 * **Later with more.** Once the parley has been **answered**, the group
   gathers its own riders — one every `NOMAD_GROWTH_ROUNDS` (8), paid from
   the chest like everything else. (Before the answer the meeting stays the
@@ -487,11 +497,22 @@ never earns a return visit.
   a return the tribe *promised* to a friendly court (§3) — a random ride
   skips you after a refusal, unless every rival is dead and you are the only
   court left.
-* **Their own player, neutral by default.** Civ id `-2` — deliberately NOT
-  the barbarians' `-1`, which `BarbarianManager` drives (it would
-  commandeer the camp, and would put bought cities under barbarian AI
-  control). Contact recording skips negative ids, no civ is at war with the
-  camp, the AI never targets it.
+* **Their own player, neutral by default — and nobody swings first.** Civ id
+  `-2` — deliberately NOT the barbarians' `-1`, which `BarbarianManager`
+  drives (it would commandeer the camp, and would put bought cities under
+  barbarian AI control). Contact recording skips negative ids and no civ is
+  at war with the camp. `AIUtility.isHostileTo` is the ONE predicate behind
+  every AI attack, march and threat reading; for the tribe it answers *yes*
+  only when the camp has turned **angry** or that civ's **committed war plan
+  names it** — the same pipeline that starts every other war this civ
+  fights. Until then the ruler AI walks around the camp instead of into it:
+  a GoTo route that reaches it is dropped rather than stepped into
+  (`TurnManager.neutralNomadInWay`), the AI's own step refuses the tile
+  (`AIManager.moveAsAI`), and a camp beside a city is not counted as a
+  siege (`collectCityThreatSamples` — it would otherwise pull the garrison
+  out and cancel offensives for a camp that cannot strike). So the two
+  sides use each other: the courts hire the riders, buy the knowledge the
+  tribe brokers, and leave the first blood where it belongs.
 * **Session-only.** Nothing here is persisted; a loaded game simply has no
   nomads (v1). `NomadManager.reset()` puts the rest of them back in the
   box with the state: the PITCH (`tile.nomadTent`) and every rider or
@@ -645,9 +666,12 @@ migrates beside a barbarian conquest and opens the route — but never while
 angry). `tests/ai/barbarianAI.test.ts` guards the other half: the horde
 never attacks a `-2` unit or city.
 
-`tests/nomadRoaming.test.ts` (4) — the roaming horde: the wander itself
+`tests/nomadRoaming.test.ts` (5) — the roaming horde: the wander itself
 (the group starts as three units, zig-zags sideways yet NEVER recedes from
-the court, and the envoy arrives on contact, never on a timer); growth
+the court, and the envoy arrives on contact, never on a timer); the PACK
+rule (nobody out-walks the slowest rider of the group, the farthest two
+riders stay in a knot for most of the walk, and the horde still reaches the
+court); growth
 after the answer (three → four → five at the muster cadence, the chest
 pays, no split yet); the great split at six (exactly one `NOMAD_SPLIT`,
 half the horde at the splinter's fire within `NOMAD_SPLIT_DISTANCE`, both
@@ -679,3 +703,13 @@ after the split ONE GROUP rides on to the next court while the other keeps
 standing (a nomad group is always on the map); a camp beside your city never
 stays without a dialog (the farewell audience comes round on its own), and
 the city screen can table the audience itself (`speakAtGate`).
+
+`tests/ai/aiVsNomads.test.ts` (6) — the two sides USING each other:
+`AIUtility.isHostileTo` (a rival needs a war, the barbarians never do, the
+tribe only when it has turned angry or a committed war plan names it), a
+neutral camp beside a city is not a threat sample while an angry one is, an
+AI unit with a nomad stacked on its own tile never swings first, a 60-round
+all-AI run stays **unprovoked** while the courts keep buying the knowledge
+the tribe brokers (and nobody declares war on phantom seat `-2`), and
+`NomadManager.aiHireThreshold` — a court at war buys the group at its gate
+readily, a peacetime court with an army of its own buys rarely.

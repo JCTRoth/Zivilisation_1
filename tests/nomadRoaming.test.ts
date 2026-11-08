@@ -6,6 +6,9 @@
  *   * it starts as THREE units and WANDERS the map toward the court — the
  *     walk zig-zags (drifts sideways) but never recedes from the target,
  *     so the contact-based envoy always lands,
+ *   * and it walks as a PACK: nobody out-walks the slowest rider of the
+ *     group (the scout's second stride is spent waiting), and the farthest
+ *     two riders stay inside a tight ring for most of the walk,
  *   * once the parley has been ANSWERED, "later with more": the group
  *     gathers a rider every `NOMAD_GROWTH_ROUNDS` (the chest pays),
  *   * at `NOMAD_GROUP_SPLIT_SIZE` living wanderers the group DIVIDES into
@@ -141,6 +144,63 @@ describe('Nomads — the wandering horde', () => {
     expect(parleyAt, 'the envoy arrives on CONTACT — their own walk, not a timer').toBeGreaterThan(0);
     expect(drifted, 'the walk WANDERS — sideways drift between closing steps').toBe(true);
     expect(eventsOf(events, 'NOMAD_PARLEY')).toHaveLength(1);
+  });
+
+  it('travels as ONE pack: nobody walks faster than the slowest rider, and the three stay close', async () => {
+    const { engine, events, settle } = await world();
+    settle();
+    const nm = engine.nomadManager;
+    nm.processRound(NOMAD_TRIGGER_ROUND);
+
+    let previous = new Map(nomadUnits(engine).map((u) => [u.id, { col: u.col, row: u.row }]));
+    let tightRounds = 0;
+    let rounds = 0;
+    let maxSpread = 0;
+    let parleyAt = -1;
+
+    for (let r = NOMAD_TRIGGER_ROUND + 1; r <= 50; r++) {
+      nm.processRound(r);
+      const horde = nomadUnits(engine);
+      rounds += 1;
+
+      // CLOSE: how far the farthest two riders of the horde stand apart.
+      let spread = 0;
+      for (const a of horde) {
+        for (const b of horde) {
+          spread = Math.max(spread, Math.max(Math.abs(a.col - b.col), Math.abs(a.row - b.row)));
+        }
+      }
+      maxSpread = Math.max(maxSpread, spread);
+      if (spread <= 3) tightRounds += 1;
+
+      // IN STEP: the scout walks 2 while the spears walk 1, so without a
+      // shared pace it covered twice the ground and reached the gate alone
+      // with its mates a long way behind. Nobody may out-walk the slowest
+      // rider of the group.
+      const pace = Math.min(...horde.map((u) => u.maxMoves ?? 1));
+      for (const u of horde) {
+        const prev = previous.get(u.id);
+        if (!prev) continue; // a rider mustered on the road — not this rule's business
+        const moved = Math.max(Math.abs(u.col - prev.col), Math.abs(u.row - prev.row));
+        expect(
+          moved,
+          `round ${r}: ${u.type} covered ${moved} tiles while the pack's pace is ${pace}`,
+        ).toBeLessThanOrEqual(pace);
+      }
+      previous = new Map(horde.map((u) => [u.id, { col: u.col, row: u.row }]));
+
+      if (eventsOf(events, 'NOMAD_PARLEY').length > 0) {
+        parleyAt = r;
+        break;
+      }
+    }
+
+    expect(parleyAt, 'the pack still reaches the court').toBeGreaterThan(0);
+    // …and it gets there as a group: most of the walk keeps the farthest two
+    // riders inside a 3-tile ring, and nothing like a lone runner ever opens
+    // a gap across the map.
+    expect(tightRounds / Math.max(1, rounds), 'the horde walks in a knot').toBeGreaterThanOrEqual(0.5);
+    expect(maxSpread, 'the horde never scatters').toBeLessThanOrEqual(8);
   });
 });
 

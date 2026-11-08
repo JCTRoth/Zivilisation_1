@@ -1,0 +1,334 @@
+{
+  "features": {
+    "inputGlob": "**/*.png",
+    "optional": {},
+    "order": [
+      "fish1",
+      "fish2",
+      "fish3",
+      "fish4",
+      "fish5",
+      "horses",
+      "horses_2",
+      "forest_feature_1",
+      "forest_feature_2",
+      "forest_feature_3",
+      "jungle_feature",
+      "hills_feature",
+      "swamp_feature",
+      "mountains_feature_1",
+      "mountains_feature_2",
+      "mountains_feature_3",
+      "mountains_feature_4",
+      "seal",
+      "gems",
+      "gold",
+      "coal",
+      "oil",
+      "game",
+      "oasis"
+    ],
+    "outputNames": {
+      "coal": "terrain_hills_coal",
+      "fish1": "terrain_ocean_fish",
+      "fish2": "terrain_ocean_fish_2",
+      "fish3": "terrain_ocean_fish_3",
+      "fish4": "terrain_ocean_fish_4",
+      "fish5": "terrain_ocean_fish_5",
+      "forest_feature_1": "terrain_forest_feature_1",
+      "forest_feature_2": "terrain_forest_feature_2",
+      "forest_feature_3": "terrain_forest_feature_3",
+      "game": "terrain_forest_game",
+      "gems": "terrain_jungle_gems",
+      "gold": "terrain_mountains_gold",
+      "hills_feature": "terrain_hills_feature",
+      "horses": "terrain_plains_horses",
+      "horses_2": "terrain_plains_horses_2",
+      "jungle_feature": "terrain_jungle_feature",
+      "mountains_feature_1": "terrain_mountains_feature_1",
+      "mountains_feature_2": "terrain_mountains_feature_2",
+      "mountains_feature_3": "terrain_mountains_feature_3",
+      "mountains_feature_4": "terrain_mountains_feature_4",
+      "oasis": "terrain_desert_oasis",
+      "oil": "terrain_swamp_oil",
+      "seal": "terrain_arctic_seal",
+      "swamp_feature": "terrain_swamp_feature"
+    },
+    "rolls": {
+      "MOUNTAIN_ATMOSPHERE": [
+        [
+          "Thin morning fog drifts between the lower rock slopes.",
+          0.25
+        ],
+        [
+          "Fresh bright snow caps the summits and streaks the upper ledges.",
+          0.25
+        ],
+        [
+          "Low mist wraps the valleys beneath the range while the peaks stay clear.",
+          0.1
+        ]
+      ],
+      "MOUNTAIN_CRAZY": [
+        "One broad pale scree fan crosses the rocky ground in a simple natural shape.",
+        "A few broad slate-gray stone bands cross the otherwise uniform ground.",
+        "A small number of large muted-brown boulder patches break up the gray scree.",
+        "One broad light-gray limestone area contrasts with the surrounding rock.",
+        "Wide natural bands of gray and brown scree form a calm, readable pattern.",
+        "A few large flat stone slabs lie among broad patches of coarse scree."
+      ]
+    },
+    "stemSpecs": {
+      "coal": {
+        "spec": "coal",
+        "twist": "a dark chunky outcrop"
+      },
+      "fish1": {
+        "spec": "fish",
+        "twist": "swimming to the left, seen from a three-quarter top-down view"
+      },
+      "fish2": {
+        "spec": "fish",
+        "twist": "swimming to the right, seen from a three-quarter top-down view"
+      },
+      "fish3": {
+        "spec": "fish",
+        "twist": "curving in an S-shape, seen from a three-quarter top-down view"
+      },
+      "fish4": {
+        "spec": "fish",
+        "twist": "diving downwards with the tail raised, seen from above"
+      },
+      "fish5": {
+        "spec": "fish",
+        "twist": "resting horizontally, seen from directly above"
+      },
+      "forest_feature_1": {
+        "spec": "forest_mixed",
+        "twist": "a loose group of individual trees"
+      },
+      "forest_feature_2": {
+        "spec": "forest_coniferous",
+        "twist": "a stand of individual conical trees"
+      },
+      "forest_feature_3": {
+        "spec": "forest_deciduous",
+        "twist": "a stand of individual broadleaf trees"
+      },
+      "game": {
+        "spec": "game",
+        "twist": "standing alert in profile"
+      },
+      "gems": {
+        "spec": "gems",
+        "twist": "a small sparkling cluster"
+      },
+      "gold": {
+        "spec": "gold",
+        "twist": "a glittering little mound"
+      },
+      "hills_feature": {
+        "spec": "hills_feature",
+        "twist": "a single rounded rise"
+      },
+      "horses": {
+        "spec": "horse",
+        "twist": "standing tall in profile with the neck arched and the head high"
+      },
+      "horses_2": {
+        "spec": "horse",
+        "twist": "galloping at full stride with the mane and tail flying"
+      },
+      "jungle_feature": {
+        "spec": "jungle_feature",
+        "twist": "a loose group of tall jungle trees"
+      },
+      "mountains_feature_1": {
+        "spec": "mountains_feature",
+        "twist": "several peaks side by side"
+      },
+      "mountains_feature_2": {
+        "spec": "mountains_feature",
+        "twist": "the most dramatic variant of the range"
+      },
+      "mountains_feature_3": {
+        "spec": "mountains_feature",
+        "twist": "two massive twin peaks rising shoulder to shoulder with one high saddle between them"
+      },
+      "mountains_feature_4": {
+        "spec": "mountains_feature",
+        "twist": "a long slope-shouldered ridge line with small rounded foothills climbing in front of it"
+      },
+      "oasis": {
+        "spec": "oasis",
+        "twist": "a small ring of palms around clear water"
+      },
+      "oil": {
+        "spec": "oil",
+        "twist": "a small bubbling pool"
+      },
+      "seal": {
+        "spec": "seal",
+        "twist": "resting upright on its rear flippers"
+      },
+      "swamp_feature": {
+        "spec": "swamp_feature",
+        "twist": "a gnarled stump in shallow water"
+      }
+    },
+    "subjectMode": {
+      "fish1": "single",
+      "fish2": "single",
+      "fish3": "single",
+      "fish4": "single",
+      "fish5": "single"
+    },
+    "textOnly": [
+      "forest_feature_1",
+      "forest_feature_2",
+      "forest_feature_3",
+      "horses",
+      "horses_2",
+      "jungle_feature",
+      "mountains_feature_1",
+      "mountains_feature_2",
+      "mountains_feature_3",
+      "mountains_feature_4"
+    ]
+  },
+  "terrains": {
+    "order": [
+      "arctic",
+      "desert",
+      "forest",
+      "grassland",
+      "hills",
+      "jungle",
+      "mountains",
+      "ocean",
+      "plains",
+      "river",
+      "swamp",
+      "tundra"
+    ],
+    "variantNotes": [
+      "This is variant 1 of 3: use a broad, calm arrangement of the same terrain shapes and scale.",
+      "This is variant 2 of 3: rearrange the same terrain shapes without adding detail or changing their scale.",
+      "This is variant 3 of 3: rearrange the same terrain shapes again, keeping the same density, scale, and palette."
+    ],
+    "variants": 3
+  },
+  "units": {
+    "order": [
+      "warrior",
+      "scout",
+      "archer",
+      "phalanx",
+      "chariot",
+      "knights",
+      "legion",
+      "catapult",
+      "musketeer",
+      "riflemen",
+      "cavalry",
+      "mech_inf",
+      "cannon",
+      "artillery",
+      "tank",
+      "sail",
+      "trireme",
+      "caravel",
+      "frigate",
+      "ironclad",
+      "destroyer",
+      "cruiser",
+      "battleship",
+      "submarine",
+      "carrier",
+      "transport",
+      "fisher_boat",
+      "trade_ship",
+      "settler",
+      "diplomat",
+      "caravan",
+      "ferry",
+      "fighter",
+      "bomber",
+      "nuclear"
+    ],
+    "stems": [
+      "unit_warrior",
+      "unit_scout",
+      "unit_archer",
+      "unit_phalanx",
+      "unit_chariot",
+      "unit_knights",
+      "unit_legion",
+      "unit_catapult",
+      "unit_musketeer",
+      "unit_riflemen",
+      "unit_cavalry",
+      "unit_mech_inf",
+      "unit_cannon",
+      "unit_artillery",
+      "unit_tank",
+      "unit_sail",
+      "unit_trireme",
+      "unit_caravel",
+      "unit_frigate",
+      "unit_ironclad",
+      "unit_destroyer",
+      "unit_cruiser",
+      "unit_battleship",
+      "unit_submarine",
+      "unit_carrier",
+      "unit_transport",
+      "unit_fisher_boat",
+      "unit_trade_ship",
+      "unit_settler",
+      "unit_diplomat",
+      "unit_caravan",
+      "unit_ferry",
+      "unit_fighter",
+      "unit_bomber",
+      "unit_nuclear"
+    ],
+    "svgFiles": {
+      "archer": "archer.svg",
+      "artillery": "artillerie.svg",
+      "cannon": "cannon.svg",
+      "chariot": "chariot.svg",
+      "frigate": "frigate.svg",
+      "knights": "knights.svg",
+      "musketeer": "musketeer.svg",
+      "phalanx": "phalanx.svg",
+      "riflemen": "riflemen.svg",
+      "scout": "scout.svg",
+      "settler": "settler.svg",
+      "submarine": "submarin.svg",
+      "tank": "tank.svg",
+      "trireme": "trireme.svg",
+      "warrior": "worrier.svg"
+    },
+    "variants": 3,
+    "wide": [
+      "unit_battleship",
+      "unit_bomber",
+      "unit_caravel",
+      "unit_carrier",
+      "unit_cruiser",
+      "unit_destroyer",
+      "unit_ferry",
+      "unit_fighter",
+      "unit_fisher_boat",
+      "unit_frigate",
+      "unit_ironclad",
+      "unit_sail",
+      "unit_submarine",
+      "unit_trade_ship",
+      "unit_transport",
+      "unit_trireme"
+    ]
+  },
+  "version": 1
+}

@@ -1,4 +1,4 @@
-import type { TextureGroup, FalModel, GenerateResult, ComposedTile } from './types';
+import type { TextureGroup, FalModel, GenerateResult, ComposedTile, PromptBundle } from './types';
 
 const BASE = '/api';
 
@@ -54,9 +54,29 @@ export async function deleteComposedTile(filename: string): Promise<void> {
   await fetch(`${BASE}/composed/${encodeURIComponent(filename)}`, { method: 'DELETE' });
 }
 
+/**
+ * Plan prompts with the abstract generator — request JSON in, prompt bundle
+ * out, the same document the CLI's `--request` / `--emit-prompts` use. The
+ * server shells out to `abstract_generator.py`, so this can take a few
+ * seconds while Qwen resolves the abstract slots.
+ */
+export async function prompts(request: Record<string, unknown>): Promise<PromptBundle> {
+  const res = await fetch(`${BASE}/prompts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.error) {
+    throw new Error(data?.error ?? `prompt planning failed (HTTP ${res.status})`);
+  }
+  return data as PromptBundle;
+}
+
 export async function generate(params: {
   model: string;
   prompt: string;
+  negative?: string;
   tileName: string;
   width: number;
   height: number;

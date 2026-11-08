@@ -100,10 +100,67 @@ import urllib.error
 import urllib.request
 from collections import deque
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable
 
 import numpy as np
 from PIL import Image
+
+
+import abstract_generator as _abstract
+from abstract_generator import (
+    FEATURE_INPUT_GLOB,
+    FEATURE_OPTIONAL_STEMS,
+    FEATURE_OUTPUT_NAMES,
+    FEATURE_SPECS,
+    FEATURE_STEM_SPECS,
+    FEATURE_SUBJECT_MODE,
+    FEATURE_TEXT_ONLY_STEMS,
+    GLOBAL_FALLBACKS,
+    GLOBAL_SLOT_SPECS,
+    GLOBAL_THEME_FORBIDDEN,
+    LLAMA_LOG,
+    LLAMA_PORT,
+    LLAMA_SERVER_BIN,
+    MOUNTAIN_ATMOSPHERE,
+    MOUNTAIN_CRAZY,
+    NEGATIVE_FEATURE,
+    NEGATIVE_TERRAIN,
+    NEGATIVE_UNIT,
+    QWEN_MODEL,
+    SPEC_VERSION,
+    SpecError,
+    TERRAINS,
+    TERRAIN_COLOR_FORBIDDEN,
+    TERRAIN_VARIANTS,
+    TERRAIN_VARIANT_NOTES,
+    THEME_ACCENT_CLAUSE,
+    UNIT_KEY_ORDER,
+    UNIT_NEGATIVE_EXTRA,
+    UNIT_SPECS,
+    UNIT_STEM_ORDER,
+    UNIT_SVG_FILES,
+    UNIT_VARIANTS,
+    UNIT_WIDE_STEMS,
+    VariationRegistry,
+    _UNIT_RELIABLE_LIGHT,
+    _UNIT_RELIABLE_RENDER,
+    _strip_article,
+    build_feature_prompt,
+    build_terrain_prompt,
+    http_ok,
+    human,
+    load_specs,
+    resolve_slot_bundle,
+    resolve_style,
+    resolve_theme,
+    roll_weighted,
+    select_feature_stems,
+    select_unit_stems,
+    start_process,
+    stop_process,
+    style_clauses,
+    wait_for,
+)
 
 try:  # optional - only used for fast inpainting / connected components
     import cv2
@@ -130,18 +187,10 @@ SD_LLM = Path(os.environ.get(
     "SD_LLM", "/home/jonas/git/Local_AI/models/main_model/Qwen3-4B-Q4_K_M.gguf"
 ))
 
-LLAMA_SERVER_BIN = Path(os.environ.get(
-    "LLAMA_SERVER_BIN", "/home/jonas/git/Local_AI/source/llama.cpp/build/bin/llama-server"
-))
-QWEN_MODEL = Path(os.environ.get(
-    "QWEN_MODEL", "/home/jonas/git/Local_AI/models/main_model/Qwen3-4B-Q4_K_M.gguf"
-))
 
 SD_PORT = int(os.environ.get("SD_PORT", "8081"))
-LLAMA_PORT = int(os.environ.get("LLAMA_PORT", "8099"))
 
 SD_LOG = os.environ.get("SD_LOG", "/tmp/sd_server_variate.log")
-LLAMA_LOG = os.environ.get("LLAMA_LOG", "/tmp/llama_server_variate.log")
 
 REMBG = shutil.which("rembg") or "/home/jonas/.local/bin/rembg"
 
@@ -169,10 +218,6 @@ BG_SOFTNESS = 30
 # background is removed.  Folders named "backup" are never processed.
 BACKUP_DIR_NAME = "backup"
 
-TERRAINS = [
-    "arctic", "desert", "forest", "grassland", "hills", "jungle",
-    "mountains", "ocean", "plains", "river", "swamp", "tundra",
-]
 
 # ===========================================================================
 # Prompt structure (matches the project art direction)
@@ -186,99 +231,12 @@ TERRAINS = [
 # templates further down - they are never hard-coded.
 # ===========================================================================
 
-TERRAIN_PROMPT = """A seamless, tileable top-down 2D strategy-game texture of {subject}, viewed straight down and filling the entire image edge to edge as a full-bleed surface. Show only the terrain surface, as if this image were an arbitrary crop from a much larger continuous texture; the same material and pattern continue beyond all four image edges. No depicted object, patch outline, frame, or separate edge.
 
-Style & Art Direction: Clear, restrained game-ready terrain art with a small number of broad, low-frequency color shapes and only a few simple details. The natural terrain material and its distinct base colors dominate. Keep the surface flat, evenly lit and easy to distinguish from neighboring terrain; no painterly brushwork or dense microtexture.{style}
 
-Theme accents only: {theme}. The theme may appear in a few small isolated accents covering at most 5% of the image. It must not change the terrain material, dominant color family, or neutral daylight. No neon, spectral glow, runes, webs, bones, or other high-contrast decoration across the ground.
 
-Subject Details: {details}
 
-Technical Specs: Flat map view, strictly top-down, no tree trunks, no side perspective, no horizon, no camera tilt, no depth of field. Use broad readable color clusters and restrained details. The outermost pixels are ordinary terrain, not a border band; opposite edges continue the same pattern. No vignette, halo, contrasting rim, shoreline frame, or shadowed corners."""
 
-FEATURE_ART_DIRECTION = (
-    "Hand-drawn strategy-game illustration, clean confident ink contours, "
-    "controlled cel shading, subtle painterly texture and a vivid saturated "
-    "palette with strong clear hues"
-)
-UNIT_ART_DIRECTION = (
-    "A coherent set of serious drawn strategy-game unit illustrations, like "
-    "mature anime concept art crossed with a refined graphic novel: expressive "
-    "but realistic proportions, confident dark ink contours, controlled cel "
-    "shadows, subtle painterly material texture and restrained cinematic "
-    "highlights. Keep the same line weight, shading, detail density and "
-    "grounded palette across every unit, with a clear readable silhouette at "
-    "small game-icon size. Clearly hand-drawn; no glossy 3D, chibi proportions "
-    "or comic exaggeration."
-)
 
-FEATURE_PROMPT = """isometric 2D video game {presentation} of {subject}, isolated standalone central sprite, isometric strategic 3/4 game view showing height and volume, centrally composed asset, well-balanced framing, the whole subject complete and fully visible in the central canvas area, every part of the silhouette fully inside the frame and surrounded by generous clear margin on all four sides, tightly framed around the subject, centered on a completely uniform pure black background that fills the whole canvas edge to edge, easy masking background, game UI icon sprite, isolated subject.
-
-Style & Art Direction: {art_direction}{style}
-
-Theme accents only: {theme}. Keep the subject's natural colors and identity; no theme-driven replacement, glow, or dramatic lighting.
-
-Subject Details: {details} The sprite shows ONLY the feature itself - {subject} - floating on a completely empty solid pure black #000000 background, clean flat black around every edge of the subject for easy masking.
-
-Technical Specs: High contrast, top-down 45-degree isometric camera view, perfectly isolated subject on a pure black #000000 background, the full silhouette inside the frame with crisp black margin on all four sides, clean readable game sprite."""
-
-# FLUX.2 Klein responds better to one concise visual hierarchy than to a
-# photography-style specification sheet. Every unit gets this same structure
-# and art-direction passage, while its concrete silhouette/materials change.
-UNIT_PROMPT = """A polished 2D strategy-game unit icon depicting {subject}, viewed from a slightly elevated three-quarter isometric angle. Show one complete, centered unit silhouette with generous clear margin on every side, isolated on a perfectly uniform pure black background.
-
-Shared unit-set art direction: {art_direction}
-Theme accents only: {theme}. Preserve the unit's natural/material colors, defining silhouette, and clear neutral lighting; use at most a small secondary color or decoration.
-
-Unit design: {details}
-
-Keep the defining silhouette and major shapes immediately readable at small game-icon size. Clean intentional linework, controlled shadows, no environment or narrative scene."""
-
-NEGATIVE_TERRAIN = (
-    "photorealistic, realistic landscape, photography, border frame, "
-    "ground plane background, horizon line, sky, ambient occlusion shadows on "
-    "canvas, cut off edges, blurry lines, 3D render artifacts, low resolution, "
-    "empty background, transparent corners, visible grid lines, diamond layout, "
-    "isolated subject on black, black "
-    "background, pitch black, vignette, frame, picture, poster, text, "
-    "watermark, characters, buildings, animals, 3D render, 3D scene, "
-    "isometric perspective, tilted camera, side view, depth of field, "
-    "ray tracing, volumetric light, dramatic cast shadows across the surface, "
-    "desaturated colours, muted palette, washed out colours, dull faded tones, "
-    "high-frequency detail, excessive microtexture, noisy texture, intricate "
-    "repeating detail, neon, bioluminescent veins, spectral glow, glowing lines, "
-    "runes, webs, bones, scattered debris, painterly brushwork, framed picture, "
-    "border band, contrasting perimeter, white halo, "
-    "cloudy edge, muddy edge, shoreline border, land ring, dark corners, "
-    "gradient edge, drop shadow, isolated patch"
-)
-
-# NOTE: the bare word "background" is deliberately NOT negative here - the
-# sprite must sit on a *black* background.  Only competing backdrops are.
-NEGATIVE_FEATURE = (
-    "scenery, backdrop, environment, landscape, horizon, sky, clouds, "
-    "terrain, ground plane, grass, dirt, sand, water surface, waves, foam, "
-    "rocks, trees, plants, bushes, forest, border frame, cast shadow, "
-    "diamond tile, hexagon, isometric tile, tile grid, snowflakes, "
-    "photorealistic, photography, 3D render, blurry lines, low resolution, "
-    "text, watermark, multiple objects, collage, thumbnail layout, "
-    "white background, light background, gradient background, textured "
-    "background, studio backdrop, floor, wall, table"
-)
-
-# Unit art can be a composed group (a shield wall, a crew beside its vehicle,
-# or a wagon with its team), so do not apply the feature-only "multiple
-# objects" negative. Keep the isolated black key background and the shared
-# hand-drawn treatment instead.
-NEGATIVE_UNIT = (
-    "scenery, backdrop, environment, landscape, horizon, sky, clouds, terrain, "
-    "ground plane, border frame, cast shadow, diamond tile, hexagon, tile grid, "
-    "photorealistic, photography, photo, 3D render, glossy CGI, blurry lines, "
-    "low resolution, text, letters, watermark, collage, thumbnail layout, "
-    "white background, light background, gradient background, textured "
-    "background, studio backdrop, floor, wall, table, chibi, cute mascot, "
-    "super-deformed proportions, cropped subject"
-)
 
 # ===========================================================================
 # ABSTRACT SLOT SYSTEM
@@ -317,53 +275,8 @@ NEGATIVE_UNIT = (
 #   * an anchor check that rejects a slot which drifts away from the subject.
 # ===========================================================================
 
-# A theme describes light, never a place or a story - without this the model
-# keeps painting the same "golden hour over a misty valley".
-GLOBAL_THEME_FORBIDDEN = [
-    "valley", "plain", "mountain", "hill", "forest", "field", "river", "sea",
-    "ocean", "desert", "city", "castle", "village", "island", "beach", "branch",
-    "tree", "lake", "frozen", "icy", "glacier", "tundra", "arctic", "jungle",
-    "battle", "war", "ruin", "abandoned", "destroyed", "kingdom", "empire",
-    "siege",
-]
 
-GLOBAL_SLOT_SPECS = [
-    {"name": "THEME_PHRASE",
-     "help": "a short label for the requested theme, without changing any "
-             "subject identity, terrain material, dominant colors, or lighting",
-     "max_words": 8,
-     "forbidden": GLOBAL_THEME_FORBIDDEN + ["dusk", "twilight", "night", "dark",
-                   "dramatic", "eerie", "spooky", "flickering", "glow",
-                   "spectral", "gloom"]},
-    {"name": "GLOBAL_PALETTE",
-     "help": "one or two restrained accent colors for tiny decorations only; "
-             "never the dominant colors of terrain, animals, or materials",
-     "max_words": 8, "forbidden": ["light", "shadow", "glow", "sun", "moon",
-                                     "ray", "beam", "muted", "pastel",
-                                     "desaturated", "washed", "faded", "dull",
-                                     "dusty", "black", "neon", "lurid",
-                                     "spectral", "ghostly", "fluorescent"]},
-    {"name": "GLOBAL_LIGHTING",
-     "help": "neutral, even daylight shared by the whole set; no colored glow "
-             "or dramatic shadows",
-     "max_words": 8, "not_color_list": True,
-             "forbidden": ["dusk", "twilight", "night", "dark", "dramatic", "glow",
-                   "flickering", "colored", "neon"]},
-]
 
-# Colour words - a slot that is nothing but a list of these describes a
-# palette, not a lighting mood.
-COLOR_WORDS = {
-    "red", "orange", "yellow", "green", "blue", "purple", "violet", "pink",
-    "brown", "grey", "gray", "black", "white", "gold", "golden", "silver",
-    "bronze", "copper", "rust", "russet", "crimson", "scarlet", "amber",
-    "ochre", "olive", "emerald", "sapphire", "teal", "cyan", "magenta",
-    "maroon", "beige", "cream", "ivory", "navy", "indigo", "slate", "ash",
-    "charcoal", "tan", "khaki", "azure", "turquoise", "lime", "jade", "mint",
-    "coral", "salmon", "pearl", "tin", "pewter", "brass", "umber", "sienna",
-    "sepia", "burgundy", "fuchsia", "lavender", "plum", "amber", "cerulean",
-    "saffron", "apricot", "ebony", "ivory", "mint", "coral", "peach",
-}
 
 # The lighting slot must talk about light - a bare colour list is a palette,
 # not a lighting mood.  The check is done by ``looks_like_color_list()``,
@@ -376,100 +289,11 @@ _TERRAIN_FRAME_BANS = [
     "border", "rim", "frame", "ring", "halo", "vignette", "shoreline",
     "beach", "dark corners", "white perimeter", "gradient edge",
 ]
-TERRAIN_SLOT_SPECS = [
-    {"name": "SURFACE_FORM",
-     "help": "the overall kind of terrain, e.g. 'vast frozen glacial ice plain'",
-     "max_words": 10, "theme": False},
-    {"name": "BASE_MATERIAL",
-     "help": "the dominant ground material of the surface",
-     "max_words": 10, "theme": False},
-    {"name": "TEXTURE_DETAIL",
-     "help": "one or two broad, low-frequency ground patterns; simple and "
-             "readable at small map scale, never fine or intricate",
-     "max_words": 14, "theme": False,
-     "forbidden": ["micro", "intricate", "busy", "dense", "high-frequency",
-                   "bioluminescent", "neon", "spectral", "glowing", "glow",
-                   "veins", "sparkling", "runes", "webs", "bones"]
-                   + _TERRAIN_FRAME_BANS},
-    {"name": "ACCENT_ELEMENT",
-     "help": "at most a few sparse, low-contrast details; no dense scatter or "
-             "theme decoration",
-     "max_words": 14, "theme": False,
-     "forbidden": ["dense", "intricate", "neon", "spectral", "glowing",
-                   "glow", "bioluminescent", "runes", "webs", "bones",
-                   "debris", "sparkling"]},
-    {"name": "EDGE_ELEMENT",
-     "help": "ordinary continuation of the same surface through the image "
-             "boundary; no separate border, rim, or corner ornament",
-     "max_words": 14, "theme": False,
-     "forbidden": _TERRAIN_FRAME_BANS},
-    {"name": "LIGHTING_NOTE",
-     "help": "one short sentence describing clear, neutral, even daylight and "
-             "soft minimal shadows",
-     "max_words": 14, "theme": False},
-    {"name": "COLOR_PALETTE",
-     "help": "the terrain's natural dominant colors only, in a small clear "
-             "range; ignore the theme and do not include accent colors",
-     "max_words": 10, "theme": False},
-]
 
-FEATURE_SLOT_SPECS = [
-    {"name": "FEATURE_KIND",
-     "help": "the kind of thing the feature is - a plain noun phrase of 1-3 "
-             "words such as 'fish', 'horse' or 'tree cluster'; no pose, no "
-             "view, no adjectives",
-     "max_words": 3, "theme": False},
-    {"name": "FEATURE_FORM",
-     "help": "the shape, pose and silhouette of the feature",
-     "max_words": 14, "theme": False},
-    {"name": "FEATURE_DETAIL",
-     "help": "surface detail, markings and texture of the feature",
-     "max_words": 14, "theme": False},
-    {"name": "FEATURE_PALETTE",
-     "help": "the natural colour range of the feature's own material",
-     "max_words": 10, "theme": False},
-    {"name": "FEATURE_LIGHTING",
-     "help": "neutral even light that keeps the feature's natural colors clear",
-     "max_words": 10, "theme": False},
-    {"name": "FEATURE_RENDERING",
-     "help": "the rendering treatment, e.g. 'clean dark outlines with soft cell "
-             "shading'",
-     "max_words": 12, "theme": False},
-]
 
 # --- hard identities: the local model must never drift away from these -----
 
-TERRAIN_IDENTITIES = {
-    "arctic": "a frozen arctic ice field",
-    "desert": "a sun-scorched desert of golden sand dunes",
-    "forest": "a temperate forest floor ground surface (no trees)",
-    "grassland": "an open green grassland",
-    "hills": "rolling green and brown hills",
-    "jungle": "a tropical jungle floor ground surface (no trees)",
-    "mountains": "a rocky mountain ground surface (no peaks, ground only)",
-    "ocean": "a deep open ocean water surface",
-    "plains": "an open dry plains",
-    "river": "a fresh water river surface",
-    "swamp": "a murky swamp ground surface",
-    "tundra": "a cold windswept tundra",
-}
 
-# Words that must appear in the resolved SURFACE_FORM - this is the guard that
-# keeps "forest" from degrading into "desert".
-TERRAIN_ANCHORS = {
-    "arctic": ["ice", "snow", "frozen", "glacier", "arctic", "tundra"],
-    "desert": ["desert", "sand", "dune", "arid", "oasis"],
-    "forest": ["forest", "wood", "leaf", "moss", "soil", "floor", "trees"],
-    "grassland": ["grass", "meadow", "grassland", "prairie", "field", "savanna"],
-    "hills": ["hill", "mound", "slope", "knoll", "ridge", "rolling"],
-    "jungle": ["jungle", "tropical", "canopy", "vines", "fern", "rainforest"],
-    "mountains": ["mountain", "rock", "scree", "stone", "alpine", "ground"],
-    "ocean": ["ocean", "sea", "water", "waves", "marine", "blue"],
-    "plains": ["plain", "steppe", "prairie", "grassland", "dry", "savanna"],
-    "river": ["river", "stream", "water", "brook", "creek"],
-    "swamp": ["swamp", "marsh", "bog", "muddy", "mire", "fen"],
-    "tundra": ["tundra", "moss", "lichen", "cold", "frost", "plain"],
-}
 
 # Words that must NOT show up in a resolved terrain slot - this is what stops
 # an ocean from turning into an ice field or a forest into a battlefield.
@@ -478,66 +302,8 @@ TERRAIN_ANCHORS = {
 _NO_ICE = ["frozen", "icy", "glacier", "snowdrift", "permafrost"]
 _NO_WATER = ["wade", "kayak", "canoe", "buoy", "anchor", "harbour", "harbor"]
 
-TERRAIN_FORBIDDEN = {
-    "arctic": ["sand", "grass", "mud", "palm", "cactus", "jungle"] + _NO_WATER,
-    "desert": ["ice", "snow", "frost", "mud", "moss", "jungle", "water"] + _NO_ICE + _NO_WATER,
-    "forest": ["sand", "dune", "cactus", "snow", "salt", "water", "wave", "ice"] + _NO_ICE + _NO_WATER,
-    "grassland": ["sand", "dune", "cactus", "snow", "ice", "mud", "rock face"] + _NO_ICE + _NO_WATER,
-    "hills": ["cactus", "snow", "ice", "palm", "swamp"] + _NO_ICE + _NO_WATER,
-    "jungle": ["snow", "ice", "frost", "sand", "dune", "cactus", "savanna"] + _NO_ICE + _NO_WATER,
-    "mountains": ["sand", "dune", "cactus", "palm", "mangrove", "swamp"] + _NO_WATER,
-    "ocean": ["ice", "snow", "frost", "sand", "dune", "grass", "mud", "soil",
-              "rock", "leaf", "bark", "crack", "cracked", "cracks", "dry",
-              "polygon", "voronoi", "crust", "shell", "mudflat"] + _NO_ICE,
-    "plains": ["snow", "ice", "frost", "cactus", "jungle", "swamp", "mangrove"] + _NO_ICE + _NO_WATER,
-    "river": ["sand", "dune", "cactus", "ice", "snow", "jungle", "moss", "mud",
-              "crack", "cracked", "cracks", "dry"] + _NO_ICE,
-    "swamp": ["sand", "dune", "cactus", "snow", "ice", "glacier"] + _NO_ICE,
-    "tundra": ["sand", "dune", "cactus", "palm", "jungle", "swamp"] + _NO_WATER,
-}
 
-# The colour palette of a terrain must keep its own colour family - without
-# this an ocean can turn into a golden cracked lake bed.
-TERRAIN_PALETTE_ANCHORS = {
-    "arctic": ["white", "ice", "blue", "pale", "cyan", "grey", "silver", "frost"],
-    "desert": ["ochre", "gold", "tan", "sand", "amber", "yellow", "beige", "brown"],
-    "forest": ["green", "brown", "moss", "olive", "umber", "earth"],
-    "grassland": ["green", "yellow", "lime", "olive", "emerald", "fresh"],
-    "hills": ["green", "brown", "olive", "earth", "tan"],
-    "jungle": ["green", "emerald", "olive", "lime", "jade", "forest"],
-    "mountains": ["grey", "gray", "brown", "slate", "stone", "mauve"],
-    "ocean": ["blue", "sapphire", "teal", "cyan", "aqua", "turquoise",
-              "sea green"],
-    "plains": ["gold", "green", "olive", "straw", "tan", "amber", "yellow"],
-    "river": ["blue", "teal", "cyan", "aqua", "green", "turquoise", "sapphire"],
-    "swamp": ["olive", "brown", "green", "murky", "moss", "umber", "muddy"],
-    "tundra": ["grey", "gray", "green", "moss", "lichen", "olive", "pale", "brown"],
-}
-# A short, fixed clause that pins the material of a terrain down.  The
-# abstract slots still describe every detail, but the tile can never stop
-# being the terrain it is supposed to be.
-TERRAIN_IDENTITY_CLAUSE = {
-    "arctic": "Solid arctic ice and snow, unmistakably a frozen surface.",
-    "desert": "Dry sand and sun-baked earth, unmistakably arid ground.",
-    "forest": "Forest soil and leaf litter, unmistakably the floor of a forest.",
-    "grassland": "Open meadow grass, unmistakably grassland.",
-    "hills": "Grassy hills and slopes, unmistakably rolling high ground.",
-    "jungle": "Tropical soil and jungle litter, unmistakably a jungle floor.",
-    "mountains": "Bare rock and scree, unmistakably high mountain ground.",
-    "ocean": "Liquid open sea water with moving ripples, unmistakably deep water.",
-    "plains": "Short dry steppe grass, unmistakably open flat plains.",
-    "river": "Liquid fresh river water with moving ripples, unmistakably running water.",
-    "swamp": "Murky standing water, mud and marsh, unmistakably swamp.",
-    "tundra": "Moss, lichen and frozen soil, unmistakably cold tundra.",
-}
 
-# The slots that describe the *physical* surface.  Only these may be held to
-# the strict word list - a colour palette may well say "slate rock grey" and a
-# lighting note may well say "light cracks across the surface".
-TERRAIN_MATERIAL_SLOTS = (
-    "SURFACE_FORM", "BASE_MATERIAL", "TEXTURE_DETAIL",
-    "ACCENT_ELEMENT", "EDGE_ELEMENT",
-)
 
 # Words that are perfectly normal inside a colour or a light phrase.
 _COLOR_SAFE_WORDS = {
@@ -545,11 +311,6 @@ _COLOR_SAFE_WORDS = {
     "water", "wave", "waves", "grass",
 }
 
-# The colour palette may not name a foreign material either.
-TERRAIN_COLOR_FORBIDDEN = {
-    terrain: [w for w in words if w not in _COLOR_SAFE_WORDS]
-    for terrain, words in TERRAIN_FORBIDDEN.items()
-}
 _THEME_COLOR_FORBIDDEN = [
     "black", "crimson", "magenta", "purple", "violet", "lavender", "neon",
     "lurid", "spectral", "ghostly", "fluorescent", "electric", "glowing",
@@ -560,192 +321,22 @@ TERRAIN_COLOR_FORBIDDEN["ocean"].extend(["navy", "indigo", "deep", "dark"])
 TERRAIN_COLOR_FORBIDDEN["grassland"].extend(
     ["dark", "deep", "muddy", "orange", "amber", "burnt", "pumpkin"])
 
-# Extra hard constraints that must survive every variation.
-TERRAIN_EXTRA_CONSTRAINTS = {
-    "forest": "No trees, no trunks, no canopies, no vertical elements - only "
-              "the flat ground layer. Strict top-down bird's-eye view.",
-    "jungle": "No trees, no trunks, no canopy, no vertical elements - only "
-              "the flat ground layer. Strict top-down bird's-eye view.",
-    "mountains": "No peaks, no cliffs, no vertical elements - only the flat "
-                 "rocky ground layer. Strict top-down bird's-eye view.",
-    "swamp": "No tree stumps, no vertical elements - only the flat ground "
-             "layer. Strict top-down bird's-eye view.",
-}
 
-TERRAIN_BASE_CONSTRAINT = (
-    "No horizon, no sky, no scenery, no buildings, no characters, no animals, "
-    "no frame and no vignette - only the flat ground surface, edge to edge."
-)
 
-# How many ground tiles are rendered per terrain and iteration.  The game
-# draws one of them per grid cell (TerrainTextureManager picks a stable
-# variant per tile position), so the siblings must read as the SAME terrain -
-# same palette, same light, same material - while differing in how the pattern
-# is arranged.  That is what stops a stretch of ocean or grassland from
-# looking like one image stamped over and over.
-TERRAIN_VARIANTS = 3
 
-# What makes sibling tiles of one terrain differ without drifting apart.  The
-# three notes are cycled per variant; they only ever describe arrangement and
-# scale, never a different material, colour or light.
-TERRAIN_VARIANT_NOTES = (
-    "This is variant 1 of 3: use a broad, calm arrangement of the same terrain "
-    "shapes and scale.",
-    "This is variant 2 of 3: rearrange the same terrain shapes without adding "
-    "detail or changing their scale.",
-    "This is variant 3 of 3: rearrange the same terrain shapes again, keeping "
-    "the same density, scale, and palette.",
-)
 
 # --- abstract terrain templates -------------------------------------------
 
-TERRAIN_SUBJECT_TEMPLATE = "a #SURFACE_FORM#"
 
-TERRAIN_DETAILS_TEMPLATE = (
-    "A continuous surface of #BASE_MATERIAL# with #TEXTURE_DETAIL# and only "
-    "#ACCENT_ELEMENT#. #EDGE_ELEMENT#. #LIGHTING_NOTE# #GLOBAL_LIGHTING#. "
-    "The dominant terrain colors are #COLOR_PALETTE#. Use #GLOBAL_PALETTE# "
-    "only for a few tiny "
-    "secondary accents, never to tint or replace the ground colors. Keep the "
-    "surface flat, simple, and recognizable at small map scale."
-)
 
 # --- abstract feature templates -------------------------------------------
 
-FEATURE_SUBJECT_TEMPLATE = "a single #FEATURE_KIND#"
 
-FEATURE_DETAILS_TEMPLATE = (
-    "The feature is #FEATURE_FORM#, with #FEATURE_DETAIL#. Its natural "
-    "material colors are #FEATURE_PALETTE#; #GLOBAL_PALETTE# may appear only "
-    "as a tiny accent. #FEATURE_LIGHTING#. "
-    "#FEATURE_RENDERING#."
-)
 
-UNIT_DETAILS_TEMPLATE = (
-    "The unit is #FEATURE_FORM#, with #FEATURE_DETAIL#. Its natural "
-    "material colors are #FEATURE_PALETTE#; #GLOBAL_PALETTE# may appear only "
-    "as a tiny accent. #FEATURE_LIGHTING#. "
-    "#FEATURE_RENDERING#."
-)
 
 # --- fallback phrases (used whenever the model is unavailable/unusable) ----
 
-GLOBAL_FALLBACKS = {
-    "THEME_PHRASE": "balanced natural daylight",
-    "GLOBAL_PALETTE": "sparse natural accent colors",
-    "GLOBAL_LIGHTING": "clear neutral daylight",
-}
 
-TERRAIN_FALLBACKS = {
-    "arctic": {
-        "SURFACE_FORM": "vast frozen arctic ice plain",
-        "BASE_MATERIAL": "packed white-blue glacial ice",
-        "TEXTURE_DETAIL": "broad smooth ice fields with a few wide pressure ridges",
-        "ACCENT_ELEMENT": "a few sparse pale snow patches",
-        "EDGE_ELEMENT": "the same ice surface continues uniformly, without a distinct edge",
-        "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows",
-        "COLOR_PALETTE": "white, ice blue and pale frost grey tones",
-    },
-    "desert": {
-        "SURFACE_FORM": "sun-scorched desert of golden sand dunes",
-        "BASE_MATERIAL": "rolling ochre and golden sand",
-        "TEXTURE_DETAIL": "broad wind-shaped dune bands with simple smooth shading",
-        "ACCENT_ELEMENT": "a few sparse small stones",
-        "EDGE_ELEMENT": "the same sand surface continues uniformly, without a distinct edge",
-        "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows",
-        "COLOR_PALETTE": "ochre, gold and sun-bleached tan tones",
-    },
-    "forest": {
-        "SURFACE_FORM": "temperate forest floor ground surface",
-        "BASE_MATERIAL": "dark brown forest soil",
-        "TEXTURE_DETAIL": "broad patches of soil, moss, and fallen leaves",
-        "ACCENT_ELEMENT": "a few sparse leaves and twigs",
-        "EDGE_ELEMENT": "the same forest floor continues uniformly, without a distinct edge",
-        "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows",
-        "COLOR_PALETTE": "dark browns, deep greens and mossy tones",
-    },
-    "grassland": {
-        "SURFACE_FORM": "open green grassland",
-        "BASE_MATERIAL": "lush bright green meadow grass",
-        "TEXTURE_DETAIL": "broad, softly shaded patches of short meadow grass",
-        "ACCENT_ELEMENT": "a few sparse tiny yellow and white flowers",
-        "EDGE_ELEMENT": "the same grass surface continues uniformly, without a distinct edge",
-        "LIGHTING_NOTE": "Even natural daylight lays soft green shading across the meadow",
-        "COLOR_PALETTE": "fresh greens with yellow and white accents",
-    },
-    "hills": {
-        "SURFACE_FORM": "cluster of smooth rolling green and brown hills",
-        "BASE_MATERIAL": "grassy sod hilltops packed tightly across the surface",
-        "TEXTURE_DETAIL": "broad green slopes with simple light-brown earth bands",
-        "ACCENT_ELEMENT": "a few sparse rocks between the hills",
-        "EDGE_ELEMENT": "the same hill pattern continues uniformly, without a distinct edge",
-        "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows",
-        "COLOR_PALETTE": "greens and light earth browns",
-    },
-    "jungle": {
-        "SURFACE_FORM": "tropical jungle floor ground surface",
-        "BASE_MATERIAL": "dark moist soil covered in dense moss",
-        "TEXTURE_DETAIL": "broad patches of dark soil and simple tropical leaf shapes",
-        "ACCENT_ELEMENT": "a few sparse leaves on the ground",
-        "EDGE_ELEMENT": "the same jungle floor continues uniformly, without a distinct edge",
-        "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows",
-        "COLOR_PALETTE": "dark greens and moist earth browns",
-    },
-    "mountains": {
-        "SURFACE_FORM": "rocky mountain ground surface",
-        "BASE_MATERIAL": "grey-brown scree and broken rocks",
-        "TEXTURE_DETAIL": "broad patches of bare rock and coarse scree",
-        "ACCENT_ELEMENT": "a few sparse larger stones",
-        "EDGE_ELEMENT": "the same rocky surface continues uniformly, without a distinct edge",
-        "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows",
-        "COLOR_PALETTE": "greys and muted browns",
-    },
-    "ocean": {
-        "SURFACE_FORM": "deep open ocean water surface",
-        "BASE_MATERIAL": "natural blue water with realistic depth transparency",
-        "TEXTURE_DETAIL": "broad, calm blue wave bands with simple cyan highlights",
-        "ACCENT_ELEMENT": "a few small pale wave crests",
-        "EDGE_ELEMENT": "the same blue water continues uniformly, without a distinct edge",
-        "LIGHTING_NOTE": "Clear neutral daylight with soft minimal highlights",
-        "COLOR_PALETTE": "layered blues with turquoise accents",
-    },
-    "plains": {
-        "SURFACE_FORM": "open dry plains",
-        "BASE_MATERIAL": "dry golden-green plain grassland with short patchy grass",
-        "TEXTURE_DETAIL": "broad patches of short golden-green steppe grass",
-        "ACCENT_ELEMENT": "a few sparse small stones",
-        "EDGE_ELEMENT": "the same dry grass surface continues uniformly, without a distinct edge",
-        "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows",
-        "COLOR_PALETTE": "warm earthy golden-green tones",
-    },
-    "river": {
-        "SURFACE_FORM": "winding fresh water river",
-        "BASE_MATERIAL": "natural blue river water with realistic depth transparency",
-        "TEXTURE_DETAIL": "broad blue current bands with simple turquoise highlights",
-        "ACCENT_ELEMENT": "a few sparse stones along the water",
-        "EDGE_ELEMENT": "the same river surface continues uniformly, without a distinct edge",
-        "LIGHTING_NOTE": "Clear neutral daylight with soft minimal highlights",
-        "COLOR_PALETTE": "fresh blues and greens",
-    },
-    "swamp": {
-        "SURFACE_FORM": "murky swamp ground surface",
-        "BASE_MATERIAL": "dark muddy water and brown-green stagnant pools",
-        "TEXTURE_DETAIL": "broad patches of muddy water and olive marsh grass",
-        "ACCENT_ELEMENT": "a few sparse lily pads",
-        "EDGE_ELEMENT": "the same swamp surface continues uniformly, without a distinct edge",
-        "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows",
-        "COLOR_PALETTE": "dark olives, browns and muddy greens",
-    },
-    "tundra": {
-        "SURFACE_FORM": "cold windswept tundra",
-        "BASE_MATERIAL": "pale grey-green tundra ground",
-        "TEXTURE_DETAIL": "broad pale patches of moss, lichen, and frozen soil",
-        "ACCENT_ELEMENT": "a few sparse small stones",
-        "EDGE_ELEMENT": "the same tundra surface continues uniformly, without a distinct edge",
-        "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows",
-        "COLOR_PALETTE": "muted grey-green and pale cold tones",
-    },
-}
 
 # ===========================================================================
 # FEATURES
@@ -758,96 +349,13 @@ TERRAIN_FALLBACKS = {
 # a folder named "backup" is skipped: it only holds the untouched originals.
 # ===========================================================================
 
-FEATURE_INPUT_GLOB = "**/*.png"
 
-# The game (TerrainTextureManager) expects these exact file names.
-FEATURE_OUTPUT_NAMES = {
-    "fish1": "terrain_ocean_fish",
-    "fish2": "terrain_ocean_fish_2",
-    "fish3": "terrain_ocean_fish_3",
-    "fish4": "terrain_ocean_fish_4",
-    "fish5": "terrain_ocean_fish_5",
-    "horses": "terrain_plains_horses",
-    "horses_2": "terrain_plains_horses_2",
-    "forest_feature_1": "terrain_forest_feature_1",
-    "forest_feature_2": "terrain_forest_feature_2",
-    "forest_feature_3": "terrain_forest_feature_3",
-    "jungle_feature": "terrain_jungle_feature",
-    "hills_feature": "terrain_hills_feature",
-    "swamp_feature": "terrain_swamp_feature",
-    "mountains_feature_1": "terrain_mountains_feature_1",
-    "mountains_feature_2": "terrain_mountains_feature_2",
-    "mountains_feature_3": "terrain_mountains_feature_3",
-    "mountains_feature_4": "terrain_mountains_feature_4",
-    "seal": "terrain_arctic_seal",
-    "gems": "terrain_jungle_gems",
-    "gold": "terrain_mountains_gold",
-    "coal": "terrain_hills_coal",
-    "oil": "terrain_swamp_oil",
-    "game": "terrain_forest_game",
-    "oasis": "terrain_desert_oasis",
-}
 
-# Every feature stem, in render order.  The stems below with an input picture
-# (src/assets/resources/<stem>.png) are rendered with img2img so they keep the
-# identity of the artwork; all other stems are composed purely from their text
-# prompt onto the black sprite background.
-FEATURE_STEM_ORDER = [
-    "fish1", "fish2", "fish3", "fish4", "fish5",
-    "horses", "horses_2",
-    "forest_feature_1", "forest_feature_2", "forest_feature_3",
-    "jungle_feature",
-    "hills_feature", "swamp_feature",
-    "mountains_feature_1", "mountains_feature_2",
-    "mountains_feature_3", "mountains_feature_4",
-    "seal", "gems", "gold", "coal", "oil", "game", "oasis",
-]
 
-# Optional stems: rendered only on a per-iteration roll, so some iterations
-# carry the extra image and others stay without it.  Naming the stem exactly
-# in `--features` forces it on.  (Currently empty: every stem including all
-# four mountain variants renders ALWAYS.)
-FEATURE_OPTIONAL_STEMS: dict[str, float] = {}
 
-# These stems are always rendered from text alone, even when an input picture
-# exists: the prompt defines their composition (the proud wild horse poses,
-# the tree groups with flush trunks, the multi-peak range) and an img2img pass
-# would pin them to the old artwork's single-subject silhouette.
-FEATURE_TEXT_ONLY_STEMS = {
-    "horses", "horses_2",
-    "forest_feature_1", "forest_feature_2", "forest_feature_3",
-    "jungle_feature",
-    "mountains_feature_1", "mountains_feature_2",
-    "mountains_feature_3", "mountains_feature_4",
-}
 
-# The atmosphere of EVERY mountain variant varies per iteration: each of the
-# four rolls its own fog / snow / valley-mist / clear face.
-MOUNTAIN_ATMOSPHERE = [
-    ("Thin morning fog drifts between the lower rock slopes.", 0.25),
-    ("Fresh bright snow caps the summits and streaks the upper ledges.", 0.25),
-    ("Low mist wraps the valleys beneath the range while the peaks stay clear.", 0.10),
-]
 
-# The second mountain image carries a restrained ground-surface variation,
-# not a new scene or structure. One broad natural variation is rolled per run.
-MOUNTAIN_CRAZY = [
-    "One broad pale scree fan crosses the rocky ground in a simple natural shape.",
-    "A few broad slate-gray stone bands cross the otherwise uniform ground.",
-    "A small number of large muted-brown boulder patches break up the gray scree.",
-    "One broad light-gray limestone area contrasts with the surrounding rock.",
-    "Wide natural bands of gray and brown scree form a calm, readable pattern.",
-    "A few large flat stone slabs lie among broad patches of coarse scree.",
-]
 
-# When the run carries a direction keyword (--theme-keyword), feature slot
-# resolution allows only restrained accents; the animal/object identity and
-# natural colors stay fixed.
-THEME_ACCENT_CLAUSE = (
-    "The theme may add at most one small secondary-color accent or tiny "
-    "decoration. Never replace, transform, or obscure the subject; an animal "
-    "must remain the same recognizable animal with natural anatomy and colors"
-)
 
 # ===========================================================================
 # ART-STYLE keywords (--style-keyword)
@@ -859,114 +367,11 @@ THEME_ACCENT_CLAUSE = (
 # prompt templates, so even fallback prompts carry it.
 # ===========================================================================
 
-STYLE_KEYS = (
-    "american_comic", "manga", "pixel_art", "papercraft",
-    "watercolor_storybook", "stained_glass", "byzantine_mosaic",
-    "greek_pottery", "norse_woodcarving", "illuminated_manuscript",
-    "constructivist_poster", "art_deco_poster", "linocut_print",
-    "tarot_engraving", "vintage_box_art", "anime_cel", "naive_folk_art",
-    "egyptian_tomb", "ligne_claire", "painted_miniature",
-    "original_game_icons",
-)
-
-STYLE_DESCRIPTIONS: dict[str, str] = {
-    "american_comic":
-        "bold American comic book art: strong black ink outlines, halftone "
-        "dot shading, flat bright poster colours, dynamic cel highlights, "
-        " heroic drama in every contour",
-    "manga":
-        "Japanese manga art: crisp black-and-white ink work, screentone "
-        "shading, clean economical linework, expressive emphasis strokes",
-    "pixel_art":
-        "16-bit strategy-game pixel art: chunky readable pixels, a limited "
-        "clear palette, hard pixel edges, broad color clusters, and simple "
-        "two- or three-tone shading; no dithering, gradients, or texture noise",
-    "papercraft":
-        "layered papercraft: cut-paper shapes with visible paper edges and "
-        "fold seams, stacked depth layers, soft cast paper shadows",
-    "watercolor_storybook":
-        "ink-and-watercolour storybook art: loose wet washes, soft bleeding "
-        "colours, fine pen-and-ink contour accents, warm paper tint",
-    "stained_glass":
-        "stained glass window art: black lead came contour lines, glowing "
-        "jewel-toned glass panes, light streaming through translucent colour",
-    "byzantine_mosaic":
-        "Byzantine mosaic art: small irregular gold and stone tesserae, "
-        "curved piece-by-piece shading, glinting golden highlights",
-    "greek_pottery":
-        "ancient Greek black-figure pottery: terracotta clay ground, jet-black "
-        "silhouettes with fine incised detail, meander key border accents",
-    "norse_woodcarving":
-        "carved Norse wood relief: deep knife-cut V-groove lines, knotted "
-        "Nordic interlace tracery, warm oak grain surface",
-    "illuminated_manuscript":
-        "medieval illuminated manuscript: gold leaf accents, fine gothic ink "
-        "linework, flat symbolic colour, ornate decorative flourishes",
-    "constructivist_poster":
-        "Soviet constructivist propaganda poster: stark red-black-cream "
-        "reduction, bold diagonal shapes, flat printed ink surfaces",
-    "art_deco_poster":
-        "Art Deco travel poster: streamlined symmetrical geometry, gold and "
-        "teal palette, elegant flat shading, decorative sunburst accents",
-    "linocut_print":
-        "linocut relief print: chunky white carving lines through flat ink, "
-        "bold two-tone contrast, hand-pressed texture",
-    "tarot_engraving":
-        "tarot card engraving: fine cross-hatched copper-plate lines, ornate "
-        "symbolic composition, aged ivory paper",
-    "vintage_box_art":
-        "vintage 1970s board-game box art: rich gouache painting, warm retro "
-        "palette, heroic painterly impression, printed cardstock feel",
-    "anime_cel":
-        "1990s anime cel animation: clean outlines, two-tone cel shadows, "
-        "saturated animator colours, crisp studio finish",
-    "naive_folk_art":
-        "naive folk art: charming simplification, rounded confident shapes, "
-        "cheerful local palette, hand-painted brush texture",
-    "egyptian_tomb":
-        "ancient Egyptian tomb painting: limestone ground, flat profile "
-        "figures, ochre and lapis palette, fine hieroglyph-like incisions",
-    "ligne_claire":
-        "Franco-Belgian ligne claire comics: uniform weight ink lines, flat "
-        "saturation without hatching, clear readable shading",
-    "painted_miniature":
-        "hand-painted tabletop miniature: glossy enamel highlight layering "
-        "with micro-brush precision, dramatic contrast lighting, display "
-        "figure finish",
-    "original_game_icons":
-        "2D flat vector strategy game asset style, clean graphic game icon art "
-        "direction. Uniform bold black outlines on elements combined with "
-        "crisp lineless vector shapes. Flat solid color blocks, hard-edged "
-        "geometric cel-shading, absolute absence of gradients or textures. "
-        "Matte finish with simple pill-shaped white specular highlights on "
-        "polished surfaces. High-contrast bold silhouettes, centered framing, "
-        "isolated on a uniform flat solid pure black background",
-}
 
 
-def resolve_style(input_text: str) -> tuple[str, str]:
-    """Accept a STYLE_KEYS name or any freeform style phrase.
-
-    Returns ``(name, long_description)``: a registry name is upgraded to its
-    handcrafted descriptor, a freeform phrase is used verbatim.
-    """
-    s = input_text.strip()
-    if not s:
-        return "", ""
-    if s in STYLE_DESCRIPTIONS:
-        return s, STYLE_DESCRIPTIONS[s]
-    return s, s
 
 
-def style_clauses(name: str, desc: str) -> str:
-    """The context clause handed to every slot resolution of a styled run."""
-    name_words = name.replace("_", " ")
-    return (
-        f"Every asset of this run is rendered entirely in the {name_words} "
-        f"art style: {desc}. This rendering direction overrides the default "
-        "game-art look of this handbook everywhere, while every subject keeps "
-        "its identity and function completely unchanged"
-    )
+
 
 # ===========================================================================
 # UNITS
@@ -988,38 +393,8 @@ def style_clauses(name: str, desc: str) -> str:
 UNIT_ICON_DIR = ROOT / "src" / "assets" / "units"
 UNIT_CONSTANTS_PATH = ROOT / "src" / "data" / "UnitConstants.ts"
 
-# game unit key -> its artwork file name (as used by UnitIconConfig)
-UNIT_SVG_FILES = {
-    "settler": "settler.svg",
-    "warrior": "worrier.svg",      # the artwork ships with its typo name
-    "scout": "scout.svg",
-    "phalanx": "phalanx.svg",
-    "knights": "knights.svg",
-    "chariot": "chariot.svg",
-    "cannon": "cannon.svg",
-    "artillery": "artillerie.svg",  # the artwork ships with its German name
-    "submarine": "submarin.svg",
-    "tank": "tank.svg",
-    "archer": "archer.svg",
-    "riflemen": "riflemen.svg",
-    "musketeer": "musketeer.svg",
-    "trireme": "trireme.svg",
-    "frigate": "frigate.svg",
-}
 
-# Stems with real game artwork get img2img; every other unit is text-only.
-UNIT_KEY_ORDER = [
-    "warrior", "scout", "archer", "phalanx", "chariot", "knights", "legion",
-    "catapult", "musketeer", "riflemen", "cavalry", "mech_inf", "cannon",
-    "artillery", "tank",
-    "sail", "trireme", "caravel", "frigate", "ironclad", "destroyer",
-    "cruiser", "battleship", "submarine", "carrier", "transport",
-    "fisher_boat", "trade_ship",
-    "settler", "diplomat", "caravan", "ferry",
-    "fighter", "bomber", "nuclear",
-]
 
-UNIT_STEM_ORDER = [f"unit_{key}" for key in UNIT_KEY_ORDER]
 
 # Wooden horse-drawn stuff and camels need the same anatomy clause as the
 # horse resource feature - saddle animals are easy for the model to break.
@@ -1028,8 +403,6 @@ _UNIT_LEGS_CLAUSE = ("Every horse shown is anatomically correct and drawn "
 _UNIT_CAMEL_LEGS_CLAUSE = ("Every camel is anatomically correct and drawn "
                            "complete, with all four legs clearly visible.")
 
-_UNIT_RELIABLE_LIGHT = "warm key light from the upper left with a soft shaded side"
-_UNIT_RELIABLE_RENDER = "clean dark outlines with smooth cell shading"
 
 # Positively phrased limb completeness for every person / vehicle crew /
 # animal of the units.  Deliberately NOT a hard anatomy audit ("five
@@ -1074,434 +447,7 @@ def _unit_spec(kind: str, anchors: list[str], form: str, detail: str,
     return spec
 
 
-UNIT_SPECS: dict[str, dict[str, Any]] = {
-    "unit_warrior": _unit_spec(
-        "stone-age tribal warrior", ["warrior", "tribesman", "clubman"],
-        "a brawny tribal fighter mid-stride swinging a rough wooden club, "
-        "a bark-lined shield raised on the other arm",
-        "painted skin stripes, fur straps and a bone necklace",
-        "earthen hides of brown ochre and umber",
-        identity="the Warrior game unit: a stone-age tribal fighter",
-    ),
-    "unit_scout": _unit_spec(
-        "woodland scout", ["scout", "pathfinder", "explorer"],
-        "an agile scout striding forward with a walking staff and a leather "
-        "haversack",
-        "worn travel cloak, a rolled map and a coil of rope on the belt",
-        "muted greens and worn leather browns",
-        identity="the Scout game unit: a lightly equipped explorer",
-    ),
-    "unit_archer": _unit_spec(
-        "bronze-age archer", ["archer", "bowman", "archery"],
-        "an archer in strict side profile: his straight leading arm holds "
-        "the fully bent bow out ahead of him, the bow limbs sweep clearly "
-        "above and below the body with background space between bow and "
-        "chest, the drawn string touches his cheek",
-        "quiver on the back, feathered fletching, leather bracers and cap",
-        "dulled bronze and forest tan",
-        identity="the Archer game unit: a bronze-age bowman",
-        fixed=("The archer holds one strung, fully bent bow: both bow "
-               "limbs, the taut string and the nocked arrow all stay "
-               "clearly in view. Bow and body are two separate shapes: a "
-               "strip of background always shows between the archer's "
-               "torso and the bow limbs, and the arrow flies straight "
-               "ahead past the bow hand."),
-        kind_help=("the noun is 'archer' (or 'bowman') - one fighter whose "
-                   "whole identification is the bent bow he draws"),
-        forbidden=["crossbow", "firearm"],
-    ),
-    "unit_phalanx": _unit_spec(
-        "hoplite", ["spearman", "phalanx", "hoplite"],
-        "a disciplined rank of classical Greek hoplites, each braced behind "
-        "a round bronze shield with a long spear held upright",
-        "horsehair-crested helmet, bronze cuirass and greaves",
-        "polished bronze and deep crimson cloth",
-        identity="the Phalanx game unit: a disciplined classical Greek "
-                 "hoplite shield-wall",
-        fixed=("Show a compact shoulder-to-shoulder rank of living human "
-               "hoplites, not a single isolated soldier: overlapping round "
-               "shields make one clear defensive front, with upright spears "
-               "visible above the helmets. Keep the formation readable as "
-               "one unit emblem."),
-        kind_help=("one singular noun phrase naming a hoplite; "
-                   "the formation template carries the group count"),
-        subject_template="a tight classical Greek phalanx of #FEATURE_KIND#",
-        forbidden=["firearm", "musket"],
-    ),
-    "unit_chariot": _unit_spec(
-        "horse-drawn war chariot", ["chariot", "war chariot"],
-        "a light two-wheeled war chariot in three-quarter isometric view, "
-        "pulled by its matched team of two harnessed horses seen in full "
-        "profile galloping left to right, the team clearly IN FRONT of "
-        "the chariot, a driver and an archer standing in the chariot box",
-        "braided reins, a quiver mounted at the rail and polished fittings",
-        "warm wood and gleaming bronze",
-        identity="the Chariot game unit: a horse-drawn war chariot with its crew",
-        fixed=(_UNIT_LEGS_CLAUSE +
-               " The chariot and the horses are two clearly separate "
-               "objects joined only by their harness: visible background "
-               "space separates the horses' hindquarters from the "
-               "chariot's front, and the draught pole leads from the "
-               "horses' yoke straight to the chariot box. Both horses run "
-               "side by side in step, galloping in one and the same "
-               "direction."),
-        kind_help=("exactly the plain noun 'war chariot' - the draught team "
-                   "and the direction belong to FEATURE_FORM, the noun is "
-                   "never dressed with weather or story words"),
-    ),
-    "unit_knights": _unit_spec(
-        "medieval knight", ["knight", "crusader", "knightly"],
-        "one iron-armoured knight riding one caparisoned warhorse in "
-        "three-quarter isometric view: the single horse's head, neck, "
-        "saddle and hindquarters all clearly belong to the same one "
-        "animal, the rider sitting centred in the saddle",
-        "visored great helm, heraldic surcoat and laminated armour plates",
-        "iron grey with heraldic blue and gold",
-        identity="the Knights game unit: an armoured medieval knight "
-                 "mounted on a warhorse",
-        fixed=("The knight rides exactly ONE single warhorse: one head, "
-               "one neck and one body, with clear background space "
-               "between its head and chest. The rider straddles the "
-               "saddle of that single animal once and once only. "
-               + _UNIT_LEGS_CLAUSE),
-        kind_help=("exactly the noun 'knight' - one rider"),
-    ),
-    "unit_legion": _unit_spec(
-        "Roman legionary", ["legionary", "legion", "centurion"],
-        "a Roman legionary at attention, a rectangular scutum shield planted "
-        "and a short gladius drawn",
-        "red-plumed galea helmet, segmented lorica armour and leather "
-        "skirt strips",
-        "oxblood red and burnished iron",
-        identity="the Legion game unit: an armoured Roman legionary",
-        forbidden=["firearm", "musket", "medieval"],
-    ),
-    "unit_catapult": _unit_spec(
-        "wooden catapult", ["catapult", "mangonel", "onager"],
-        "a classic siege catapult with two large spoked wheels, a sturdy "
-        "A-shaped timber frame and a long throwing arm cranked down ready "
-        "to fire, a sling with a round grey stone at the arm tip",
-        "fresh timber planks, crossed support beams with rope lashings, a "
-        "windlass crank and a second stone ball beside the wheels",
-        "warm oak planks and pale birch beams",
-        identity="the Catapult game unit: a wooden siege catapult on wheels",
-        forbidden=["firearm", "rubber tyres"],
-    ),
-    "unit_musketeer": _unit_spec(
-        "musketeer", ["musketeer", "arquebusier"],
-        "a plumed wide-brimmed musketeer in strict side profile resting "
-        "the slim long musket on a forked rest: both hands grip the light "
-        "wooden stock together, the muzzle rises clearly beyond his hat "
-        "with background space between barrel and face",
-        "a bandolier of powder charges, bucket-top boots and lace cuffs",
-        "royal blue coat and buff leather",
-        identity="the Musketeer game unit: an early-modern musketeer",
-        fixed=("The musket is historically proportioned and held the way "
-               "a real musketeer would hold it: slim tapered barrel with "
-               "a light wooden stock sized like a genuine early-modern "
-               "weapon, the stock line passing beside the cheek and not "
-               "across it, barrel and hat clearly separated by air."),
-        kind_help=("exactly the noun 'musketeer': a soldier whose central "
-                   "weapon is the long smoking musket"),
-        forbidden=["sword", "shield", "pistol", "rapier", "dagger",
-                   "rifle with scope", "modern"],
-    ),
-    "unit_riflemen": _unit_spec(
-        "line rifleman", ["rifleman", "infantry soldier", "redcoat"],
-        "a uniformed rifleman in strict side profile holding his long "
-        "rifle in a two-handed carry: both hands on the wooden stock, the "
-        "muzzle raised diagonally ahead of him and clearly beyond the hat "
-        "line, the butt resting at the shoulder",
-        "tailcoat uniform, shako with cords, cross-belts and a puff of "
-        "muzzle smoke",
-        "deep field blue with brass buttons",
-        identity="the Riflemen game unit: a line-infantry rifleman of the "
-                 "industrial era",
-        fixed=("The rifle is held as a real weapon is carried: the whole "
-               "stock, lock and barrel read as one straight line, both "
-               "hands grip the wood, and a visible gap of background "
-               "separates the barrel from the face and hat."),
-        forbidden=["laser", "scope"],
-    ),
-    "unit_cavalry": _unit_spec(
-        "dragoon cavalryman", ["cavalry", "dragoon", "cavalier",
-                               "mounted soldier"],
-        "a uniformed dragoon riding a galloping horse, sabre raised and a "
-        "pennant snapping in the wind",
-        "high boots, plumed helmet and a carbine slung across the back",
-        "midnight blue uniform and glossy black horse",
-        identity="the Cavalry game unit: a sabre-armed dragoon mounted on "
-                 "a horse",
-        fixed=_UNIT_LEGS_CLAUSE,
-    ),
-    "unit_mech_inf": _unit_spec(
-        "mechanized infantry squad", ["mechanized infantry", "mech infantry",
-                                      "infantry fighting vehicle", "APC"],
-        "three clearly human modern infantry soldiers in helmets and field "
-        "uniforms advancing beside a compact tracked infantry fighting "
-        "vehicle, with an angular armored hull, broad visible tracks, a "
-        "troop compartment and a small roof-mounted autocannon",
-        "ordinary rifles, webbing, a rear troop ramp and practical armor "
-        "plates; the soldiers are dismounted and visibly separate from the vehicle",
-        "olive drab and gunmetal",
-        identity="the Mech. Inf. game unit: human mechanized infantry fighting "
-                 "alongside its armored personnel carrier",
-        fixed=("The vehicle is a real crewed armored personnel carrier or "
-               "infantry fighting vehicle, not a humanoid machine: keep its "
-               "tracks, low armored body and troop-carrying shape plainly "
-               "visible. Show ordinary human riflemen on foot beside it; "
-               "they wear practical uniforms and helmets, not powered suits."),
-        forbidden=["ancient", "musket", "sword", "robot", "android",
-                   "humanoid machine", "powered armor", "exoskeleton", "sci-fi"],
-    ),
-    "unit_cannon": _unit_spec(
-        "field cannon", ["cannon", "artillery gun"],
-        "a black-powder field cannon built of a long tapered bronze barrel "
-        "mounted on a tall-arched wooden carriage with two large spoked "
-        "wheels clearly visible, a rammer and a powder barrel standing "
-        "beside it",
-        "iron reinforcement bands around the barrel, a coil of fuse rope "
-        "and a neat pyramid of round iron shot",
-        "aged bronze and pale carriage wood",
-        identity="the Cannon game unit: a black-powder field cannon",
-        kind_help=("the complete gun: barrel, wooden carriage and its two "
-                   "large spoked wheels - all three parts belong to the "
-                   "noun, nothing may be dropped"),
-        forbidden=["close-up", "emerging", "turret"],
-    ),
-    "unit_artillery": _unit_spec(
-        "heavy howitzer", ["howitzer", "artillery piece"],
-        "a massive artillery howitzer with a thick dark barrel raised high "
-        "on a wheeled steel split-trail carriage, its open breech and "
-        "hinged elevating gear on the wheels",
-        "army-green painted plate steel, canvas-wrapped shells stacked on a "
-        "rack and a periscope sight post",
-        "military green and dark iron",
-        identity="the Artillery game unit: a heavy howitzer artillery piece",
-        kind_help=("the noun is 'howitzer': one gun barrel on its wheeled "
-                   "split-trail carriage, complete with breech and wheels"),
-        forbidden=["tank", "tracked", "tripod", "tower", "legs",
-                   "recoiling track"],
-    ),
-    "unit_tank": _unit_spec(
-        "main battle tank", ["tank", "battle tank"],
-        "a sloped-armoured main battle tank in three-quarter view with a "
-        "long gun barrel, side skirts and tracks",
-        "an open commander's hatch, track guards and a small radio antenna",
-        "sand-dust camouflage tan and gunmetal",
-        identity="the Tank game unit: a modern main battle tank",
-    ),
-    "unit_sail": _unit_spec(
-        "small sailing boat", ["sailboat", "sailing boat", "boat"],
-        "a small single-mast sailing boat with a triangular sail fully set, "
-        "seen broadside",
-        "hull planking, a coiled mooring line and a pennant at the masthead",
-        "weathered wood and canvas white",
-        identity="the Sail game unit: a small early sailing boat",
-    ),
-    "unit_trireme": _unit_spec(
-        "ancient war galley", ["trireme", "galley", "warship"],
-        "an ancient Mediterranean war galley seen in full profile: a single "
-        "low bank of long parallel wooden oars sweeping out and down to the "
-        "water, one tall mast carrying a large diagonal lateen sail furled "
-        "along its long yardarm, and a heavy steering oar slanting over the "
-        "stern",
-        "a rectangular banner flying from the masthead, a painted eye on the "
-        "bow, low railings and oar ports along the hull, coiled rope at the "
-        "stern",
-        "tarred warm oak with cream sailcloth, red and ochre paintwork",
-        identity="the Trireme game unit: an ancient Mediterranean war galley "
-                 "with one bank of oars and a furled lateen sail",
-        fixed=("The galley has ONE single low bank of long parallel wooden "
-               "oars sweeping out along the hull and down to the water. The "
-               "single mast carries one large lateen sail furled along its "
-               "long diagonal yardarm - a triangular lateen rig. A rectangular "
-               "flag flies from the masthead, and a long steering oar slants "
-               "over the stern."),
-        kind_help=("the complete ship: hull, its single bank of long oars, the "
-                   "furled diagonal lateen sail and the stern steering oar - "
-                   "all of them belong to the noun, nothing may be dropped"),
-        forbidden=["steam", "motor", "engine", "square sail", "square rig",
-                   "multiple banks", "three rows of oars", "container ship"],
-    ),
-    "unit_caravel": _unit_spec(
-        "caravel", ["caravel", "sailing ship", "exploring vessel"],
-        "a late-medieval caravel with two lateen masts and a high stern "
-        "castle gliding on calm sea",
-        "billowing canvas, rigging lines and a long banner at the masthead",
-        "weathered oak and sun-bleached canvas",
-        identity="the Caravel game unit: a late-medieval exploring caravel",
-    ),
-    "unit_frigate": _unit_spec(
-        "sailing frigate", ["frigate", "sailing warship"],
-        "an Age-of-Sail frigate under full sail, two rows of gun ports along "
-        "the hull and a streamer flying",
-        "a bow figurehead, striped gun ports and a ship's gig hanging at "
-        "the stern davits",
-        "navy black hull with sun-yellow bands",
-        identity="the Frigate game unit: an Age-of-Sail frigate",
-    ),
-    "unit_ironclad": _unit_spec(
-        "steam ironclad", ["ironclad", "steam warship", "armoured ship"],
-        "a low armoured steam ironclad with a casemate battery, twin "
-        "smokestacks and a ram bow",
-        "riveted armour plates, a paddle housing and gun barrels at "
-        "portholes",
-        "gunmetal grey with pitch-black smoke",
-        identity="the Ironclad game unit: a steam-powered armoured ironclad",
-    ),
-    "unit_destroyer": _unit_spec(
-        "destroyer warship", ["destroyer"],
-        "a long lean grey destroyer with a raked clipper bow, twin funnels "
-        "with smoke and deck guns fore and aft",
-        "torpedo launchers, depth-charge racks and a painted pennant number",
-        "haze grey with slate shadows",
-        identity="the Destroyer game unit: a fast grey destroyer warship",
-    ),
-    "unit_cruiser": _unit_spec(
-        "armoured cruiser", ["cruiser"],
-        "a grey armoured cruiser with triple gun turrets fore and aft and a "
-        "stepped pagoda bridge",
-        "twin funnels with smoke, secondary turrets and a boat crane "
-        "amidships",
-        "battleship grey with a navy blue waterline",
-        identity="the Cruiser game unit: a heavy armoured cruiser",
-    ),
-    "unit_battleship": _unit_spec(
-        "battleship", ["battleship"],
-        "a mighty grey battleship with towering turret guns fore and aft, a "
-        "tall bridge tower and a flared hull",
-        "heavy calibre barrels, a range-finder on top and rows of rivets",
-        "steel grey with a deep blue sea shadow",
-        identity="the Battleship game unit: a mighty battleship of the line",
-    ),
-    "unit_submarine": _unit_spec(
-        "attack submarine", ["submarine"],
-        "a dark grey attack submarine seen from a low three-quarter view, "
-        "with a conning tower, diving planes and bow torpedo tubes",
-        "a raised periscope, hull plate seams and trailing wake foam",
-        "deep sea grey and black rubber",
-        identity="the Submarine game unit: a military attack submarine",
-    ),
-    "unit_carrier": _unit_spec(
-        "aircraft carrier", ["aircraft carrier", "carrier"],
-        "a huge flat-topped aircraft carrier with a wide flight deck lined "
-        "with parked planes and a starboard island tower",
-        "arresting cables across the deck, jaunty deck markings and a radar "
-        "mast",
-        "flight-deck blue-grey and bleached deck boards",
-        identity="the Carrier game unit: an aircraft carrier",
-    ),
-    "unit_transport": _unit_spec(
-        "troop transport", ["transport ship", "troop ship", "freighter"],
-        "a bulky grey troop transport ship with davit-mounted landing boats "
-        "along the hull",
-        "a grid of portholes, cargo cranes and a striped dummy funnel",
-        "dust grey and weathered steel",
-        identity="the Transport game unit: a troop transport ship",
-    ),
-    "unit_trade_ship": _unit_spec(
-        "wooden sailing merchantman", ["merchant ship", "trade ship", "cargo ship"],
-        "a sturdy 17th-century Dutch-style merchant sailing ship with three "
-        "masts, square cream sails, a deep rounded wooden hull and a high "
-        "ornate stern, shown in a clear three-quarter view",
-        "visible rigging, a few neatly lashed cargo crates on deck and a small "
-        "company pennant without readable lettering",
-        "weathered oak brown, sailcloth cream, muted navy and restrained ochre accents",
-        identity="the Trade Ship game unit: a large age-of-sail merchantman "
-                 "carrying overseas cargo",
-        forbidden=["container ship", "modern freighter", "steam funnel", "photograph"],
-    ),
-    "unit_fisher_boat": _unit_spec(
-        "traditional wooden fishing botter", ["fishing boat", "fishing vessel", "botter"],
-        "a compact, stout wooden North Sea fishing boat with a rounded hull, "
-        "one mast and a simple gaff sail, shown in three-quarter view",
-        "a low open cockpit, raised wooden leeboard, bundled fishing nets, "
-        "coiled rope and a small basket of fish",
-        "tarred dark oak, weathered warm canvas, muted sea green and silver accents",
-        identity="the Fisher Boat game unit: a small traditional inshore "
-                 "wooden fishing vessel",
-        forbidden=["large merchant ship", "cargo crane", "container ship"],
-    ),
-    "unit_ferry": _unit_spec(
-        "military landing craft ferry", ["ferry", "landing craft", "vehicle ferry"],
-        "a low, broad steel military ferry with a blunt squared bow and a "
-        "large hinged bow ramp lowered, a compact pilothouse at the stern, "
-        "seen in three-quarter view",
-        "one small armored vehicle secured on the open vehicle deck, visible "
-        "ramp chains, simple railings and a short antenna mast",
-        "muted naval grey, dark steel edges and restrained olive-drab cargo accents",
-        identity="the Ferry game unit: a practical vehicle-carrying landing craft",
-        forbidden=["cruise ship", "passenger liner", "sailing ship", "container ship"],
-    ),
-    "unit_settler": _unit_spec(
-        "covered settler wagon", ["covered wagon", "settler wagon", "Conestoga wagon", "pioneer"],
-        "a sturdy wooden pioneer wagon with a high arched canvas canopy on "
-        "curved ribs, tall plank sides, large iron-rimmed spoked wheels and "
-        "a long front drawbar, pulled by a pair of oxen",
-        "muted canvas curtains rolled open, a few travel bundles secured on "
-        "the wagon and one plainly human pioneer walking beside the team",
-        "warm oak, canvas beige, iron grey and subdued homespun earth tones",
-        identity="the Settler game unit: a covered pioneer wagon carrying a "
-                 "small founding party",
-        fixed=("The covered wagon is the unmistakable central silhouette: a "
-               "barrel-arched canvas roof on visible ribs over a wooden box "
-               "body, with large spoked wheels and a long drawbar. Keep the "
-               "ox team and walking pioneer secondary and clearly attached "
-               "to the wagon journey."),
-        forbidden=["modern car", "tractor", "motor vehicle", "tourist wagon", "chuckwagon kitchen"],
-    ),
-    "unit_diplomat": _unit_spec(
-        "court diplomat", ["diplomat", "envoy", "courtier"],
-        "a dignified diplomat in a long morning coat with a silk top hat, a "
-        "leather satchel under one arm and a rolled treaty in a gloved hand",
-        "silver-buckled shoes, a pocket watch chain and quill-and-ink "
-        "accents",
-        "black coat, pearl grey waistcoat and polished boots",
-        identity="the Diplomat game unit: a dignified courtly diplomat",
-    ),
-    "unit_caravan": _unit_spec(
-        "trade caravan", ["caravan", "camel caravan", "pack train"],
-        "a loaded trade caravan of two camels with woven saddlebags, led "
-        "forward by a turbaned trader",
-        "rolled rugs, brass jugs and trade beads hanging off the packs",
-        "desert sand tan with indigo saddle cloth",
-        identity="the Caravan game unit: a loaded trade caravan led by camels",
-        fixed=_UNIT_CAMEL_LEGS_CLAUSE,
-    ),
-    "unit_fighter": _unit_spec(
-        "fighter jet", ["fighter jet", "fighter aircraft"],
-        "a sleek fighter jet banking in flight, afterburner glow trailing, "
-        "seen from a low three-quarter view",
-        "air-to-air missiles under the wings, roundel markings and a bubble "
-        "canopy",
-        "iron-radar grey with a sky-blue afterburner",
-        identity="the Fighter game unit: a fast fighter jet",
-    ),
-    "unit_bomber": _unit_spec(
-        "strategic bomber", ["bomber", "strategic bomber", "bomber aircraft"],
-        "a heavy four-engined bomber aircraft with broad wings in level "
-        "flight, seen from a low three-quarter view",
-        "twin tail fins, gun turrets and a closed bomb-bay outline",
-        "night black-green with sky reflection",
-        identity="the Bomber game unit: a heavy strategic bomber plane",
-    ),
-    "unit_nuclear": _unit_spec(
-        "thermonuclear missile", ["nuclear missile", "thermonuclear missile",
-                                  "missile"],
-        "a white strategic missile with fins and a red nose cone standing "
-        "upright on a launch cradle",
-        "warning chevrons, access panels and a chain rig at the cradle base",
-        "pale launcher white with hazard orange stripes",
-        identity="the Nuclear game unit: a strategic thermonuclear missile",
-        forbidden=["explosion", "mushroom cloud", "city"],
-    ),
-}
 
-# keep the table in the canonical order of UNIT_STEM_ORDER (the render
-# order), so the manifest lists units in a stable sequence
-UNIT_SPECS = {f"unit_{key}": UNIT_SPECS[f"unit_{key}"]
-              for key in UNIT_KEY_ORDER}
 
 
 def read_game_unit_keys() -> list[str]:
@@ -1569,46 +515,9 @@ def sync_game_units() -> list[str]:
         print(f"[*] unit sync: {len(UNIT_KEY_ORDER)} game units, all covered")
     return added
 
-# Every unit that shows a person or an animal additionally carries the
-# limb-completeness clause; pure machines (tank, cannon, ships, ...) do not
-# have arms or legs, so the clause would only confuse the prompt there.
-_UNIT_PERSON_STEMS = {
-    "unit_warrior", "unit_scout", "unit_archer",
-    "unit_knights", "unit_legion", "unit_musketeer",
-    "unit_riflemen", "unit_cavalry",
-    "unit_diplomat",
-}
-for _stem in _UNIT_PERSON_STEMS:
-    _spec = UNIT_SPECS[_stem]
-    _base = _spec.get("fixed")
-    _spec["fixed"] = (f"{_base} {_UNIT_LIMB_CLAUSE}" if _base
-                      else _UNIT_LIMB_CLAUSE)
-del _stem, _spec, _base
 
-# Every game unit is intentionally rendered as THREE sprite variants per
-# iteration (unit_<key>.png, unit_<key>_2.png, unit_<key>_3.png) so the
-# game can pick a favourite or cycle them.  Feature resources stay one
-# sprite per stem.
-UNIT_VARIANTS = 3
 
-# naval and air units read better on a landscape canvas
-UNIT_WIDE_STEMS = {
-    "unit_sail", "unit_trireme", "unit_caravel", "unit_frigate",
-    "unit_ironclad", "unit_destroyer", "unit_cruiser", "unit_battleship",
-    "unit_submarine", "unit_carrier", "unit_transport", "unit_trade_ship",
-    "unit_fisher_boat", "unit_ferry", "unit_fighter", "unit_bomber",
-}
 
-UNIT_NEGATIVE_EXTRA = {
-    "unit_mech_inf": (
-        "humanoid robot, android, robot soldier, powered armor, exoskeleton, "
-        "futuristic sci-fi machine"
-    ),
-    "unit_trade_ship": "modern container ship, diesel freighter, cruise liner",
-    "unit_fisher_boat": "large merchantman, cargo crane, container ship",
-    "unit_ferry": "cruise ship, passenger liner, sailing ship, container ship",
-    "unit_settler": "tractor, modern car, motor vehicle, tourist wagon",
-}
 
 def load_unit_game_icons() -> tuple[dict[str, str], dict[str, str]]:
     """Parse the emoji icon and display name of every game unit.
@@ -1656,1260 +565,91 @@ def rasterise_unit_svg(unit_key: str, dst: Path, width: int = 320) -> bool:
         return False
     return True
 
-# One spec per feature *kind*; several inputs may share a kind (fish1..fish5).
-FEATURE_SPECS = {
-    "fish": {
-        "identity": "a single fish",
-        "anchors": ["fish", "carp", "trout", "salmon", "perch", "pike", "eel",
-                    "koi"],
-        "fallbacks": {
-            "FEATURE_KIND": "fish",
-            "FEATURE_FORM": "a streamlined body with a forked tail and clearly separated fins",
-            "FEATURE_DETAIL": "clean outlined scales and a crisp fin silhouette",
-            "FEATURE_PALETTE": "grounded silver-blue and teal tones",
-            "FEATURE_LIGHTING": "soft top light with a bright rim along the back",
-            "FEATURE_RENDERING": "clean dark outlines with smooth cell shading",
-        },
-    },
-    "horse": {
-        "identity": "one or more proud, strong wild horses",
-        "kind_help": ("a plain animal noun such as 'stallion', 'mare' or "
-                      "'wild horse' - anatomy belongs to FEATURE_FORM, "
-                      "never here"),
-        "fixed": ("Every horse is drawn complete and anatomically correct, "
-                  "with all four legs clearly visible - standing, rearing "
-                  "or galloping are all fine. The frame may hold a single "
-                  "proud stallion or a small group of two or three horses, "
-                  "and every horse included is fully visible. Alert eyes, "
-                  "arched neck with the head held high, powerful defined "
-                  "musculature, long flowing mane and raised tail, full of "
-                  "untamed wild energy."),
-        "anchors": ["horse", "stallion", "mare", "wild horse", "mustang",
-                    "charger", "warhorse", "nightmare"],
-        "fallbacks": {
-            "FEATURE_KIND": "wild horse",
-            "FEATURE_FORM": "a proud horse standing on all four legs with the neck arched and the head high",
-            "FEATURE_DETAIL": "defined musculature, a long flowing mane, a raised tail and four strong legs",
-            "FEATURE_PALETTE": "rich bay brown and warm tan tones",
-            "FEATURE_LIGHTING": "warm key light from the upper left with a bright rim along the back",
-            "FEATURE_RENDERING": "clean dark outlines with smooth cell shading",
-        },
-    },
-    "forest_mixed": {
-        "identity": "a mixed forest group of trees",
-        "subject_template": "a group of #FEATURE_KIND#",
-        "kind_help": ("the tree kinds standing in the group, as plural noun "
-                      "phrases such as 'deciduous trees' or 'conifers' - "
-                      "never singular"),
-        "fixed": ("The trees stand as clearly separated individuals with their "
-                  "own full trunks and crowns, and every tree is complete and "
-                  "fully visible inside the frame, with clear black margin "
-                  "around the whole group. The mixture includes both rounded "
-                  "broadleaf crowns and a few conical needle crowns. The "
-                  "trunks and greenery end freely in mid-air, so the entire "
-                  "frame beneath the group stays empty solid black."),
-        "anchors": ["mixed forest", "trees", "broadleaf", "conifers", "forest group"],
-        "fallbacks": {
-            "FEATURE_KIND": "mixed forest trees",
-            "FEATURE_FORM": "four to six individual trees, rounded broadleaf crowns beside conical needle crowns",
-            "FEATURE_DETAIL": "each tree with its own visible trunk, layered leaf clusters and low undergrowth",
-            "FEATURE_PALETTE": "layered greens with warm yellow-green highlights",
-            "FEATURE_LIGHTING": "warm daylight filtering through the crowns",
-            "FEATURE_RENDERING": "semi-realistic digital painting with clean dark outlines",
-        },
-    },
-    "forest_coniferous": {
-        "identity": "a coniferous forest group of trees",
-        "subject_template": "a group of #FEATURE_KIND#",
-        "kind_help": ("the tree kinds standing in the group, as plural noun "
-                      "phrases such as 'pines and spruces' - never singular"),
-        "fixed": ("The trees stand as clearly separated individuals with their "
-                  "own full trunks and crowns, and every tree is complete and "
-                  "fully visible inside the frame, with clear black margin "
-                  "around the whole group. Every tree is a conifer with dark "
-                  "needle foliage and a conical evergreen crown. The trunks "
-                  "end freely in mid-air, so the entire frame beneath the "
-                  "group stays empty solid black."),
-        "anchors": ["coniferous", "pine", "spruce", "fir", "evergreen", "needle"],
-        "fallbacks": {
-            "FEATURE_KIND": "coniferous trees",
-            "FEATURE_FORM": "five to seven individual conical trees standing together, needle foliage and slender trunks",
-            "FEATURE_DETAIL": "dense layered needle branch fans, small cones and dark trunks in view",
-            "FEATURE_PALETTE": "deep fir greens with cool blue-green shadow tones",
-            "FEATURE_LIGHTING": "cool clear highland light with deep green shadows",
-            "FEATURE_RENDERING": "semi-realistic digital painting with clean dark outlines",
-        },
-    },
-    "forest_deciduous": {
-        "identity": "a deciduous forest group of trees",
-        "subject_template": "a group of #FEATURE_KIND#",
-        "kind_help": ("the tree kinds standing in the group, as plural noun "
-                      "phrases such as 'oaks and beeches' - never singular"),
-        "fixed": ("The trees stand as clearly separated individuals with their "
-                  "own full trunks and crowns, and every tree is complete and "
-                  "fully visible inside the frame, with clear black margin "
-                  "around the whole group. Every tree is a broadleaf deciduous "
-                  "tree with a full rounded crown. The trunks end freely in "
-                  "mid-air, so the entire frame beneath the group stays empty "
-                  "solid black."),
-        "anchors": ["deciduous", "broadleaf", "oak", "beech", "maple", "birch"],
-        "fallbacks": {
-            "FEATURE_KIND": "deciduous trees",
-            "FEATURE_FORM": "five to seven individual broadleaf trees with full rounded crowns on visible trunks",
-            "FEATURE_DETAIL": "layered leaf clusters, soft dappled grass between the trunks and light foliage gaps",
-            "FEATURE_PALETTE": "fresh greens with warm yellow-green highlights",
-            "FEATURE_LIGHTING": "warm daylight filtering through the crowns",
-            "FEATURE_RENDERING": "semi-realistic digital painting with clean dark outlines",
-        },
-    },
-    "hills_feature": {
-        "identity": "a grassy hill mound",
-        "anchors": ["hill", "mound", "knoll", "slope", "rise", "ridge"],
-        "fallbacks": {
-            "FEATURE_KIND": "grassy hill mound",
-            "FEATURE_FORM": "a single rounded mound with a smooth continuous crest",
-            "FEATURE_DETAIL": "short grass tufts and a few mossy patches on the flanks",
-            "FEATURE_PALETTE": "muted earthy olive-green with lighter yellow-green crests",
-            "FEATURE_LIGHTING": "soft directional light modelling the curved surface",
-            "FEATURE_RENDERING": "semi-realistic digital painting with clean dark outlines",
-        },
-    },
-    "jungle_feature": {
-        "identity": "a jungle group of trees with lianas",
-        "subject_template": "a group of #FEATURE_KIND#",
-        "kind_help": ("the tree kinds standing in the group, as plural noun "
-                      "phrases such as 'tropical jungle trees' - never singular"),
-        "fixed": ("Several tall tropical trees stand as a group, each tree "
-                  "complete and fully visible inside the frame with its own "
-                  "trunk and crown, and thick winding lianas with hanging "
-                  "vines loop between the trunks and drape from the crowns, "
-                  "with clear black margin around the whole group. The trunks "
-                  "and root tangle end freely in mid-air, so the entire frame "
-                  "beneath the group stays empty solid black."),
-        "anchors": ["jungle", "tropical trees", "lianas", "vines", "palm", "rainforest"],
-        "fallbacks": {
-            "FEATURE_KIND": "tropical jungle trees",
-            "FEATURE_FORM": "five tall tropical trees in a loose group with looping lianas",
-            "FEATURE_DETAIL": "broad glossy leaves, twisting vines, ferns and small bright flowers",
-            "FEATURE_PALETTE": "deep emerald and olive greens with vine highlights",
-            "FEATURE_LIGHTING": "humid filtered light with deep green shadows",
-            "FEATURE_RENDERING": "semi-realistic digital painting with clean dark outlines",
-        },
-    },
-    "mountains_feature": {
-        "identity": "a mountain range of several peaks",
-        "subject_template": "a range of #FEATURE_KIND#",
-        "kind_help": ("the peaks of the range, as a plural noun phrase such as "
-                      "'mountain peaks' - never singular"),
-        "fixed": ("Several distinct rocky peaks rise side by side as one range, "
-                  "and every peak is whole and fully visible inside the frame "
-                  "with clear black margin around the entire range - each "
-                  "summit tip, each shoulder and each lower slope complete."),
-        "anchors": ["mountain", "peak", "summit", "ridge", "crag", "alp"],
-        "fallbacks": {
-            "FEATURE_KIND": "mountain peaks",
-            "FEATURE_FORM": "four to six sharp peaks rising side by side with steep flanks",
-            "FEATURE_DETAIL": "layered rock faces with clear ledges and visible summit tips",
-            "FEATURE_PALETTE": "cool granite grey with pale blue tones",
-            "FEATURE_LIGHTING": "crisp cold light with hard small shadows",
-            "FEATURE_RENDERING": "semi-realistic digital painting with clean dark outlines",
-        },
-    },
-    "seal": {
-        "identity": "a single seal",
-        "kind_help": ("a plain seal noun such as 'harbour seal', 'sea lion' "
-                      "or 'fur seal' - one animal"),
-        "anchors": ["seal", "sea lion", "harbour seal", "ringed seal", "fur seal"],
-        "fallbacks": {
-            "FEATURE_KIND": "seal",
-            "FEATURE_FORM": "a plump seal resting upright on its rear flippers with both flippers visible",
-            "FEATURE_DETAIL": "short wet fur, dark back and pale belly, long whiskers",
-            "FEATURE_PALETTE": "cool silver-grey tones with a pale cream belly",
-            "FEATURE_LIGHTING": "cold crisp polar light with a bright sheen along the wet back",
-            "FEATURE_RENDERING": "clean dark outlines with smooth cell shading",
-        },
-    },
-    "gems": {
-        "identity": "a small cluster of precious gemstones",
-        "anchors": ["gems", "gemstones", "crystals", "jewels", "precious stones"],
-        "fallbacks": {
-            "FEATURE_KIND": "gemstone cluster",
-            "FEATURE_FORM": "several cut gemstones of different sizes resting together on a small rocky base",
-            "FEATURE_DETAIL": "brilliant faceted cuts catching the light with sharp highlights and inner fire",
-            "FEATURE_PALETTE": "rich jewel colours of ruby red, emerald green and sapphire blue",
-            "FEATURE_LIGHTING": "sparkling point light with tiny star glints on each facet",
-            "FEATURE_RENDERING": "clean dark outlines with glassy translucent shading",
-        },
-    },
-    "gold": {
-        "identity": "a small pile of gold",
-        "kind_help": "a plain noun phrase such as 'gold nugget pile' or 'gold seam' - singular",
-        "anchors": ["gold", "gold nuggets", "gold ore", "gold vein", "bullion"],
-        "fallbacks": {
-            "FEATURE_KIND": "gold nugget pile",
-            "FEATURE_FORM": "a small mound of irregular gold nuggets and a few coins",
-            "FEATURE_DETAIL": "rough hammered surfaces with bright glints and small embedded quartz specks",
-            "FEATURE_PALETTE": "warm gold and amber highlights over deeper bronze shadows",
-            "FEATURE_LIGHTING": "warm glinting light with sharp specular sparkles",
-            "FEATURE_RENDERING": "clean dark outlines with polished metal shading",
-        },
-    },
-    "coal": {
-        "identity": "a small coal outcrop",
-        "anchors": ["coal", "anthracite", "carbon"],
-        "fallbacks": {
-            "FEATURE_KIND": "coal outcrop",
-            "FEATURE_FORM": "a small mound of chunky coal lumps over a grey rocky base",
-            "FEATURE_DETAIL": "angular split faces with a slick glossy sheen and fine dust in the cracks",
-            "FEATURE_PALETTE": "deep charcoal black over cool slate grey rock",
-            "FEATURE_LIGHTING": "hard cool light with a wet-looking shine on the split faces",
-            "FEATURE_RENDERING": "clean dark outlines with matte stony shading",
-        },
-    },
-    "oil": {
-        "identity": "a natural oil seep",
-        "anchors": ["oil", "crude oil", "tar", "bitumen", "petroleum"],
-        "fallbacks": {
-            "FEATURE_KIND": "oil seep",
-            "FEATURE_FORM": "a dark bubbling oil pool welling up out of cracked muddy ground",
-            "FEATURE_DETAIL": "thick glossy black liquid with slow bubbles and oily rainbow films at the rim",
-            "FEATURE_PALETTE": "ink black with petrol purple sheens over muddy brown earth",
-            "FEATURE_LIGHTING": "dim slick light with one bright skim of reflection",
-            "FEATURE_RENDERING": "clean dark outlines with glossy liquid shading",
-        },
-    },
-    "game": {
-        "identity": "a single wild game animal",
-        "kind_help": "a plain animal noun such as 'stag', 'elk' or 'roe deer' - one animal",
-        "anchors": ["deer", "stag", "elk", "roe deer", "buck", "doe"],
-        "fallbacks": {
-            "FEATURE_KIND": "stag",
-            "FEATURE_FORM": "an alert stag standing with the head raised and a fine branching antler crown",
-            "FEATURE_DETAIL": "smooth short summer coat with a pale chest patch and a soft dark nose",
-            "FEATURE_PALETTE": "warm russet brown and tan tones with a cream belly",
-            "FEATURE_LIGHTING": "soft forest light with a warm rim along the back",
-            "FEATURE_RENDERING": "clean dark outlines with smooth cell shading",
-        },
-    },
-    "oasis": {
-        "identity": "a small desert oasis",
-        "subject_template": "a small tropical #FEATURE_KIND#",
-        "kind_help": ("a plain noun phrase such as 'oasis' or 'water pool' "
-                      "- singular, no cluster"),
-        "anchors": ["oasis", "watering hole", "spring", "water pool"],
-        "fallbacks": {
-            "FEATURE_KIND": "oasis",
-            "FEATURE_FORM": "a small clear blue water pool ringed by fresh green palms and tufted grasses",
-            "FEATURE_DETAIL": "shining water with a soft ripple, curved palm trunks and tall green fronds",
-            "FEATURE_PALETTE": "vivid turquoise water with fresh greens over sandy gold",
-            "FEATURE_LIGHTING": "bright desert sunlight with cool shade under the palms",
-            "FEATURE_RENDERING": "semi-realistic digital painting with clean dark outlines",
-        },
-    },
-    "swamp_feature": {
-        "identity": "a swamp tree stump cluster",
-        "anchors": ["stump", "swamp", "marsh", "bog", "moss", "reed", "lily"],
-        "fallbacks": {
-            "FEATURE_KIND": "swamp tree stump cluster",
-            "FEATURE_FORM": "gnarled stumps with tangled roots rising from shallow water",
-            "FEATURE_DETAIL": "hanging moss, lily pads and marsh grass tufts",
-            "FEATURE_PALETTE": "dark olive and brown tones with murky green water",
-            "FEATURE_LIGHTING": "dim overcast light with soft murky shadows",
-            "FEATURE_RENDERING": "semi-realistic digital painting with clean dark outlines",
-        },
-    },
-}
-
-# Which spec every stem uses, plus the little per-stem twist (a different
-# pose / arrangement) that keeps the variants apart.
-FEATURE_STEM_SPECS = {
-    "fish1": {"spec": "fish", "twist": "swimming to the left, seen from a three-quarter top-down view"},
-    "fish2": {"spec": "fish", "twist": "swimming to the right, seen from a three-quarter top-down view"},
-    "fish3": {"spec": "fish", "twist": "curving in an S-shape, seen from a three-quarter top-down view"},
-    "fish4": {"spec": "fish", "twist": "diving downwards with the tail raised, seen from above"},
-    "fish5": {"spec": "fish", "twist": "resting horizontally, seen from directly above"},
-    "horses": {"spec": "horse",
-               "twist": "standing tall in profile with the neck arched and the head high"},
-    "horses_2": {"spec": "horse",
-                 "twist": ("galloping at full stride with the mane and tail "
-                           "flying")},
-    "forest_feature_1": {"spec": "forest_mixed", "twist": "a loose group of individual trees"},
-    "forest_feature_2": {"spec": "forest_coniferous", "twist": "a stand of individual conical trees"},
-    "forest_feature_3": {"spec": "forest_deciduous", "twist": "a stand of individual broadleaf trees"},
-    "jungle_feature": {"spec": "jungle_feature", "twist": "a loose group of tall jungle trees"},
-    "hills_feature": {"spec": "hills_feature", "twist": "a single rounded rise"},
-    "swamp_feature": {"spec": "swamp_feature", "twist": "a gnarled stump in shallow water"},
-    "mountains_feature_1": {"spec": "mountains_feature", "twist": "several peaks side by side"},
-    "mountains_feature_2": {"spec": "mountains_feature", "twist": "the most dramatic variant of the range"},
-    "mountains_feature_3": {"spec": "mountains_feature",
-                            "twist": ("two massive twin peaks rising "
-                                      "shoulder to shoulder with one "
-                                      "high saddle between them")},
-    "mountains_feature_4": {"spec": "mountains_feature",
-                            "twist": ("a long slope-shouldered ridge line "
-                                      "with small rounded foothills "
-                                      "climbing in front of it")},
-    "seal": {"spec": "seal", "twist": "resting upright on its rear flippers"},
-    "gems": {"spec": "gems", "twist": "a small sparkling cluster"},
-    "gold": {"spec": "gold", "twist": "a glittering little mound"},
-    "coal": {"spec": "coal", "twist": "a dark chunky outcrop"},
-    "oil": {"spec": "oil", "twist": "a small bubbling pool"},
-    "game": {"spec": "game", "twist": "standing alert in profile"},
-    "oasis": {"spec": "oasis", "twist": "a small ring of palms around clear water"},
-}
-
-# Which subject components are kept when the input picture is prepared:
-#   "single"  -> only the biggest connected blob (one horse, one fish)
-#   "cluster" -> every blob above 15 % of the biggest one (tree clusters)
-# Only relevant for stems that have an input picture to prepare.
-FEATURE_SUBJECT_MODE = {
-    "fish1": "single", "fish2": "single", "fish3": "single",
-    "fish4": "single", "fish5": "single",
-}
-
-# Words that must not show up in a resolved feature slot - "a single fish"
-# must never become a school of fish.
-FEATURE_FORBIDDEN = {
-    "fish": ["school", "pod", "herd", "group", "multiple", "pair", "bowl",
-             "fishing", "hook", "rod"],
-    # more than one horse is explicitly allowed now - only domesticating and
-    # toy-like dressing stays forbidden
-    "horse": ["stable", "rider", "saddle", "carriage", "grazing", "plush",
-              "toy", "cute", "cartoon"],
-    "forest_mixed": ["single tree", "lone tree", "stump", "logs", "clear-cut"],
-    "forest_coniferous": ["single tree", "lone tree", "broadleaf", "stump",
-                          "logs", "clear-cut"],
-    "forest_deciduous": ["single tree", "lone tree", "pine", "spruce", "fir",
-                         "stump", "logs", "clear-cut"],
-    "hills_feature": [],
-    "jungle_feature": ["single tree", "lone tree", "foliage wall", "clear-cut"],
-    "mountains_feature": ["single peak", "lone peak", "plateau", "mesa"],
-    "swamp_feature": [],
-    "seal": ["fish", "shark", "whale", "dolphin", "human"],
-    "gems": ["ring", "necklace", "crown", "chest", "treasure"],
-    "gold": ["ring", "necklace", "crown", "chest", "treasure", "bar"],
-    "coal": ["diamond", "crystal", "emerald"],
-    "oil": ["pump", "derrick", "rig", "barrel", "pipe"],
-    "game": ["hunt", "rifle", "arrow", "herd", "group", "multiple"],
-    "oasis": ["camel", "caravan", "tent", "building", "city"],
-}
-
-# words that leak the run's story into a unit slot or drift the machine
-# shape - banned for every unit slot, merged with each unit's own forbidden
-# list (see UNIT_SPECS) so resolve_slot_bundle repeats them in its
-# instruction to the local model
-_UNIT_ALL_SLOT_BANS = ["storm", "stormy", "tattered", "drenched",
-                       "embattled", "damaged", "ruined", "broken",
-                       "weathered", "battle-worn"]
-FEATURE_FORBIDDEN.update({
-    f"unit_{key}": list(UNIT_SPECS[f"unit_{key}"].get("forbidden") or [])
-                   + _UNIT_ALL_SLOT_BANS
-    for key in UNIT_KEY_ORDER
-})
-del _UNIT_ALL_SLOT_BANS
-
-# Per-slot bans for FEATURE_KIND only: words that describe a pose or a detail
-# belong to FEATURE_FORM, and a group subject needs a plural noun phrase.
-FEATURE_KIND_FORBIDDEN = {
-    "horse": ["charge", "rearing", "standing", "silhouette", "pose",
-              "gesture", "figure", "statue", "stern"],
-    "game": ["antler", "horn", "carcass", "cluster", "group"],
-    "seal": ["storm", "lightning", "myth"],
-}
-
-# FEATURE_KIND bans for group subjects: a singular head noun ('coniferous
-# tree cluster') or a wrapper word ('mix of tall trees') reads broken inside
-# 'a group of #FEATURE_KIND#' / 'a range of #FEATURE_KIND#'.
-_GROUP_KIND_BANS = ["cluster", "clump", "group", "wall", "bunch", "mix",
-                    "mixture", "blend", "assortment", "range", "band", "row",
-                    "line", "hedge"]
 
 
-def select_feature_stems(wanted: set[str] | None) -> list[str]:
-    """Resolve ``--features`` to feature-only stems (never game units).
-
-    A filter entry matches a stem exactly or by variant base. The historic
-    ``--features units`` spelling remains accepted as a compatibility alias,
-    but new callers should use the dedicated ``--units`` option.
-    """
-    feature_stems = list(FEATURE_STEM_ORDER)
-    if not wanted:
-        return feature_stems
-    if "all" in wanted:
-        return feature_stems
-    return [stem for stem in feature_stems
-            if stem in wanted or re.sub(r"_\d+$", "", stem) in wanted]
 
 
-def select_unit_stems(wanted: set[str] | None) -> list[str]:
-    """Resolve ``--units`` values to canonical ``unit_<key>`` stems.
-
-    Accept either the canonical stem (``unit_phalanx``) or its game key
-    (``phalanx``). An empty filter means all units when the unit category is
-    selected explicitly.
-    """
-    unit_stems = list(UNIT_STEM_ORDER)
-    if not wanted or "all" in wanted:
-        return unit_stems
-    normalized = {value.removeprefix("unit_") for value in wanted}
-    return [stem for stem in unit_stems if stem in wanted or stem[5:] in normalized]
 
 
-def roll_weighted(entries: list[tuple[str, float]]) -> str | None:
-    """Return one entry of a [(text, weight), ...] list, or None to skip.
-
-    Weights need not sum to 1 - whatever is left rolls empty ("nothing this
-    time").  Used for the per-iteration mountain atmosphere.
-    """
-    roll = random.random()
-    acc = 0.0
-    for text, weight in entries:
-        acc += weight
-        if roll < acc:
-            return text
-    return None
 
 
-_MASS_NOUNS = {"deer", "water", "oil", "coal", "gold", "snow", "ice", "fish",
-               "horse", "seal", "year"}
-
-# irregular plurals for group subjects ('a tight rank of spearman' would
-# naively pluralise to 'spearmans' - the real formation word is 'spearmen')
-_IRREGULAR_PLURALS = {
-    "man": "men", "woman": "women", "person": "people", "child": "children",
-    "spearman": "spearmen", "horseman": "horsemen", "footman": "footmen",
-    "bowman": "bowmen", "clubman": "clubmen",
-    "foot": "feet", "goose": "geese", "leaf": "leaves", "loaf": "loaves",
-    "tooth": "teeth", "mouse": "mice", "ox": "oxen",
-}
 
 
-def _pluralize_last(phrase: str) -> str:
-    """Pluralise the last word of a noun phrase ('coniferous tree cluster'
-    -> 'coniferous tree clusters') - used for group subjects like
-    'a group of #FEATURE_KIND#', where a singular head noun reads broken."""
-    if not phrase:
-        return phrase
-    head, _, last = phrase.rpartition(" ")
-    low = last.lower()
-    if low in _MASS_NOUNS or low.endswith("s"):
-        return phrase
-    if low in _IRREGULAR_PLURALS:
-        last = _IRREGULAR_PLURALS[low]
-        return f"{head} {last}" if head else last
-    if low.endswith(("sh", "ch", "x", "s")):
-        last += "es"
-    elif low.endswith("y") and len(low) > 2 and low[-2] not in "aeiou":
-        last = last[:-1] + "ies"
-    else:
-        last += "s"
-    return f"{head} {last}" if head else last
+
+
+
+
+
+
+
 
 
 # ===========================================================================
 # small helpers
 # ===========================================================================
 
-def http_ok(url: str, timeout: float = 3) -> bool:
-    try:
-        with urllib.request.urlopen(url, timeout=timeout) as r:
-            return r.status == 200
-    except Exception:
-        return False
 
 
-def start_process(cmd: Iterable[str], log_path: str) -> tuple[subprocess.Popen, Any]:
-    log = open(log_path, "w")
-    proc = subprocess.Popen(list(cmd), stdout=log, stderr=subprocess.STDOUT)
-    return proc, log
 
 
-def stop_process(proc: subprocess.Popen | None) -> None:
-    if not proc:
-        return
-    try:
-        proc.terminate()
-        proc.wait(timeout=10)
-    except Exception:
-        try:
-            proc.kill()
-        except Exception:
-            pass
 
 
-def wait_for(url: str, timeout: float = 240) -> bool:
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if http_ok(url):
-            return True
-        time.sleep(2)
-    return False
 
 
-def human(seconds: float) -> str:
-    m, s = divmod(int(seconds), 60)
-    return f"{m:d}m{s:02d}s"
 
 
 # ===========================================================================
 # Qwen client
 # ===========================================================================
 
-LLAMA_SYSTEM = (
-    "You are the prompt writer for a fantasy strategy game asset generator. "
-    "You invent short, concrete, visual English phrases for image prompts. "
-    "Answer with the requested format only - no explanations, no notes, no "
-    "markdown fences, no apologies."
-)
 
 
-def run_llama_prompt(instruction: str, max_tokens: int = 400,
-                     temperature: float = 0.9, seed: int | None = None,
-                     retries: int = 3) -> str:
-    """Ask the local Qwen model for a completion (raw text)."""
-    payload: dict[str, Any] = {
-        "messages": [
-            {"role": "system", "content": LLAMA_SYSTEM},
-            {"role": "user", "content": f"/no_think {instruction}"},
-        ],
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-    }
-    if seed is not None:
-        payload["seed"] = seed
-    body = json.dumps(payload).encode()
-    last: Exception | None = None
-    for attempt in range(retries):
-        try:
-            req = urllib.request.Request(
-                f"http://127.0.0.1:{LLAMA_PORT}/v1/chat/completions",
-                data=body, headers={"Content-Type": "application/json"},
-            )
-            with urllib.request.urlopen(req, timeout=180) as r:
-                resp = json.loads(r.read())
-            msg = resp["choices"][0]["message"]
-            text = (msg.get("content") or msg.get("reasoning_content") or "").strip()
-            text = text.strip('"').strip("'").strip()
-            text = re.sub(r"\s+", " ", text)
-            if text:
-                return text
-            last = RuntimeError("empty completion")
-        except Exception as exc:  # pragma: no cover - network/local server
-            last = exc
-            if attempt > 0:
-                # the server stopped answering instead of failing the request -
-                # let the run restart it, a dead resolver would push every
-                # prompt into its fallback phrase
-                restart = LLAMA_RESTART_HOOK
-                if restart is not None:
-                    try:
-                        restart()
-                    except Exception as restart_exc:
-                        last = restart_exc
-                        print(f"    [!] llama-server restart failed: {restart_exc}")
-        time.sleep(1.5 * (attempt + 1))
-    raise RuntimeError(f"llama-server request failed: {last}")
 
 
-# main() wires this to ServerManager.restart_llama so a wedged Qwen server is
-# brought back automatically instead of degrading the run to fallback phrases
-LLAMA_RESTART_HOOK: Callable[[], object] | None = None
 
 
-def _repair_json(blob: str) -> str:
-    """Best-effort repair of slightly broken JSON from a small model."""
-    out = re.sub(r",\s*([}\]])", r"\1", blob)
-    out = re.sub(r"([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:", r'\1"\2":', out)
-    out = re.sub(r"(?<![\w\\])'([^'\n]*)'(?=\s*[:,])", r'"\1"', out)
-    out = out.replace("\n", " ")
-    return out
 
 
-def extract_json_object(text: str) -> dict[str, Any] | None:
-    """Pull a JSON object out of a model answer, however it is formatted."""
-    if not text:
-        return None
-    blob = text
-    fence = re.search(r"```(?:json)?\s*(.*?)```", blob, re.S)
-    if fence:
-        blob = fence.group(1)
-    start = blob.find("{")
-    if start < 0:
-        return None
-    depth = 0
-    in_str = False
-    esc = False
-    end = None
-    for i, ch in enumerate(blob[start:], start):
-        if in_str:
-            if esc:
-                esc = False
-            elif ch == "\\":
-                esc = True
-            elif ch == '"':
-                in_str = False
-            continue
-        if ch == '"':
-            in_str = True
-        elif ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                end = i + 1
-                break
-    if end is None:
-        return None
-    candidate = blob[start:end]
-    for attempt in (candidate, _repair_json(candidate)):
-        try:
-            data = json.loads(attempt)
-        except Exception:
-            continue
-        if isinstance(data, dict):
-            return data
-    return None
 
 
-def extract_key_values(text: str, keys: Iterable[str]) -> dict[str, str]:
-    """Fallback extractor: pull `"KEY": "value"` pairs out of broken text."""
-    found: dict[str, str] = {}
-    if not text:
-        return found
-    for key in keys:
-        m = re.search(
-            rf'"{re.escape(key)}"\s*:\s*"([^"]*)"', text, re.I
-        ) or re.search(
-            rf"'{re.escape(key)}'\s*:\s*'([^']*)'", text, re.I
-        ) or re.search(
-            rf'"{re.escape(key)}"\s*:\s*([^,}}\n]+)', text, re.I
-        )
-        if m:
-            found[key] = m.group(1).strip()
-    return found
 
 
-def normalise_phrase(value: Any) -> str:
-    """Turn a raw model answer into a clean single-line phrase."""
-    if value is None:
-        return ""
-    if isinstance(value, (list, tuple)):
-        value = ", ".join(str(v) for v in value)
-    if isinstance(value, dict):
-        value = ", ".join(f"{k} {v}" for k, v in value.items())
-    text = str(value)
-    text = text.replace("\n", " ").replace("\r", " ")
-    text = re.sub(r"\s+", " ", text).strip()
-    text = text.strip('"').strip("'").strip()
-    text = re.sub(r"^[-*•]\s*", "", text)
-    text = re.sub(r"\s*#+\s*", " ", text)
-    text = re.sub(r"[,;]\s*$", "", text).strip()
-    return text
 
 
-def looks_like_color_list(phrase: str) -> bool:
-    """True when a phrase is nothing but a list of colours."""
-    words = re.findall(r"[a-z]+", phrase.lower())
-    if len(words) < 2:
-        return False
-    colors = [w for w in words if w in COLOR_WORDS]
-    return len(colors) >= 2 and len(colors) >= len(words) * 0.6
 
 
-def phrase_is_usable(phrase: str, spec: dict[str, Any],
-                     anchors: list[str] | None = None,
-                     forbidden: list[str] | None = None) -> bool:
-    """A slot value is usable when it is a real, on-topic phrase."""
-    if not phrase or len(phrase) < 4:
-        return False
-    if len(phrase.split()) > int(spec.get("max_words", 16)) + 4:
-        return False
-    first = phrase.split()[0] if phrase.split() else ""
-    if "{" in phrase or "}" in phrase or first.endswith(":"):
-        return False
-    low = phrase.lower()
-    if anchors and not any(a in low for a in anchors):
-        return False
-    if forbidden and any(re.search(rf"\b{re.escape(f)}", low) for f in forbidden):
-        return False
-    if spec.get("not_color_list") and looks_like_color_list(phrase):
-        return False
-    return True
 
 
-class VariationRegistry:
-    """Remembers every phrase the local model produced in this run.
-
-    Used to force real variation: a phrase that was already used is re-rolled
-    instead of silently producing a duplicate tile.
-    """
-
-    def __init__(self) -> None:
-        self.phrases: set[str] = set()
-        self.prompts: set[str] = set()
-        self.themes: list[str] = []
-        self._phrase_words: list[set[str]] = []
-
-    @staticmethod
-    def _key(text: str) -> str:
-        return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
-
-    def is_new_phrase(self, text: str) -> bool:
-        return self._key(text) not in self.phrases
-
-    def is_similar_phrase(self, text: str, threshold: float = 0.6) -> bool:
-        """True when the phrase is (nearly) a copy of one that was used."""
-        words = set(self._key(text).split())
-        if not words:
-            return False
-        for other in self._phrase_words:
-            union = words | other
-            if not union:
-                continue
-            if len(words & other) / len(union) >= threshold:
-                return True
-        return False
-
-    def remember_phrase(self, text: str) -> None:
-        key = self._key(text)
-        if not key:
-            return
-        self.phrases.add(key)
-        self._phrase_words.append(set(key.split()))
-
-    def remember_theme(self, text: str) -> None:
-        if text:
-            self.themes.append(text)
-
-    def is_new_prompt(self, text: str) -> bool:
-        return self._key(text) not in self.prompts
-
-    def remember_prompt(self, text: str) -> None:
-        self.prompts.add(self._key(text))
 
 
 # ===========================================================================
 # slot resolution
 # ===========================================================================
 
-def _slot_lines(specs: list[dict[str, Any]],
-                help_overrides: dict[str, str] | None = None) -> str:
-    """Render the slot list for the model - with the theme rule spelled out."""
-    lines = []
-    for spec in specs:
-        hint = (help_overrides or {}).get(spec["name"]) or spec.get(
-            "help", "a short concrete visual phrase")
-        if spec.get("theme") is False and "ignore the theme" not in hint:
-            hint += (" - describe the physical subject only, never the time of "
-                     "day, the season, the weather or the mood")
-        lines.append(f'  "{spec["name"]}": {hint}')
-    return "\n".join(lines)
 
 
-def resolve_slot_bundle(
-    specs: list[dict[str, Any]],
-    fallbacks: dict[str, str],
-    registry: VariationRegistry,
-    *,
-    identity: str = "",
-    theme: str = "",
-    context: str = "",
-    anchors: dict[str, list[str]] | None = None,
-    forbidden: list[str] | dict[str, list[str]] | None = None,
-    help_overrides: dict[str, str] | None = None,
-    label: str = "",
-) -> dict[str, str]:
-    """Resolve every slot of one prompt with the local model.
-
-    One call for the whole bundle; slots that come back unusable are re-asked
-    one by one; whatever is still missing falls back to a default phrase.
-
-    ``anchors`` maps a slot name to the words that must appear in its value.
-    ``forbidden`` is either a list of words that must not appear in any value
-    or a mapping of slot name to its own word list.
-    """
-    values: dict[str, str] = {}
-    if not specs:
-        return values
-    anchors = anchors or {}
-
-    def slot_forbidden(name: str) -> list[str]:
-        if isinstance(forbidden, dict):
-            words = list(forbidden.get(name, []))
-        else:
-            words = list(forbidden or [])
-        for spec in specs:
-            if spec["name"] == name:
-                words += list(spec.get("forbidden", []))
-        return words
-
-    all_forbidden = sorted({
-        word
-        for name in (s["name"] for s in specs)
-        for word in slot_forbidden(name)
-    })
-
-    instruction = (
-        "Fill the abstract slots of an image-generation prompt for ONE "
-        "asset of a fantasy strategy game. "
-        + (f"The asset is {identity}. It MUST stay clearly recognisable as "
-           f"{identity}. " if identity else "")
-        + (f"The art-direction theme of the set is '{theme}'. " if theme else "")
-        + "Be creative but concrete and visual - every value must be a short "
-          "English phrase an image model can draw, never a sentence that "
-          "contains instructions. "
-        + (f"Extra guidance: {context}. " if context else "")
-        + (f"The result must not contain any of these words: "
-           f"{', '.join(all_forbidden)}. " if all_forbidden else "")
-        + "Return ONLY a JSON object mapping each key below to one short "
-          "English visual phrase (3-12 words, no quotes inside the value, no "
-          "labels, no explanation):\n"
-        + _slot_lines(specs, help_overrides)
-    )
-
-    raw = ""
-    try:
-        raw = run_llama_prompt(instruction, max_tokens=420)
-    except Exception as exc:
-        print(f"    [!] slot resolution for {label} failed: {exc}")
-
-    data = extract_json_object(raw) or {}
-    if not data:
-        data = extract_key_values(raw, [s["name"] for s in specs])
-
-    for spec in specs:
-        name = spec["name"]
-        value = ""
-        for key in (name, name.lower(), name.capitalize()):
-            if key in data:
-                value = normalise_phrase(data[key])
-                break
-        if not phrase_is_usable(value, spec, anchors.get(name),
-                                slot_forbidden(name)):
-            value = ""
-        values[name] = value
-
-    # --- re-ask unusable slots individually, with an explicit "different" nudge
-    for spec in specs:
-        name = spec["name"]
-        if values.get(name):
-            continue
-        value = _ask_single_slot(
-            spec, identity=identity, theme=theme, context=context,
-            anchors=anchors.get(name), forbidden=slot_forbidden(name),
-            registry=registry, label=label,
-        )
-        if value:
-            values[name] = value
-
-    # --- fall back to the default phrase for whatever is still missing
-    for spec in specs:
-        name = spec["name"]
-        if not values.get(name):
-            values[name] = fallbacks.get(name, "")
-            if values[name]:
-                print(f"    [~] {label}: slot #{name}# fell back to its default")
-
-    # --- force variation: a phrase that was already used is re-rolled once
-    for spec in specs:
-        name = spec["name"]
-        value = values.get(name, "")
-        if not value or registry.is_new_phrase(value):
-            continue
-        fresh = _ask_single_slot(
-            spec, identity=identity, theme=theme, context=context,
-            anchors=anchors.get(name), forbidden=slot_forbidden(name),
-            registry=registry, label=label, avoid=value,
-        )
-        if fresh:
-            values[name] = fresh
-
-    for name, value in values.items():
-        registry.remember_phrase(value)
-    return values
 
 
-def _ask_single_slot(spec: dict[str, Any], *, identity: str, theme: str,
-                     context: str, anchors: list[str] | None,
-                     forbidden: list[str] | None,
-                     registry: VariationRegistry, label: str,
-                     avoid: str = "") -> str:
-    """Ask the local model for a single slot value."""
-    name = spec["name"]
-    theme_part = ""
-    if theme:
-        if spec.get("theme") is False:
-            theme_part = "Ignore the theme, describe the physical subject only. "
-        else:
-            theme_part = f"Match the theme '{theme}'. "
-    ask = (
-        f"Give ONE short English visual phrase for the prompt slot "
-        f'"{name}" of a fantasy strategy game asset. '
-        + (f"The asset is {identity}; it MUST stay recognisable as "
-           f"{identity}. " if identity else "")
-        + theme_part
-        + f"The phrase describes: {spec['help']}. "
-        + (f"Extra guidance: {context}. " if context else "")
-        + (f"It must mention one of: {', '.join(anchors[:8])}. " if anchors else "")
-        + (f"It must not contain: {', '.join(forbidden)}. " if forbidden else "")
-        + (f"It must be different from '{avoid}'. " if avoid else "")
-        + f"Maximum {int(spec.get('max_words', 12))} words. "
-        + "Answer with the phrase only - no quotes, no label, no explanation."
-    )
-    for _ in range(2):
-        try:
-            answer = run_llama_prompt(ask, max_tokens=90, temperature=1.05)
-        except Exception as exc:
-            print(f"    [!] single-slot ask for {name} failed: {exc}")
-            return ""
-        answer = normalise_phrase(answer)
-        # strip a leading label like "SURFACE_FORM:" the model sometimes adds
-        answer = re.sub(rf"^{re.escape(name)}\s*[:\-]\s*", "", answer, flags=re.I)
-        if phrase_is_usable(answer, spec, anchors, forbidden):
-            return answer
-    return ""
 
 
-def resolve_theme(registry: VariationRegistry,
-                  global_values: dict[str, str]) -> str:
-    """Make sure the iteration theme is not a near-copy of an earlier one.
-
-    The local model has a strong prior ("golden hour glow over ...") and
-    would happily paint three iterations in the same light.  A theme that
-    shares too many words with a theme that was already used is re-asked.
-    """
-    spec = next(s for s in GLOBAL_SLOT_SPECS if s["name"] == "THEME_PHRASE")
-    theme = global_values.get("THEME_PHRASE") or ""
-    if theme and not registry.is_similar_phrase(theme, 0.6):
-        return theme
-
-    previous = "; ".join(registry.themes)
-    fresh = _ask_single_slot(
-        spec, identity="", theme="",
-        context=(
-            "the shared mood of a fantasy strategy game asset set - ONLY a "
-            "season, a time of day and a light quality, never a place, a "
-            "story, an event or an object"
-        ),
-        anchors=None,
-        forbidden=GLOBAL_THEME_FORBIDDEN,
-        registry=registry, label="theme", avoid=previous,
-    )
-    if fresh:
-        print(f"    [~] theme was too similar to an earlier one, using: {fresh}")
-        return fresh.rstrip(".")
-    return theme
 
 
-def fill_template(text: str, values: dict[str, str]) -> str:
-    """Replace every #KEYWORD# in a template with its resolved value."""
-    def repl(match: re.Match[str]) -> str:
-        return values.get(match.group(1)) or ""
-
-    out = re.sub(r"#([A-Z][A-Z0-9_]*)#", repl, text)
-    out = re.sub(r"\s+", " ", out)
-    out = re.sub(r"\.\s*,", ",", out)              # "surface., rendered" -> "surface, rendered"
-    out = re.sub(r"\s+([,.;])", r"\1", out)
-    out = re.sub(r"(?:\s*,\s*)+", ", ", out)       # repeated commas
-    out = re.sub(r",\s*\.", ".", out)              # dangling comma before period
-    out = re.sub(r"\s*\.\s*\.", ".", out)          # doubled period
-    out = re.sub(r"\.\s+and\b", " and", out)       # "…tones. and light" -> "…tones and light"
-    out = re.sub(r"\s+", " ", out)
-    return out.strip()
 
 
-def _strip_article(text: str) -> str:
-    """'a single fish' -> 'fish' - the template adds the article itself."""
-    return re.sub(r"^(?:an?|the|one)\s+(?:single\s+)?", "", text, flags=re.I).strip()
 
 
-def _head_noun_phrase(text: str) -> str:
-    """Cut a phrase down to its head part.
-
-    'Swimming salmon in three-quarter top-down view' -> 'Swimming salmon'
-    (the model likes to smuggle the pose into the kind slot).
-    """
-    cleaned = re.sub(
-        r"\b(?:in|with|from|on|at|seen|viewed|shown|holding|and)\b.*$",
-        "", text, flags=re.I,
-    ).strip(" ,-")
-    return cleaned or text
 
 
-def _capitalise(text: str) -> str:
-    """Upper-case the first letter so a slot can start a sentence."""
-    return text[:1].upper() + text[1:] if text else text
 
 
-def _end_sentence(text: str) -> str:
-    """Make sure a slot that ends a sentence carries full stop."""
-    text = text.rstrip()
-    if text and text[-1] not in ".!?":
-        text += "."
-    return text
 
 
-# English articles do not follow the spelling - these words start with a
-# vowel letter but take "a" (or vice versa).
-_A_EXCEPTIONS = ("one", "once", "european", "eulogy", "utopia", "ubiquitous")
-_AN_EXCEPTIONS = ("hour", "honest", "honor", "honour", "heir")
-_A_U_EXCEPTIONS = ("umbrella", "uncle", "urgent")
 
 
-def _fix_articles(text: str) -> str:
-    """'a endless expanse' -> 'an endless expanse', 'a wet' stays 'a wet'."""
-    def repl(match: re.Match[str]) -> str:
-        word = match.group(2)
-        low = word.lower()
-        if low.startswith(_A_EXCEPTIONS):
-            return match.group(0)
-        if low.startswith(_AN_EXCEPTIONS):
-            return f"an {word}"
-        if low.startswith("u"):
-            if low.startswith(_A_U_EXCEPTIONS):
-                return f"an {word}"
-            return match.group(0)
-        if low[0] in "aeio":
-            return f"an {word}"
-        return match.group(0)
-
-    return re.sub(r"\b(a)\s+([A-Za-z]+)", repl, text)
 
 
-def build_terrain_prompt(terrain: str, theme: str, global_values: dict[str, str],
-                          registry: VariationRegistry,
-                          style_desc: str = "",
-                          variant_note: str = "") -> tuple[str, dict[str, str]]:
-    """Resolve the terrain slots and assemble the full terrain prompt.
-
-    A prompt that is already in the registry is re-rolled, so no two tiles of
-    a run ever share the same description.  ``variant_note`` pins one of the
-    TERRAIN_VARIANTS siblings of the same terrain: same palette, same light,
-    a different arrangement of the same ground pattern, so the three tiles can
-    sit next to each other on the board.
-    """
-    fallbacks = dict(TERRAIN_FALLBACKS.get(terrain, {}))
-    fallbacks.update({k: v for k, v in global_values.items()})
-    style_text = (f" Rendered completely in the selected art style: "
-                  f"{style_desc}.") if style_desc else ""
-
-    material_words = TERRAIN_FORBIDDEN.get(terrain, [])
-    forbidden: dict[str, list[str]] = {
-        slot: material_words for slot in TERRAIN_MATERIAL_SLOTS
-    }
-    forbidden["COLOR_PALETTE"] = TERRAIN_COLOR_FORBIDDEN.get(terrain, [])
-
-    prompt = ""
-    values: dict[str, str] = {}
-    for attempt in range(3):
-        local = resolve_slot_bundle(
-            TERRAIN_SLOT_SPECS, fallbacks, registry,
-            identity=TERRAIN_IDENTITIES[terrain],
-            theme=theme,
-            context=(
-                "The result is a flat 2D ground texture seen from directly "
-                "above - no depth, no height, no cliffs, no camera view. "
-                "Terrain identity and its natural base colors dominate. Use "
-                "broad, low-frequency patterns and sparse details. The theme "
-                "may affect only tiny secondary accents; lighting stays "
-                "neutral and even."
-            ),
-            anchors={
-                "SURFACE_FORM": TERRAIN_ANCHORS.get(terrain, []),
-                "COLOR_PALETTE": TERRAIN_PALETTE_ANCHORS.get(terrain, []),
-            },
-            forbidden=forbidden,
-            label=f"terrain '{terrain}'",
-        )
-
-        values = dict(GLOBAL_FALLBACKS)
-        values.update(global_values)
-        values.update(fallbacks)
-        values.update(local)
-        if values.get("LIGHTING_NOTE"):
-            values["LIGHTING_NOTE"] = _end_sentence(
-                _capitalise(values["LIGHTING_NOTE"].rstrip(".")))
-
-        subject = fill_template(TERRAIN_SUBJECT_TEMPLATE, values)
-        details = fill_template(TERRAIN_DETAILS_TEMPLATE, values)
-        extra = TERRAIN_EXTRA_CONSTRAINTS.get(terrain, "")
-        identity_clause = TERRAIN_IDENTITY_CLAUSE.get(terrain, "")
-        details = f"{details} {identity_clause} {extra} {TERRAIN_BASE_CONSTRAINT}".strip()
-        if variant_note:
-            details = f"{details} {variant_note}"
-
-        prompt = _fix_articles(TERRAIN_PROMPT.format(
-            subject=subject, theme=theme, details=details, style=style_text))
-        if registry.is_new_prompt(prompt):
-            break
-        print(f"    [~] terrain '{terrain}': prompt repeated, re-rolling")
-    registry.remember_prompt(prompt)
-    return prompt, values
 
 
-def build_feature_prompt(stem: str, spec_key: str, twist: str, theme: str,
-                         global_values: dict[str, str],
-                         registry: VariationRegistry,
-                         extra_clauses: tuple[str, ...] = (),
-                         presentation: str = "resource feature sprite",
-                         context_extra: str = "",
-                         style_desc: str = "",
-                         style_context: str = "",
-                         unit_style_desc: str = "") -> tuple[str, dict[str, str]]:
-    """Resolve the feature slots and assemble the full feature prompt.
-
-    A prompt that is already in the registry is re-rolled, so no two sprites
-    of a run ever share the same description.
-    """
-    spec = UNIT_SPECS.get(spec_key) or FEATURE_SPECS[spec_key]
-    fallbacks = dict(spec["fallbacks"])
-    fallbacks.update({k: v for k, v in global_values.items()})
-
-    subject_template = spec.get("subject_template", FEATURE_SUBJECT_TEMPLATE)
-    group_subject = "of #FEATURE_KIND#" in subject_template
-    fixed_clauses = [spec["fixed"]] if spec.get("fixed") else []
-    # the caller (the stem loop) can pin per-iteration clauses, e.g. the
-    # rolled mountain atmosphere or the rolled dramatic mountain variant
-    fixed_clauses.extend(extra_clauses)
-    fixed_text = " ".join(fixed_clauses)
-    style_text = (f" Rendered completely in the selected art style: "
-                  f"{style_desc}.") if style_desc else ""
-    is_unit = bool(spec.get("unit"))
-    if is_unit:
-        # The unit art direction is its own lever: --unit-style-keyword wins,
-        # then the global --style-keyword, then the default serious drawn set.
-        chosen = unit_style_desc or style_desc
-        if chosen:
-            # The unit style is stated once in the dedicated art-direction
-            # slot below; repeating the long custom phrase confuses FLUX.2.
-            style_text = ""
-            art_direction = (
-                f"{chosen}. Keep every unit in this set consistent in "
-                "line weight, shading, proportions and detail density"
-            )
-        else:
-            art_direction = UNIT_ART_DIRECTION
-        unit_context = (
-            "This is one member of a cohesive set of illustrated strategy-game "
-            "units. Keep the specified historical or mechanical identity exact; "
-            "use a concise, literal description of the defining silhouette and "
-            "materials. Render it as a hand-drawn unit illustration rather than "
-            "an environmental scene. Keep any run theme to restrained "
-            "color or small decoration; do not transform the unit into a different "
-            "kind of subject."
-        )
-    else:
-        art_direction = (
-            f"Selected art style: {style_desc}"
-            if style_desc else FEATURE_ART_DIRECTION
-        )
-        if style_desc:
-            style_text = ""
-        unit_context = ""
-
-    # per-slot bans for FEATURE_KIND: pose/detail words belong to FEATURE_FORM
-    slot_specs = [dict(s) for s in FEATURE_SLOT_SPECS]
-    for s in slot_specs:
-        if s["name"] != "FEATURE_KIND":
-            continue
-        if group_subject:
-            # a group subject reads broken with a singular head noun such as
-            # 'cluster' - the group clause in "fixed" carries the arrangement
-            s["forbidden"] = list(_GROUP_KIND_BANS)
-    kind_forbidden = FEATURE_KIND_FORBIDDEN.get(spec_key)
-    if kind_forbidden:
-        for s in slot_specs:
-            if s["name"] == "FEATURE_KIND":
-                s["forbidden"] = list(s.get("forbidden") or []) + list(kind_forbidden)
-
-    help_overrides: dict[str, str] = {}
-    if twist:
-        help_overrides["FEATURE_FORM"] = (
-            f"the shape, pose and silhouette of the feature - here it is "
-            f"{twist}"
-        )
-    if spec.get("kind_help"):
-        help_overrides["FEATURE_KIND"] = spec["kind_help"]
-
-    prompt = ""
-    values: dict[str, str] = {}
-    for attempt in range(3):
-        local = resolve_slot_bundle(
-            slot_specs, fallbacks, registry,
-            identity=spec["identity"],
-            theme=theme,
-        context=(
-                ("The unit is one complete, composed game-unit icon shown "
-                 "from a three-quarter isometric view; a formation, crew or "
-                 "support vehicle may contain several parts but must read as "
-                 "one unit silhouette"
-                 if is_unit else
-                 "The feature is a single object shown from a three-quarter "
-                 "isometric game view")
-                + (f". {unit_context}" if unit_context else "")
-                + (f". {context_extra}" if context_extra and not is_unit else "")
-                + (f" {style_context}." if style_context else "")
-            ),
-            anchors=spec.get("anchors") and {"FEATURE_KIND": spec["anchors"]},
-            forbidden=FEATURE_FORBIDDEN.get(spec_key),
-            help_overrides=help_overrides,
-            label=f"{'unit' if is_unit else 'feature'} '{stem}'",
-        )
-
-        values = dict(GLOBAL_FALLBACKS)
-        values.update(global_values)
-        values.update(fallbacks)
-        values.update(local)
-        if values.get("FEATURE_KIND"):
-            values["FEATURE_KIND"] = _strip_article(_head_noun_phrase(
-                values["FEATURE_KIND"]))
-            # the templates prepend "a single" themselves - a model answer
-            # like "single fish" would read "a single single fish"
-            stripped = re.sub(r"^(?:single\s+)+", "", values["FEATURE_KIND"],
-                              flags=re.I)
-            if stripped:
-                values["FEATURE_KIND"] = stripped
-            if group_subject:
-                # lose a leading wrapper ('mix of tall trees' -> 'tall trees')
-                kind = values["FEATURE_KIND"]
-                if " of " in kind:
-                    kind = kind.rsplit(" of ", 1)[1]
-                values["FEATURE_KIND"] = _pluralize_last(kind)
-        if values.get("FEATURE_FORM"):
-            values["FEATURE_FORM"] = _capitalise(values["FEATURE_FORM"])
-        if values.get("FEATURE_LIGHTING"):
-            values["FEATURE_LIGHTING"] = _end_sentence(
-                _capitalise(values["FEATURE_LIGHTING"].rstrip(".")))
-        if values.get("FEATURE_RENDERING"):
-            values["FEATURE_RENDERING"] = _end_sentence(
-                _capitalise(values["FEATURE_RENDERING"].rstrip(".")))
-            if (unit_style_desc or style_desc) and is_unit:
-                values["FEATURE_RENDERING"] = (
-                    "Matching the selected shared unit-set art direction")
-            elif style_desc:
-                values["FEATURE_RENDERING"] = (
-                    "Rendered consistently in the selected art style")
-            elif is_unit:
-                values["FEATURE_RENDERING"] = (
-                    "Matching the shared serious inked unit-set illustration style")
-
-        subject = fill_template(subject_template, values)
-        details_template = UNIT_DETAILS_TEMPLATE if is_unit else FEATURE_DETAILS_TEMPLATE
-        details = fill_template(details_template, values)
-        if fixed_text:
-            details = f"{details} {fixed_text}"
-
-        prompt_template = UNIT_PROMPT if is_unit else FEATURE_PROMPT
-        prompt = _fix_articles(prompt_template.format(
-            subject=subject, theme=theme, details=details,
-            presentation=presentation, style=style_text,
-            art_direction=art_direction))
-        if registry.is_new_prompt(prompt):
-            break
-        print(f"    [~] {'unit' if is_unit else 'feature'} '{stem}': "
-              "prompt repeated, re-rolling")
-    registry.remember_prompt(prompt)
-    return prompt, values
 
 
 # ===========================================================================
@@ -3642,6 +1382,18 @@ def build_parser() -> argparse.ArgumentParser:
                              "when requested without a list")
     parser.add_argument("--dry-run", action="store_true",
                         help="only resolve the prompts with the local model, render nothing")
+    parser.add_argument("--spec-json", default=None, metavar="DIR",
+                        help="directory holding the specs/*.json source of truth "
+                             "(default: the specs/ next to this script)")
+    parser.add_argument("--request-json", default=None, metavar="FILE",
+                        help="request JSON overlaid on these arguments "
+                             "(theme/style/selection/seed/iterations)")
+    parser.add_argument("--prompts-from", default=None, metavar="FILE",
+                        help="render the prompts of an existing bundle instead of "
+                             "resolving them with the local model")
+    parser.add_argument("--emit-prompts", default=None, metavar="FILE",
+                        help="write the planned prompts as a bundle and render "
+                             "nothing (implies --dry-run)")
     parser.add_argument("--no-features", action="store_true",
                         help="skip resource and terrain feature sprites")
     parser.add_argument("--no-units", action="store_true",
@@ -3803,9 +1555,141 @@ def write_batch_script(runs: list[str], iterations: int,
     return script
 
 
+# The bundle contract with abstract_generator: prompts read from
+# --prompts-from, prompts recorded for --emit-prompts.
+_BUNDLE_SOURCE: dict[str, dict[str, Any]] = {}
+_BUNDLE_OUT: list[dict[str, Any]] = []
+
+
+def plan_prompt(kind: str, asset_id: str, variant: int, negative: str,
+                builder: Callable[[], tuple[str, dict[str, Any]]]
+                ) -> tuple[str, dict[str, Any]]:
+    """One prompt, from the bundle when --prompts-from gave us one.
+
+    Otherwise the builder runs (Qwen + assembly) and the result is recorded
+    so --emit-prompts can write it back out as a bundle. The key is
+    ``kind:id:variant`` — the same shape abstract_generator.generate()
+    produces, so a bundle can travel between the two tools unchanged.
+    """
+    if _BUNDLE_SOURCE:
+        entry = _BUNDLE_SOURCE.get(f"{kind}:{asset_id}:{variant}")
+        if entry is None:
+            raise SpecError(
+                f"bundle has no {kind} asset {asset_id!r} variant {variant}")
+        return str(entry["prompt"]), dict(entry.get("keywords") or {})
+    prompt, keywords = builder()
+    _BUNDLE_OUT.append({
+        "kind": kind, "id": asset_id, "variant": variant,
+        "negative": negative, "prompt": prompt, "keywords": keywords,
+    })
+    return prompt, keywords
+
+
+def load_bundle(path: str) -> None:
+    """Fill _BUNDLE_SOURCE from a bundle written by abstract_generator."""
+    try:
+        data = json.loads(Path(path).read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SpecError(f"bundle {path}: {exc}") from exc
+    if data.get("version") != SPEC_VERSION:
+        raise SpecError(f"bundle {path}: version {data.get('version')!r} "
+                        f"!= {SPEC_VERSION}")
+    for asset in data.get("assets", []):
+        kind, asset_id = str(asset.get("kind")), str(asset.get("id"))
+        for v in asset.get("variants", []):
+            if "prompt" not in v:
+                raise SpecError(f"bundle {path}: {kind} {asset_id!r} variant "
+                                f"{v.get('variant')} has no prompt")
+            _BUNDLE_SOURCE[f"{kind}:{asset_id}:{v['variant']}"] = v
+    if not _BUNDLE_SOURCE:
+        raise SpecError(f"bundle {path}: no assets")
+    print(f"[*] prompt bundle loaded: {len(_BUNDLE_SOURCE)} prompts "
+          f"from {path}")
+
+
+def bundle_document(label: str, args: argparse.Namespace) -> dict[str, Any]:
+    """Group the recorded prompts into the abstract_generator bundle shape."""
+    grouped: dict[tuple[str, str], dict[str, Any]] = {}
+    for rec in _BUNDLE_OUT:
+        entry = grouped.setdefault((rec["kind"], rec["id"]), {
+            "kind": rec["kind"], "id": rec["id"], "variants": [],
+        })
+        entry["variants"].append({
+            "variant": rec["variant"],
+            "prompt": rec["prompt"], "keywords": rec["keywords"],
+        })
+    return {
+        "version": SPEC_VERSION,
+        "label": label,
+        "seed": args.seed,
+        "iterations": args.iterations,
+        "generatedAt": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "assets": [grouped[key] for key in sorted(grouped)],
+    }
+
+
+def apply_request(args: argparse.Namespace, path: str) -> None:
+    """Overlay a request JSON (--request-json) onto the CLI arguments.
+
+    Only the keys the request carries are applied, so a request can pin the
+    theme and the selection while the rest stays on the command line.
+    """
+    try:
+        request = json.loads(Path(path).read_text() if path != "-" else
+                             sys.stdin.read())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SpecError(f"request {path}: {exc}") from exc
+    if not isinstance(request, dict):
+        raise SpecError(f"request {path}: expected a JSON object")
+    if request.get("version", SPEC_VERSION) != SPEC_VERSION:
+        raise SpecError(f"request {path}: version "
+                        f"{request.get('version')!r} != {SPEC_VERSION}")
+    allowed = {"version", "label", "seed", "iterations", "categories",
+               "selection", "theme", "style", "unitStyle", "overrides",
+               "noLlm"}
+    unknown = set(request) - allowed
+    if unknown:
+        raise SpecError(f"request {path}: unknown key(s): "
+                        + ", ".join(sorted(unknown)))
+    if "theme" in request:
+        args.theme_keyword = str(request["theme"] or "")
+    if "style" in request:
+        args.style_keyword = str(request["style"] or "")
+    if "unitStyle" in request:
+        args.unit_style_keyword = str(request["unitStyle"] or "")
+    if "iterations" in request:
+        args.iterations = int(request["iterations"])
+    if "seed" in request:
+        args.seed = int(request["seed"])
+    selection = request.get("selection") or {}
+    if "terrains" in selection:
+        args.terrains = ",".join(selection["terrains"])
+        args.no_terrains = not selection["terrains"]
+    if "features" in selection:
+        args.features = ",".join(selection["features"])
+        args.no_features = not selection["features"]
+    if "units" in selection:
+        args.units = ",".join(selection["units"])
+        args.no_units = not selection["units"]
+    print(f"[*] request applied: {path}")
+
+
 def main() -> int:
-    global LLAMA_RESTART_HOOK
     args = build_parser().parse_args()
+    # The specs, the request and the bundle are all resolved before anything
+    # reads them — a contract problem exits here, with the offending key.
+    try:
+        load_specs(args.spec_json)
+        if args.request_json:
+            apply_request(args, args.request_json)
+        if args.prompts_from:
+            load_bundle(args.prompts_from)
+    except SpecError as exc:
+        print(f"[-] {exc}")
+        return 2
+    if args.emit_prompts:
+        # planning only: the bundle is the artifact, not the images
+        args.dry_run = True
     theme_keyword = args.theme_keyword.strip()
     if not 0 <= args.edge_crop < 0.25:
         print("[-] --edge-crop must be in the range [0, 0.25)")
@@ -3934,7 +1818,7 @@ def main() -> int:
 
     servers = ServerManager(args)
     registry = VariationRegistry()
-    LLAMA_RESTART_HOOK = servers.restart_llama
+    _abstract.LLAMA_RESTART_HOOK = servers.restart_llama
     started = time.time()
     run_manifest: dict[str, Any] = {
         "started": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -4066,10 +1950,13 @@ def main() -> int:
                         suffix = "" if variant == 1 else f"_{variant - 1}"
                         variant_note = TERRAIN_VARIANT_NOTES[
                             (variant - 1) % len(TERRAIN_VARIANT_NOTES)]
-                        prompt, keywords = build_terrain_prompt(
-                            terrain, theme, global_values, registry,
-                            style_desc=style_desc,
-                            variant_note=variant_note,
+                        prompt, keywords = plan_prompt(
+                            "terrain", terrain, variant, NEGATIVE_TERRAIN,
+                            lambda: build_terrain_prompt(
+                                terrain, theme, global_values, registry,
+                                style_desc=style_desc,
+                                variant_note=variant_note,
+                            ),
                         )
                         (iter_dir / f"prompt_{terrain}{suffix}.txt").write_text(
                             prompt + "\n\nNegative prompt: " + NEGATIVE_TERRAIN + "\n"
@@ -4246,20 +2133,23 @@ def main() -> int:
                     variant_count = UNIT_VARIANTS if is_unit else 1
                     for variant in range(1, variant_count + 1):
                         suffix = "" if variant == 1 else f"_{variant}"
-                        prompt, keywords = build_feature_prompt(
-                            stem, spec_key, twist, theme, global_values,
-                            registry, extra_clauses=extra,
-                            presentation=presentation,
-                            context_extra=THEME_ACCENT_CLAUSE,
-                            style_desc=style_desc,
-                            style_context=style_context,
-                            unit_style_desc=unit_style_desc,
-                        )
                         asset_prefix = "unit" if is_unit else "feature"
                         prompt_stem = unit_key if is_unit else stem
                         negative_prompt = NEGATIVE_UNIT if is_unit else NEGATIVE_FEATURE
                         if is_unit and UNIT_NEGATIVE_EXTRA.get(stem):
                             negative_prompt += ", " + UNIT_NEGATIVE_EXTRA[stem]
+                        prompt, keywords = plan_prompt(
+                            asset_prefix, stem, variant, negative_prompt,
+                            lambda: build_feature_prompt(
+                                stem, spec_key, twist, theme, global_values,
+                                registry, extra_clauses=extra,
+                                presentation=presentation,
+                                context_extra=THEME_ACCENT_CLAUSE,
+                                style_desc=style_desc,
+                                style_context=style_context,
+                                unit_style_desc=unit_style_desc,
+                            ),
+                        )
                         (iter_dir /
                          f"prompt_{asset_prefix}_{prompt_stem}{suffix}.txt").write_text(
                             prompt + "\n\nNegative prompt: "
@@ -4378,6 +2268,16 @@ def main() -> int:
         (run_dir / "run.json").write_text(json.dumps(run_manifest, indent=2) + "\n")
         if not args.keep_servers:
             servers.shutdown()
+
+    if args.emit_prompts:
+        label = (args.theme_keyword.strip() or args.style_keyword.strip()
+                 or args.unit_style_keyword.strip() or "classic")
+        bundle = bundle_document(label, args)
+        Path(args.emit_prompts).write_text(
+            json.dumps(bundle, indent=2, sort_keys=True, ensure_ascii=False)
+            + "\n")
+        print(f"[*] prompt bundle written: {args.emit_prompts} "
+              f"({len(bundle['assets'])} assets)")
 
     print(f"\nDone in {human(time.time() - started)}. Tile sets in: {run_dir}")
     return 0

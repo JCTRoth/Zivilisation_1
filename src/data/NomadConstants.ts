@@ -248,6 +248,21 @@ export const NOMAD_ROAM_LEASH = 6;
  */
 export const NOMAD_WANDER_DRIFT_CHANCE = 0.35;
 
+/**
+ * THE PACK — how far (Chebyshev) any rider of a group may stray from the
+ * rider leading it. The horde is THREE riders (two spears and a scout,
+ * `NOMAD_SPAWN_UNITS`) and moves as one: the rider closest to the court
+ * leads and the others hold this ring around it, taking no more steps in a
+ * round than the slowest rider. The scout walks 2 while the spears walk 1,
+ * so without both rules the fastest ran ahead on every leg and the three
+ * arrived in dribs. A rider steps out of the ring only when the ring cannot
+ * be kept — a mate on the only tile, a cliff, a river — and then takes the
+ * step that leaves it closest to the pack: it never bolts while a legal
+ * step would have kept the group together, and it never holds so long that
+ * the rider behind it is caged.
+ */
+export const NOMAD_GROUP_RADIUS = 1;
+
 // ── Settled camps — the nomads that live with a city ───────────────────────
 
 /**

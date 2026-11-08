@@ -1,0 +1,70 @@
+{
+  "clauses": {
+    "styleDescriptions": {
+      "american_comic": "bold American comic book art: strong black ink outlines, halftone dot shading, flat bright poster colours, dynamic cel highlights,  heroic drama in every contour",
+      "anime_cel": "1990s anime cel animation: clean outlines, two-tone cel shadows, saturated animator colours, crisp studio finish",
+      "art_deco_poster": "Art Deco travel poster: streamlined symmetrical geometry, gold and teal palette, elegant flat shading, decorative sunburst accents",
+      "byzantine_mosaic": "Byzantine mosaic art: small irregular gold and stone tesserae, curved piece-by-piece shading, glinting golden highlights",
+      "constructivist_poster": "Soviet constructivist propaganda poster: stark red-black-cream reduction, bold diagonal shapes, flat printed ink surfaces",
+      "egyptian_tomb": "ancient Egyptian tomb painting: limestone ground, flat profile figures, ochre and lapis palette, fine hieroglyph-like incisions",
+      "greek_pottery": "ancient Greek black-figure pottery: terracotta clay ground, jet-black silhouettes with fine incised detail, meander key border accents",
+      "illuminated_manuscript": "medieval illuminated manuscript: gold leaf accents, fine gothic ink linework, flat symbolic colour, ornate decorative flourishes",
+      "ligne_claire": "Franco-Belgian ligne claire comics: uniform weight ink lines, flat saturation without hatching, clear readable shading",
+      "linocut_print": "linocut relief print: chunky white carving lines through flat ink, bold two-tone contrast, hand-pressed texture",
+      "manga": "Japanese manga art: crisp black-and-white ink work, screentone shading, clean economical linework, expressive emphasis strokes",
+      "naive_folk_art": "naive folk art: charming simplification, rounded confident shapes, cheerful local palette, hand-painted brush texture",
+      "norse_woodcarving": "carved Norse wood relief: deep knife-cut V-groove lines, knotted Nordic interlace tracery, warm oak grain surface",
+      "original_game_icons": "2D flat vector strategy game asset style, clean graphic game icon art direction. Uniform bold black outlines on elements combined with crisp lineless vector shapes. Flat solid color blocks, hard-edged geometric cel-shading, absolute absence of gradients or textures. Matte finish with simple pill-shaped white specular highlights on polished surfaces. High-contrast bold silhouettes, centered framing, isolated on a uniform flat solid pure black background",
+      "painted_miniature": "hand-painted tabletop miniature: glossy enamel highlight layering with micro-brush precision, dramatic contrast lighting, display figure finish",
+      "papercraft": "layered papercraft: cut-paper shapes with visible paper edges and fold seams, stacked depth layers, soft cast paper shadows",
+      "pixel_art": "16-bit strategy-game pixel art: chunky readable pixels, a limited clear palette, hard pixel edges, broad color clusters, and simple two- or three-tone shading; no dithering, gradients, or texture noise",
+      "stained_glass": "stained glass window art: black lead came contour lines, glowing jewel-toned glass panes, light streaming through translucent colour",
+      "tarot_engraving": "tarot card engraving: fine cross-hatched copper-plate lines, ornate symbolic composition, aged ivory paper",
+      "vintage_box_art": "vintage 1970s board-game box art: rich gouache painting, warm retro palette, heroic painterly impression, printed cardstock feel",
+      "watercolor_storybook": "ink-and-watercolour storybook art: loose wet washes, soft bleeding colours, fine pen-and-ink contour accents, warm paper tint"
+    },
+    "styleKeys": [
+      "american_comic",
+      "manga",
+      "pixel_art",
+      "papercraft",
+      "watercolor_storybook",
+      "stained_glass",
+      "byzantine_mosaic",
+      "greek_pottery",
+      "norse_woodcarving",
+      "illuminated_manuscript",
+      "constructivist_poster",
+      "art_deco_poster",
+      "linocut_print",
+      "tarot_engraving",
+      "vintage_box_art",
+      "anime_cel",
+      "naive_folk_art",
+      "egyptian_tomb",
+      "ligne_claire",
+      "painted_miniature",
+      "original_game_icons"
+    ],
+    "themeAccent": "The theme may add at most one small secondary-color accent or tiny decoration. Never replace, transform, or obscure the subject; an animal must remain the same recognizable animal with natural anatomy and colors"
+  },
+  "feature": {
+    "artDirection": "Hand-drawn strategy-game illustration, clean confident ink contours, controlled cel shading, subtle painterly texture and a vivid saturated palette with strong clear hues",
+    "details": "The feature is #FEATURE_FORM#, with #FEATURE_DETAIL#. Its natural material colors are #FEATURE_PALETTE#; #GLOBAL_PALETTE# may appear only as a tiny accent. #FEATURE_LIGHTING#. #FEATURE_RENDERING#.",
+    "prompt": "isometric 2D video game {presentation} of {subject}, isolated standalone central sprite, isometric strategic 3/4 game view showing height and volume, centrally composed asset, well-balanced framing, the whole subject complete and fully visible in the central canvas area, every part of the silhouette fully inside the frame and surrounded by generous clear margin on all four sides, tightly framed around the subject, centered on a completely uniform pure black background that fills the whole canvas edge to edge, easy masking background, game UI icon sprite, isolated subject.\n\nStyle & Art Direction: {art_direction}{style}\n\nTheme accents only: {theme}. Keep the subject's natural colors and identity; no theme-driven replacement, glow, or dramatic lighting.\n\nSubject Details: {details} The sprite shows ONLY the feature itself - {subject} - floating on a completely empty solid pure black #000000 background, clean flat black around every edge of the subject for easy masking.\n\nTechnical Specs: High contrast, top-down 45-degree isometric camera view, perfectly isolated subject on a pure black #000000 background, the full silhouette inside the frame with crisp black margin on all four sides, clean readable game sprite.",
+    "subject": "a single #FEATURE_KIND#"
+  },
+  "terrain": {
+    "details": "A continuous surface of #BASE_MATERIAL# with #TEXTURE_DETAIL# and only #ACCENT_ELEMENT#. #EDGE_ELEMENT#. #LIGHTING_NOTE# #GLOBAL_LIGHTING#. The dominant terrain colors are #COLOR_PALETTE#. Use #GLOBAL_PALETTE# only for a few tiny secondary accents, never to tint or replace the ground colors. Keep the surface flat, simple, and recognizable at small map scale.",
+    "prompt": "A seamless, tileable top-down 2D strategy-game texture of {subject}, viewed straight down and filling the entire image edge to edge as a full-bleed surface. Show only the terrain surface, as if this image were an arbitrary crop from a much larger continuous texture; the same material and pattern continue beyond all four image edges. No depicted object, patch outline, frame, or separate edge.\n\nStyle & Art Direction: Clear, restrained game-ready terrain art with a small number of broad, low-frequency color shapes and only a few simple details. The natural terrain material and its distinct base colors dominate. Keep the surface flat, evenly lit and easy to distinguish from neighboring terrain; no painterly brushwork or dense microtexture.{style}\n\nTheme accents only: {theme}. The theme may appear in a few small isolated accents covering at most 5% of the image. It must not change the terrain material, dominant color family, or neutral daylight. No neon, spectral glow, runes, webs, bones, or other high-contrast decoration across the ground.\n\nSubject Details: {details}\n\nTechnical Specs: Flat map view, strictly top-down, no tree trunks, no side perspective, no horizon, no camera tilt, no depth of field. Use broad readable color clusters and restrained details. The outermost pixels are ordinary terrain, not a border band; opposite edges continue the same pattern. No vignette, halo, contrasting rim, shoreline frame, or shadowed corners.",
+    "subject": "a #SURFACE_FORM#"
+  },
+  "unit": {
+    "artDirection": "A coherent set of serious drawn strategy-game unit illustrations, like mature anime concept art crossed with a refined graphic novel: expressive but realistic proportions, confident dark ink contours, controlled cel shadows, subtle painterly material texture and restrained cinematic highlights. Keep the same line weight, shading, detail density and grounded palette across every unit, with a clear readable silhouette at small game-icon size. Clearly hand-drawn; no glossy 3D, chibi proportions or comic exaggeration.",
+    "details": "The unit is #FEATURE_FORM#, with #FEATURE_DETAIL#. Its natural material colors are #FEATURE_PALETTE#; #GLOBAL_PALETTE# may appear only as a tiny accent. #FEATURE_LIGHTING#. #FEATURE_RENDERING#.",
+    "prompt": "A polished 2D strategy-game unit icon depicting {subject}, viewed from a slightly elevated three-quarter isometric angle. Show one complete, centered unit silhouette with generous clear margin on every side, isolated on a perfectly uniform pure black background.\n\nShared unit-set art direction: {art_direction}\nTheme accents only: {theme}. Preserve the unit's natural/material colors, defining silhouette, and clear neutral lighting; use at most a small secondary color or decoration.\n\nUnit design: {details}\n\nKeep the defining silhouette and major shapes immediately readable at small game-icon size. Clean intentional linework, controlled shadows, no environment or narrative scene.",
+    "reliableLight": "warm key light from the upper left with a soft shaded side",
+    "reliableRender": "clean dark outlines with smooth cell shading"
+  },
+  "version": 1
+}

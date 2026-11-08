@@ -1,0 +1,366 @@
+{
+  "assets": [
+    {
+      "id": "forest",
+      "iteration": 1,
+      "kind": "terrain",
+      "negative": "photorealistic, realistic landscape, photography, border frame, ground plane background, horizon line, sky, ambient occlusion shadows on canvas, cut off edges, blurry lines, 3D render artifacts, low resolution, empty background, transparent corners, visible grid lines, diamond layout, isolated subject on black, black background, pitch black, vignette, frame, picture, poster, text, watermark, characters, buildings, animals, 3D render, 3D scene, isometric perspective, tilted camera, side view, depth of field, ray tracing, volumetric light, dramatic cast shadows across the surface, desaturated colours, muted palette, washed out colours, dull faded tones, high-frequency detail, excessive microtexture, noisy texture, intricate repeating detail, neon, bioluminescent veins, spectral glow, glowing lines, runes, webs, bones, scattered debris, painterly brushwork, framed picture, border band, contrasting perimeter, white halo, cloudy edge, muddy edge, shoreline border, land ring, dark corners, gradient edge, drop shadow, isolated patch",
+      "output": "terrain_forest",
+      "spec": "forest",
+      "variants": [
+        {
+          "keywords": {
+            "ACCENT_ELEMENT": "a few sparse leaves and twigs",
+            "BASE_MATERIAL": "dark brown forest soil",
+            "COLOR_PALETTE": "dark browns, deep greens and mossy tones",
+            "EDGE_ELEMENT": "the same forest floor continues uniformly, without a distinct edge",
+            "GLOBAL_LIGHTING": "clear neutral daylight",
+            "GLOBAL_PALETTE": "sparse natural accent colors",
+            "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows.",
+            "SURFACE_FORM": "temperate forest floor ground surface",
+            "TEXTURE_DETAIL": "broad patches of soil, moss, and fallen leaves",
+            "THEME_PHRASE": "balanced natural daylight"
+          },
+          "prompt": "A seamless, tileable top-down 2D strategy-game texture of a temperate forest floor ground surface, viewed straight down and filling the entire image edge to edge as a full-bleed surface. Show only the terrain surface, as if this image were an arbitrary crop from a much larger continuous texture; the same material and pattern continue beyond all four image edges. No depicted object, patch outline, frame, or separate edge.\n\nStyle & Art Direction: Clear, restrained game-ready terrain art with a small number of broad, low-frequency color shapes and only a few simple details. The natural terrain material and its distinct base colors dominate. Keep the surface flat, evenly lit and easy to distinguish from neighboring terrain; no painterly brushwork or dense microtexture.\n\nTheme accents only: balanced natural daylight. The theme may appear in a few small isolated accents covering at most 5% of the image. It must not change the terrain material, dominant color family, or neutral daylight. No neon, spectral glow, runes, webs, bones, or other high-contrast decoration across the ground.\n\nSubject Details: A continuous surface of dark brown forest soil with broad patches of soil, moss, and fallen leaves and only a few sparse leaves and twigs. the same forest floor continues uniformly, without a distinct edge. Clear neutral daylight with soft minimal shadows. clear neutral daylight. The dominant terrain colors are dark browns, deep greens and mossy tones. Use sparse natural accent colors only for a few tiny secondary accents, never to tint or replace the ground colors. Keep the surface flat, simple, and recognizable at small map scale. Forest soil and leaf litter, unmistakably the floor of a forest. No trees, no trunks, no canopies, no vertical elements - only the flat ground layer. Strict top-down bird's-eye view. No horizon, no sky, no scenery, no buildings, no characters, no animals, no frame and no vignette - only the flat ground surface, edge to edge. This is variant 1 of 3: use a broad, calm arrangement of the same terrain shapes and scale.\n\nTechnical Specs: Flat map view, strictly top-down, no tree trunks, no side perspective, no horizon, no camera tilt, no depth of field. Use broad readable color clusters and restrained details. The outermost pixels are ordinary terrain, not a border band; opposite edges continue the same pattern. No vignette, halo, contrasting rim, shoreline frame, or shadowed corners.",
+          "suffix": "",
+          "variant": 1
+        },
+        {
+          "keywords": {
+            "ACCENT_ELEMENT": "a few sparse leaves and twigs",
+            "BASE_MATERIAL": "dark brown forest soil",
+            "COLOR_PALETTE": "dark browns, deep greens and mossy tones",
+            "EDGE_ELEMENT": "the same forest floor continues uniformly, without a distinct edge",
+            "GLOBAL_LIGHTING": "clear neutral daylight",
+            "GLOBAL_PALETTE": "sparse natural accent colors",
+            "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows.",
+            "SURFACE_FORM": "temperate forest floor ground surface",
+            "TEXTURE_DETAIL": "broad patches of soil, moss, and fallen leaves",
+            "THEME_PHRASE": "balanced natural daylight"
+          },
+          "prompt": "A seamless, tileable top-down 2D strategy-game texture of a temperate forest floor ground surface, viewed straight down and filling the entire image edge to edge as a full-bleed surface. Show only the terrain surface, as if this image were an arbitrary crop from a much larger continuous texture; the same material and pattern continue beyond all four image edges. No depicted object, patch outline, frame, or separate edge.\n\nStyle & Art Direction: Clear, restrained game-ready terrain art with a small number of broad, low-frequency color shapes and only a few simple details. The natural terrain material and its distinct base colors dominate. Keep the surface flat, evenly lit and easy to distinguish from neighboring terrain; no painterly brushwork or dense microtexture.\n\nTheme accents only: balanced natural daylight. The theme may appear in a few small isolated accents covering at most 5% of the image. It must not change the terrain material, dominant color family, or neutral daylight. No neon, spectral glow, runes, webs, bones, or other high-contrast decoration across the ground.\n\nSubject Details: A continuous surface of dark brown forest soil with broad patches of soil, moss, and fallen leaves and only a few sparse leaves and twigs. the same forest floor continues uniformly, without a distinct edge. Clear neutral daylight with soft minimal shadows. clear neutral daylight. The dominant terrain colors are dark browns, deep greens and mossy tones. Use sparse natural accent colors only for a few tiny secondary accents, never to tint or replace the ground colors. Keep the surface flat, simple, and recognizable at small map scale. Forest soil and leaf litter, unmistakably the floor of a forest. No trees, no trunks, no canopies, no vertical elements - only the flat ground layer. Strict top-down bird's-eye view. No horizon, no sky, no scenery, no buildings, no characters, no animals, no frame and no vignette - only the flat ground surface, edge to edge. This is variant 2 of 3: rearrange the same terrain shapes without adding detail or changing their scale.\n\nTechnical Specs: Flat map view, strictly top-down, no tree trunks, no side perspective, no horizon, no camera tilt, no depth of field. Use broad readable color clusters and restrained details. The outermost pixels are ordinary terrain, not a border band; opposite edges continue the same pattern. No vignette, halo, contrasting rim, shoreline frame, or shadowed corners.",
+          "suffix": "_1",
+          "variant": 2
+        },
+        {
+          "keywords": {
+            "ACCENT_ELEMENT": "a few sparse leaves and twigs",
+            "BASE_MATERIAL": "dark brown forest soil",
+            "COLOR_PALETTE": "dark browns, deep greens and mossy tones",
+            "EDGE_ELEMENT": "the same forest floor continues uniformly, without a distinct edge",
+            "GLOBAL_LIGHTING": "clear neutral daylight",
+            "GLOBAL_PALETTE": "sparse natural accent colors",
+            "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows.",
+            "SURFACE_FORM": "temperate forest floor ground surface",
+            "TEXTURE_DETAIL": "broad patches of soil, moss, and fallen leaves",
+            "THEME_PHRASE": "balanced natural daylight"
+          },
+          "prompt": "A seamless, tileable top-down 2D strategy-game texture of a temperate forest floor ground surface, viewed straight down and filling the entire image edge to edge as a full-bleed surface. Show only the terrain surface, as if this image were an arbitrary crop from a much larger continuous texture; the same material and pattern continue beyond all four image edges. No depicted object, patch outline, frame, or separate edge.\n\nStyle & Art Direction: Clear, restrained game-ready terrain art with a small number of broad, low-frequency color shapes and only a few simple details. The natural terrain material and its distinct base colors dominate. Keep the surface flat, evenly lit and easy to distinguish from neighboring terrain; no painterly brushwork or dense microtexture.\n\nTheme accents only: balanced natural daylight. The theme may appear in a few small isolated accents covering at most 5% of the image. It must not change the terrain material, dominant color family, or neutral daylight. No neon, spectral glow, runes, webs, bones, or other high-contrast decoration across the ground.\n\nSubject Details: A continuous surface of dark brown forest soil with broad patches of soil, moss, and fallen leaves and only a few sparse leaves and twigs. the same forest floor continues uniformly, without a distinct edge. Clear neutral daylight with soft minimal shadows. clear neutral daylight. The dominant terrain colors are dark browns, deep greens and mossy tones. Use sparse natural accent colors only for a few tiny secondary accents, never to tint or replace the ground colors. Keep the surface flat, simple, and recognizable at small map scale. Forest soil and leaf litter, unmistakably the floor of a forest. No trees, no trunks, no canopies, no vertical elements - only the flat ground layer. Strict top-down bird's-eye view. No horizon, no sky, no scenery, no buildings, no characters, no animals, no frame and no vignette - only the flat ground surface, edge to edge. This is variant 3 of 3: rearrange the same terrain shapes again, keeping the same density, scale, and palette.\n\nTechnical Specs: Flat map view, strictly top-down, no tree trunks, no side perspective, no horizon, no camera tilt, no depth of field. Use broad readable color clusters and restrained details. The outermost pixels are ordinary terrain, not a border band; opposite edges continue the same pattern. No vignette, halo, contrasting rim, shoreline frame, or shadowed corners.",
+          "suffix": "_2",
+          "variant": 3
+        }
+      ]
+    },
+    {
+      "id": "ocean",
+      "iteration": 1,
+      "kind": "terrain",
+      "negative": "photorealistic, realistic landscape, photography, border frame, ground plane background, horizon line, sky, ambient occlusion shadows on canvas, cut off edges, blurry lines, 3D render artifacts, low resolution, empty background, transparent corners, visible grid lines, diamond layout, isolated subject on black, black background, pitch black, vignette, frame, picture, poster, text, watermark, characters, buildings, animals, 3D render, 3D scene, isometric perspective, tilted camera, side view, depth of field, ray tracing, volumetric light, dramatic cast shadows across the surface, desaturated colours, muted palette, washed out colours, dull faded tones, high-frequency detail, excessive microtexture, noisy texture, intricate repeating detail, neon, bioluminescent veins, spectral glow, glowing lines, runes, webs, bones, scattered debris, painterly brushwork, framed picture, border band, contrasting perimeter, white halo, cloudy edge, muddy edge, shoreline border, land ring, dark corners, gradient edge, drop shadow, isolated patch",
+      "output": "terrain_ocean",
+      "spec": "ocean",
+      "variants": [
+        {
+          "keywords": {
+            "ACCENT_ELEMENT": "a few small pale wave crests",
+            "BASE_MATERIAL": "natural blue water with realistic depth transparency",
+            "COLOR_PALETTE": "layered blues with turquoise accents",
+            "EDGE_ELEMENT": "the same blue water continues uniformly, without a distinct edge",
+            "GLOBAL_LIGHTING": "clear neutral daylight",
+            "GLOBAL_PALETTE": "sparse natural accent colors",
+            "LIGHTING_NOTE": "Clear neutral daylight with soft minimal highlights.",
+            "SURFACE_FORM": "deep open ocean water surface",
+            "TEXTURE_DETAIL": "broad, calm blue wave bands with simple cyan highlights",
+            "THEME_PHRASE": "balanced natural daylight"
+          },
+          "prompt": "A seamless, tileable top-down 2D strategy-game texture of a deep open ocean water surface, viewed straight down and filling the entire image edge to edge as a full-bleed surface. Show only the terrain surface, as if this image were an arbitrary crop from a much larger continuous texture; the same material and pattern continue beyond all four image edges. No depicted object, patch outline, frame, or separate edge.\n\nStyle & Art Direction: Clear, restrained game-ready terrain art with a small number of broad, low-frequency color shapes and only a few simple details. The natural terrain material and its distinct base colors dominate. Keep the surface flat, evenly lit and easy to distinguish from neighboring terrain; no painterly brushwork or dense microtexture.\n\nTheme accents only: balanced natural daylight. The theme may appear in a few small isolated accents covering at most 5% of the image. It must not change the terrain material, dominant color family, or neutral daylight. No neon, spectral glow, runes, webs, bones, or other high-contrast decoration across the ground.\n\nSubject Details: A continuous surface of natural blue water with realistic depth transparency with broad, calm blue wave bands with simple cyan highlights and only a few small pale wave crests. the same blue water continues uniformly, without a distinct edge. Clear neutral daylight with soft minimal highlights. clear neutral daylight. The dominant terrain colors are layered blues with turquoise accents. Use sparse natural accent colors only for a few tiny secondary accents, never to tint or replace the ground colors. Keep the surface flat, simple, and recognizable at small map scale. Liquid open sea water with moving ripples, unmistakably deep water.  No horizon, no sky, no scenery, no buildings, no characters, no animals, no frame and no vignette - only the flat ground surface, edge to edge. This is variant 1 of 3: use a broad, calm arrangement of the same terrain shapes and scale.\n\nTechnical Specs: Flat map view, strictly top-down, no tree trunks, no side perspective, no horizon, no camera tilt, no depth of field. Use broad readable color clusters and restrained details. The outermost pixels are ordinary terrain, not a border band; opposite edges continue the same pattern. No vignette, halo, contrasting rim, shoreline frame, or shadowed corners.",
+          "suffix": "",
+          "variant": 1
+        },
+        {
+          "keywords": {
+            "ACCENT_ELEMENT": "a few small pale wave crests",
+            "BASE_MATERIAL": "natural blue water with realistic depth transparency",
+            "COLOR_PALETTE": "layered blues with turquoise accents",
+            "EDGE_ELEMENT": "the same blue water continues uniformly, without a distinct edge",
+            "GLOBAL_LIGHTING": "clear neutral daylight",
+            "GLOBAL_PALETTE": "sparse natural accent colors",
+            "LIGHTING_NOTE": "Clear neutral daylight with soft minimal highlights.",
+            "SURFACE_FORM": "deep open ocean water surface",
+            "TEXTURE_DETAIL": "broad, calm blue wave bands with simple cyan highlights",
+            "THEME_PHRASE": "balanced natural daylight"
+          },
+          "prompt": "A seamless, tileable top-down 2D strategy-game texture of a deep open ocean water surface, viewed straight down and filling the entire image edge to edge as a full-bleed surface. Show only the terrain surface, as if this image were an arbitrary crop from a much larger continuous texture; the same material and pattern continue beyond all four image edges. No depicted object, patch outline, frame, or separate edge.\n\nStyle & Art Direction: Clear, restrained game-ready terrain art with a small number of broad, low-frequency color shapes and only a few simple details. The natural terrain material and its distinct base colors dominate. Keep the surface flat, evenly lit and easy to distinguish from neighboring terrain; no painterly brushwork or dense microtexture.\n\nTheme accents only: balanced natural daylight. The theme may appear in a few small isolated accents covering at most 5% of the image. It must not change the terrain material, dominant color family, or neutral daylight. No neon, spectral glow, runes, webs, bones, or other high-contrast decoration across the ground.\n\nSubject Details: A continuous surface of natural blue water with realistic depth transparency with broad, calm blue wave bands with simple cyan highlights and only a few small pale wave crests. the same blue water continues uniformly, without a distinct edge. Clear neutral daylight with soft minimal highlights. clear neutral daylight. The dominant terrain colors are layered blues with turquoise accents. Use sparse natural accent colors only for a few tiny secondary accents, never to tint or replace the ground colors. Keep the surface flat, simple, and recognizable at small map scale. Liquid open sea water with moving ripples, unmistakably deep water.  No horizon, no sky, no scenery, no buildings, no characters, no animals, no frame and no vignette - only the flat ground surface, edge to edge. This is variant 2 of 3: rearrange the same terrain shapes without adding detail or changing their scale.\n\nTechnical Specs: Flat map view, strictly top-down, no tree trunks, no side perspective, no horizon, no camera tilt, no depth of field. Use broad readable color clusters and restrained details. The outermost pixels are ordinary terrain, not a border band; opposite edges continue the same pattern. No vignette, halo, contrasting rim, shoreline frame, or shadowed corners.",
+          "suffix": "_1",
+          "variant": 2
+        },
+        {
+          "keywords": {
+            "ACCENT_ELEMENT": "a few small pale wave crests",
+            "BASE_MATERIAL": "natural blue water with realistic depth transparency",
+            "COLOR_PALETTE": "layered blues with turquoise accents",
+            "EDGE_ELEMENT": "the same blue water continues uniformly, without a distinct edge",
+            "GLOBAL_LIGHTING": "clear neutral daylight",
+            "GLOBAL_PALETTE": "sparse natural accent colors",
+            "LIGHTING_NOTE": "Clear neutral daylight with soft minimal highlights.",
+            "SURFACE_FORM": "deep open ocean water surface",
+            "TEXTURE_DETAIL": "broad, calm blue wave bands with simple cyan highlights",
+            "THEME_PHRASE": "balanced natural daylight"
+          },
+          "prompt": "A seamless, tileable top-down 2D strategy-game texture of a deep open ocean water surface, viewed straight down and filling the entire image edge to edge as a full-bleed surface. Show only the terrain surface, as if this image were an arbitrary crop from a much larger continuous texture; the same material and pattern continue beyond all four image edges. No depicted object, patch outline, frame, or separate edge.\n\nStyle & Art Direction: Clear, restrained game-ready terrain art with a small number of broad, low-frequency color shapes and only a few simple details. The natural terrain material and its distinct base colors dominate. Keep the surface flat, evenly lit and easy to distinguish from neighboring terrain; no painterly brushwork or dense microtexture.\n\nTheme accents only: balanced natural daylight. The theme may appear in a few small isolated accents covering at most 5% of the image. It must not change the terrain material, dominant color family, or neutral daylight. No neon, spectral glow, runes, webs, bones, or other high-contrast decoration across the ground.\n\nSubject Details: A continuous surface of natural blue water with realistic depth transparency with broad, calm blue wave bands with simple cyan highlights and only a few small pale wave crests. the same blue water continues uniformly, without a distinct edge. Clear neutral daylight with soft minimal highlights. clear neutral daylight. The dominant terrain colors are layered blues with turquoise accents. Use sparse natural accent colors only for a few tiny secondary accents, never to tint or replace the ground colors. Keep the surface flat, simple, and recognizable at small map scale. Liquid open sea water with moving ripples, unmistakably deep water.  No horizon, no sky, no scenery, no buildings, no characters, no animals, no frame and no vignette - only the flat ground surface, edge to edge. This is variant 3 of 3: rearrange the same terrain shapes again, keeping the same density, scale, and palette.\n\nTechnical Specs: Flat map view, strictly top-down, no tree trunks, no side perspective, no horizon, no camera tilt, no depth of field. Use broad readable color clusters and restrained details. The outermost pixels are ordinary terrain, not a border band; opposite edges continue the same pattern. No vignette, halo, contrasting rim, shoreline frame, or shadowed corners.",
+          "suffix": "_2",
+          "variant": 3
+        }
+      ]
+    },
+    {
+      "id": "fish1",
+      "iteration": 1,
+      "kind": "feature",
+      "negative": "scenery, backdrop, environment, landscape, horizon, sky, clouds, terrain, ground plane, grass, dirt, sand, water surface, waves, foam, rocks, trees, plants, bushes, forest, border frame, cast shadow, diamond tile, hexagon, isometric tile, tile grid, snowflakes, photorealistic, photography, 3D render, blurry lines, low resolution, text, watermark, multiple objects, collage, thumbnail layout, white background, light background, gradient background, textured background, studio backdrop, floor, wall, table",
+      "output": "terrain_ocean_fish",
+      "source": {
+        "glob": "fish1",
+        "kind": "input-png"
+      },
+      "spec": "fish",
+      "variants": [
+        {
+          "keywords": {
+            "FEATURE_DETAIL": "clean outlined scales and a crisp fin silhouette",
+            "FEATURE_FORM": "A streamlined body with a forked tail and clearly separated fins",
+            "FEATURE_KIND": "fish",
+            "FEATURE_LIGHTING": "Soft top light with a bright rim along the back.",
+            "FEATURE_PALETTE": "grounded silver-blue and teal tones",
+            "FEATURE_RENDERING": "Clean dark outlines with smooth cell shading.",
+            "GLOBAL_LIGHTING": "clear neutral daylight",
+            "GLOBAL_PALETTE": "sparse natural accent colors",
+            "THEME_PHRASE": "balanced natural daylight"
+          },
+          "prompt": "isometric 2D video game resource feature sprite of a single fish, isolated standalone central sprite, isometric strategic 3/4 game view showing height and volume, centrally composed asset, well-balanced framing, the whole subject complete and fully visible in the central canvas area, every part of the silhouette fully inside the frame and surrounded by generous clear margin on all four sides, tightly framed around the subject, centered on a completely uniform pure black background that fills the whole canvas edge to edge, easy masking background, game UI icon sprite, isolated subject.\n\nStyle & Art Direction: Hand-drawn strategy-game illustration, clean confident ink contours, controlled cel shading, subtle painterly texture and a vivid saturated palette with strong clear hues\n\nTheme accents only: balanced natural daylight. Keep the subject's natural colors and identity; no theme-driven replacement, glow, or dramatic lighting.\n\nSubject Details: The feature is A streamlined body with a forked tail and clearly separated fins, with clean outlined scales and a crisp fin silhouette. Its natural material colors are grounded silver-blue and teal tones; sparse natural accent colors may appear only as a tiny accent. Soft top light with a bright rim along the back. Clean dark outlines with smooth cell shading. The sprite shows ONLY the feature itself - a single fish - floating on a completely empty solid pure black #000000 background, clean flat black around every edge of the subject for easy masking.\n\nTechnical Specs: High contrast, top-down 45-degree isometric camera view, perfectly isolated subject on a pure black #000000 background, the full silhouette inside the frame with crisp black margin on all four sides, clean readable game sprite.",
+          "suffix": "",
+          "variant": 1
+        }
+      ]
+    },
+    {
+      "id": "mountains_feature_2",
+      "iteration": 1,
+      "kind": "feature",
+      "negative": "scenery, backdrop, environment, landscape, horizon, sky, clouds, terrain, ground plane, grass, dirt, sand, water surface, waves, foam, rocks, trees, plants, bushes, forest, border frame, cast shadow, diamond tile, hexagon, isometric tile, tile grid, snowflakes, photorealistic, photography, 3D render, blurry lines, low resolution, text, watermark, multiple objects, collage, thumbnail layout, white background, light background, gradient background, textured background, studio backdrop, floor, wall, table",
+      "output": "terrain_mountains_feature_2",
+      "source": {
+        "kind": "text"
+      },
+      "spec": "mountains_feature",
+      "variants": [
+        {
+          "keywords": {
+            "FEATURE_DETAIL": "layered rock faces with clear ledges and visible summit tips",
+            "FEATURE_FORM": "Four to six sharp peaks rising side by side with steep flanks",
+            "FEATURE_KIND": "mountain peaks",
+            "FEATURE_LIGHTING": "Crisp cold light with hard small shadows.",
+            "FEATURE_PALETTE": "cool granite grey with pale blue tones",
+            "FEATURE_RENDERING": "Semi-realistic digital painting with clean dark outlines.",
+            "GLOBAL_LIGHTING": "clear neutral daylight",
+            "GLOBAL_PALETTE": "sparse natural accent colors",
+            "THEME_PHRASE": "balanced natural daylight"
+          },
+          "prompt": "isometric 2D video game resource feature sprite of a range of mountain peaks, isolated standalone central sprite, isometric strategic 3/4 game view showing height and volume, centrally composed asset, well-balanced framing, the whole subject complete and fully visible in the central canvas area, every part of the silhouette fully inside the frame and surrounded by generous clear margin on all four sides, tightly framed around the subject, centered on a completely uniform pure black background that fills the whole canvas edge to edge, easy masking background, game UI icon sprite, isolated subject.\n\nStyle & Art Direction: Hand-drawn strategy-game illustration, clean confident ink contours, controlled cel shading, subtle painterly texture and a vivid saturated palette with strong clear hues\n\nTheme accents only: balanced natural daylight. Keep the subject's natural colors and identity; no theme-driven replacement, glow, or dramatic lighting.\n\nSubject Details: The feature is Four to six sharp peaks rising side by side with steep flanks, with layered rock faces with clear ledges and visible summit tips. Its natural material colors are cool granite grey with pale blue tones; sparse natural accent colors may appear only as a tiny accent. Crisp cold light with hard small shadows. Semi-realistic digital painting with clean dark outlines. Several distinct rocky peaks rise side by side as one range, and every peak is whole and fully visible inside the frame with clear black margin around the entire range - each summit tip, each shoulder and each lower slope complete. One broad light-gray limestone area contrasts with the surrounding rock. The sprite shows ONLY the feature itself - a range of mountain peaks - floating on a completely empty solid pure black #000000 background, clean flat black around every edge of the subject for easy masking.\n\nTechnical Specs: High contrast, top-down 45-degree isometric camera view, perfectly isolated subject on a pure black #000000 background, the full silhouette inside the frame with crisp black margin on all four sides, clean readable game sprite.",
+          "suffix": "",
+          "variant": 1
+        }
+      ]
+    },
+    {
+      "id": "unit_warrior",
+      "iteration": 1,
+      "kind": "unit",
+      "negative": "scenery, backdrop, environment, landscape, horizon, sky, clouds, terrain, ground plane, border frame, cast shadow, diamond tile, hexagon, tile grid, photorealistic, photography, photo, 3D render, glossy CGI, blurry lines, low resolution, text, letters, watermark, collage, thumbnail layout, white background, light background, gradient background, textured background, studio backdrop, floor, wall, table, chibi, cute mascot, super-deformed proportions, cropped subject",
+      "output": "unit_warrior",
+      "source": {
+        "file": "worrier.svg",
+        "kind": "svg"
+      },
+      "spec": "unit_warrior",
+      "variants": [
+        {
+          "keywords": {
+            "FEATURE_DETAIL": "painted skin stripes, fur straps and a bone necklace",
+            "FEATURE_FORM": "A brawny tribal fighter mid-stride swinging a rough wooden club, a bark-lined shield raised on the other arm",
+            "FEATURE_KIND": "stone-age tribal warrior",
+            "FEATURE_LIGHTING": "Warm key light from the upper left with a soft shaded side.",
+            "FEATURE_PALETTE": "earthen hides of brown ochre and umber",
+            "FEATURE_RENDERING": "Matching the shared serious inked unit-set illustration style",
+            "GLOBAL_LIGHTING": "clear neutral daylight",
+            "GLOBAL_PALETTE": "sparse natural accent colors",
+            "THEME_PHRASE": "balanced natural daylight"
+          },
+          "prompt": "A polished 2D strategy-game unit icon depicting a single stone-age tribal warrior, viewed from a slightly elevated three-quarter isometric angle. Show one complete, centered unit silhouette with generous clear margin on every side, isolated on a perfectly uniform pure black background.\n\nShared unit-set art direction: A coherent set of serious drawn strategy-game unit illustrations, like mature anime concept art crossed with a refined graphic novel: expressive but realistic proportions, confident dark ink contours, controlled cel shadows, subtle painterly material texture and restrained cinematic highlights. Keep the same line weight, shading, detail density and grounded palette across every unit, with a clear readable silhouette at small game-icon size. Clearly hand-drawn; no glossy 3D, chibi proportions or comic exaggeration.\nTheme accents only: balanced natural daylight. Preserve the unit's natural/material colors, defining silhouette, and clear neutral lighting; use at most a small secondary color or decoration.\n\nUnit design: The unit is A brawny tribal fighter mid-stride swinging a rough wooden club, a bark-lined shield raised on the other arm, with painted skin stripes, fur straps and a bone necklace. Its natural material colors are earthen hides of brown ochre and umber; sparse natural accent colors may appear only as a tiny accent. Warm key light from the upper left with a soft shaded side. Matching the shared serious inked unit-set illustration style. Every arm and every leg is drawn completely, clearly visible and in a natural easy stance, with no limb hidden, cropped or cut by the frame edge.\n\nKeep the defining silhouette and major shapes immediately readable at small game-icon size. Clean intentional linework, controlled shadows, no environment or narrative scene.",
+          "suffix": "",
+          "variant": 1
+        },
+        {
+          "keywords": {
+            "FEATURE_DETAIL": "painted skin stripes, fur straps and a bone necklace",
+            "FEATURE_FORM": "A brawny tribal fighter mid-stride swinging a rough wooden club, a bark-lined shield raised on the other arm",
+            "FEATURE_KIND": "stone-age tribal warrior",
+            "FEATURE_LIGHTING": "Warm key light from the upper left with a soft shaded side.",
+            "FEATURE_PALETTE": "earthen hides of brown ochre and umber",
+            "FEATURE_RENDERING": "Matching the shared serious inked unit-set illustration style",
+            "GLOBAL_LIGHTING": "clear neutral daylight",
+            "GLOBAL_PALETTE": "sparse natural accent colors",
+            "THEME_PHRASE": "balanced natural daylight"
+          },
+          "prompt": "A polished 2D strategy-game unit icon depicting a single stone-age tribal warrior, viewed from a slightly elevated three-quarter isometric angle. Show one complete, centered unit silhouette with generous clear margin on every side, isolated on a perfectly uniform pure black background.\n\nShared unit-set art direction: A coherent set of serious drawn strategy-game unit illustrations, like mature anime concept art crossed with a refined graphic novel: expressive but realistic proportions, confident dark ink contours, controlled cel shadows, subtle painterly material texture and restrained cinematic highlights. Keep the same line weight, shading, detail density and grounded palette across every unit, with a clear readable silhouette at small game-icon size. Clearly hand-drawn; no glossy 3D, chibi proportions or comic exaggeration.\nTheme accents only: balanced natural daylight. Preserve the unit's natural/material colors, defining silhouette, and clear neutral lighting; use at most a small secondary color or decoration.\n\nUnit design: The unit is A brawny tribal fighter mid-stride swinging a rough wooden club, a bark-lined shield raised on the other arm, with painted skin stripes, fur straps and a bone necklace. Its natural material colors are earthen hides of brown ochre and umber; sparse natural accent colors may appear only as a tiny accent. Warm key light from the upper left with a soft shaded side. Matching the shared serious inked unit-set illustration style. Every arm and every leg is drawn completely, clearly visible and in a natural easy stance, with no limb hidden, cropped or cut by the frame edge.\n\nKeep the defining silhouette and major shapes immediately readable at small game-icon size. Clean intentional linework, controlled shadows, no environment or narrative scene.",
+          "suffix": "_2",
+          "variant": 2
+        },
+        {
+          "keywords": {
+            "FEATURE_DETAIL": "painted skin stripes, fur straps and a bone necklace",
+            "FEATURE_FORM": "A brawny tribal fighter mid-stride swinging a rough wooden club, a bark-lined shield raised on the other arm",
+            "FEATURE_KIND": "stone-age tribal warrior",
+            "FEATURE_LIGHTING": "Warm key light from the upper left with a soft shaded side.",
+            "FEATURE_PALETTE": "earthen hides of brown ochre and umber",
+            "FEATURE_RENDERING": "Matching the shared serious inked unit-set illustration style",
+            "GLOBAL_LIGHTING": "clear neutral daylight",
+            "GLOBAL_PALETTE": "sparse natural accent colors",
+            "THEME_PHRASE": "balanced natural daylight"
+          },
+          "prompt": "A polished 2D strategy-game unit icon depicting a single stone-age tribal warrior, viewed from a slightly elevated three-quarter isometric angle. Show one complete, centered unit silhouette with generous clear margin on every side, isolated on a perfectly uniform pure black background.\n\nShared unit-set art direction: A coherent set of serious drawn strategy-game unit illustrations, like mature anime concept art crossed with a refined graphic novel: expressive but realistic proportions, confident dark ink contours, controlled cel shadows, subtle painterly material texture and restrained cinematic highlights. Keep the same line weight, shading, detail density and grounded palette across every unit, with a clear readable silhouette at small game-icon size. Clearly hand-drawn; no glossy 3D, chibi proportions or comic exaggeration.\nTheme accents only: balanced natural daylight. Preserve the unit's natural/material colors, defining silhouette, and clear neutral lighting; use at most a small secondary color or decoration.\n\nUnit design: The unit is A brawny tribal fighter mid-stride swinging a rough wooden club, a bark-lined shield raised on the other arm, with painted skin stripes, fur straps and a bone necklace. Its natural material colors are earthen hides of brown ochre and umber; sparse natural accent colors may appear only as a tiny accent. Warm key light from the upper left with a soft shaded side. Matching the shared serious inked unit-set illustration style. Every arm and every leg is drawn completely, clearly visible and in a natural easy stance, with no limb hidden, cropped or cut by the frame edge.\n\nKeep the defining silhouette and major shapes immediately readable at small game-icon size. Clean intentional linework, controlled shadows, no environment or narrative scene.",
+          "suffix": "_3",
+          "variant": 3
+        }
+      ]
+    },
+    {
+      "id": "unit_phalanx",
+      "iteration": 1,
+      "kind": "unit",
+      "negative": "scenery, backdrop, environment, landscape, horizon, sky, clouds, terrain, ground plane, border frame, cast shadow, diamond tile, hexagon, tile grid, photorealistic, photography, photo, 3D render, glossy CGI, blurry lines, low resolution, text, letters, watermark, collage, thumbnail layout, white background, light background, gradient background, textured background, studio backdrop, floor, wall, table, chibi, cute mascot, super-deformed proportions, cropped subject",
+      "output": "unit_phalanx",
+      "source": {
+        "file": "phalanx.svg",
+        "kind": "svg"
+      },
+      "spec": "unit_phalanx",
+      "variants": [
+        {
+          "keywords": {
+            "FEATURE_DETAIL": "horsehair-crested helmet, bronze cuirass and greaves",
+            "FEATURE_FORM": "A disciplined rank of classical Greek hoplites, each braced behind a round bronze shield with a long spear held upright",
+            "FEATURE_KIND": "hoplites",
+            "FEATURE_LIGHTING": "Warm key light from the upper left with a soft shaded side.",
+            "FEATURE_PALETTE": "polished bronze and deep crimson cloth",
+            "FEATURE_RENDERING": "Matching the shared serious inked unit-set illustration style",
+            "GLOBAL_LIGHTING": "clear neutral daylight",
+            "GLOBAL_PALETTE": "sparse natural accent colors",
+            "THEME_PHRASE": "balanced natural daylight"
+          },
+          "prompt": "A polished 2D strategy-game unit icon depicting a tight classical Greek phalanx of hoplites, viewed from a slightly elevated three-quarter isometric angle. Show one complete, centered unit silhouette with generous clear margin on every side, isolated on a perfectly uniform pure black background.\n\nShared unit-set art direction: A coherent set of serious drawn strategy-game unit illustrations, like mature anime concept art crossed with a refined graphic novel: expressive but realistic proportions, confident dark ink contours, controlled cel shadows, subtle painterly material texture and restrained cinematic highlights. Keep the same line weight, shading, detail density and grounded palette across every unit, with a clear readable silhouette at small game-icon size. Clearly hand-drawn; no glossy 3D, chibi proportions or comic exaggeration.\nTheme accents only: balanced natural daylight. Preserve the unit's natural/material colors, defining silhouette, and clear neutral lighting; use at most a small secondary color or decoration.\n\nUnit design: The unit is A disciplined rank of classical Greek hoplites, each braced behind a round bronze shield with a long spear held upright, with horsehair-crested helmet, bronze cuirass and greaves. Its natural material colors are polished bronze and deep crimson cloth; sparse natural accent colors may appear only as a tiny accent. Warm key light from the upper left with a soft shaded side. Matching the shared serious inked unit-set illustration style. Show a compact shoulder-to-shoulder rank of living human hoplites, not a single isolated soldier: overlapping round shields make one clear defensive front, with upright spears visible above the helmets. Keep the formation readable as one unit emblem.\n\nKeep the defining silhouette and major shapes immediately readable at small game-icon size. Clean intentional linework, controlled shadows, no environment or narrative scene.",
+          "suffix": "",
+          "variant": 1
+        },
+        {
+          "keywords": {
+            "FEATURE_DETAIL": "horsehair-crested helmet, bronze cuirass and greaves",
+            "FEATURE_FORM": "A disciplined rank of classical Greek hoplites, each braced behind a round bronze shield with a long spear held upright",
+            "FEATURE_KIND": "hoplites",
+            "FEATURE_LIGHTING": "Warm key light from the upper left with a soft shaded side.",
+            "FEATURE_PALETTE": "polished bronze and deep crimson cloth",
+            "FEATURE_RENDERING": "Matching the shared serious inked unit-set illustration style",
+            "GLOBAL_LIGHTING": "clear neutral daylight",
+            "GLOBAL_PALETTE": "sparse natural accent colors",
+            "THEME_PHRASE": "balanced natural daylight"
+          },
+          "prompt": "A polished 2D strategy-game unit icon depicting a tight classical Greek phalanx of hoplites, viewed from a slightly elevated three-quarter isometric angle. Show one complete, centered unit silhouette with generous clear margin on every side, isolated on a perfectly uniform pure black background.\n\nShared unit-set art direction: A coherent set of serious drawn strategy-game unit illustrations, like mature anime concept art crossed with a refined graphic novel: expressive but realistic proportions, confident dark ink contours, controlled cel shadows, subtle painterly material texture and restrained cinematic highlights. Keep the same line weight, shading, detail density and grounded palette across every unit, with a clear readable silhouette at small game-icon size. Clearly hand-drawn; no glossy 3D, chibi proportions or comic exaggeration.\nTheme accents only: balanced natural daylight. Preserve the unit's natural/material colors, defining silhouette, and clear neutral lighting; use at most a small secondary color or decoration.\n\nUnit design: The unit is A disciplined rank of classical Greek hoplites, each braced behind a round bronze shield with a long spear held upright, with horsehair-crested helmet, bronze cuirass and greaves. Its natural material colors are polished bronze and deep crimson cloth; sparse natural accent colors may appear only as a tiny accent. Warm key light from the upper left with a soft shaded side. Matching the shared serious inked unit-set illustration style. Show a compact shoulder-to-shoulder rank of living human hoplites, not a single isolated soldier: overlapping round shields make one clear defensive front, with upright spears visible above the helmets. Keep the formation readable as one unit emblem.\n\nKeep the defining silhouette and major shapes immediately readable at small game-icon size. Clean intentional linework, controlled shadows, no environment or narrative scene.",
+          "suffix": "_2",
+          "variant": 2
+        },
+        {
+          "keywords": {
+            "FEATURE_DETAIL": "horsehair-crested helmet, bronze cuirass and greaves",
+            "FEATURE_FORM": "A disciplined rank of classical Greek hoplites, each braced behind a round bronze shield with a long spear held upright",
+            "FEATURE_KIND": "hoplites",
+            "FEATURE_LIGHTING": "Warm key light from the upper left with a soft shaded side.",
+            "FEATURE_PALETTE": "polished bronze and deep crimson cloth",
+            "FEATURE_RENDERING": "Matching the shared serious inked unit-set illustration style",
+            "GLOBAL_LIGHTING": "clear neutral daylight",
+            "GLOBAL_PALETTE": "sparse natural accent colors",
+            "THEME_PHRASE": "balanced natural daylight"
+          },
+          "prompt": "A polished 2D strategy-game unit icon depicting a tight classical Greek phalanx of hoplites, viewed from a slightly elevated three-quarter isometric angle. Show one complete, centered unit silhouette with generous clear margin on every side, isolated on a perfectly uniform pure black background.\n\nShared unit-set art direction: A coherent set of serious drawn strategy-game unit illustrations, like mature anime concept art crossed with a refined graphic novel: expressive but realistic proportions, confident dark ink contours, controlled cel shadows, subtle painterly material texture and restrained cinematic highlights. Keep the same line weight, shading, detail density and grounded palette across every unit, with a clear readable silhouette at small game-icon size. Clearly hand-drawn; no glossy 3D, chibi proportions or comic exaggeration.\nTheme accents only: balanced natural daylight. Preserve the unit's natural/material colors, defining silhouette, and clear neutral lighting; use at most a small secondary color or decoration.\n\nUnit design: The unit is A disciplined rank of classical Greek hoplites, each braced behind a round bronze shield with a long spear held upright, with horsehair-crested helmet, bronze cuirass and greaves. Its natural material colors are polished bronze and deep crimson cloth; sparse natural accent colors may appear only as a tiny accent. Warm key light from the upper left with a soft shaded side. Matching the shared serious inked unit-set illustration style. Show a compact shoulder-to-shoulder rank of living human hoplites, not a single isolated soldier: overlapping round shields make one clear defensive front, with upright spears visible above the helmets. Keep the formation readable as one unit emblem.\n\nKeep the defining silhouette and major shapes immediately readable at small game-icon size. Clean intentional linework, controlled shadows, no environment or narrative scene.",
+          "suffix": "_3",
+          "variant": 3
+        }
+      ]
+    }
+  ],
+  "global": {
+    "GLOBAL_LIGHTING": "clear neutral daylight",
+    "GLOBAL_PALETTE": "sparse natural accent colors",
+    "THEME_PHRASE": "balanced natural daylight"
+  },
+  "iterations": 1,
+  "label": "golden",
+  "rolls": {
+    "mountains_feature_2_atmosphere": "clear face",
+    "mountains_feature_2_crazy": "One broad light-gray limestone area contrasts with the surrounding rock."
+  },
+  "runs": [
+    {
+      "assets": [
+        {
+          "id": "forest",
+          "kind": "terrain"
+        },
+        {
+          "id": "ocean",
+          "kind": "terrain"
+        },
+        {
+          "id": "fish1",
+          "kind": "feature"
+        },
+        {
+          "id": "mountains_feature_2",
+          "kind": "feature"
+        },
+        {
+          "id": "unit_warrior",
+          "kind": "unit"
+        },
+        {
+          "id": "unit_phalanx",
+          "kind": "unit"
+        }
+      ],
+      "global": {
+        "GLOBAL_LIGHTING": "clear neutral daylight",
+        "GLOBAL_PALETTE": "sparse natural accent colors",
+        "THEME_PHRASE": "balanced natural daylight"
+      },
+      "iteration": 1,
+      "rolls": {
+        "mountains_feature_2_atmosphere": "clear face",
+        "mountains_feature_2_crazy": "One broad light-gray limestone area contrasts with the surrounding rock."
+      },
+      "theme": "balanced natural daylight"
+    }
+  ],
+  "seed": 1234,
+  "style": "",
+  "theme": "",
+  "unitStyle": "",
+  "version": 1
+}

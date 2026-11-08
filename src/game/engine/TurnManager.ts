@@ -21,11 +21,13 @@ export enum TurnPhase {
 }
 
 import { AIResearch } from './AI/AIResearch';
+import { AIUtility } from './AI/AIUtility';
 import { CombatSystem } from './CombatSystem';
 import { createDefaultAIState, resolveAICivStrategy } from './AI/AITypes';
 import { fishingRelevanceForCiv } from './FisherEconomics';
 import { serializeCities } from '../../utils/CitySnapshots';
 import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
+import { NOMAD_CIV_ID } from '@/data/NomadConstants';
 import { CARAVAN_CITY_MOVE_BONUS, CARAVAN_CITY_MOVE_RADIUS } from '@/data/GameConstants';
 import { isWonderId, wonderGroupMembers } from '@/data/WonderData';
 import { UNIT_UPGRADE_PATHS } from '@/data/UnitConstants';
@@ -1611,6 +1613,26 @@ export class TurnManager {
   }
 
   // --- Automated movement (path following) ---
+
+  /**
+   * Does a NEUTRAL nomad camp stand on this unit's next step?
+   *
+   * An automated walk (an AI's GoTo, or the player's) must never step into
+   * the tribe's tile: entering an occupied tile resolves as combat, and
+   * first blood turns the tribe angry at whoever drew it — the AI would be
+   * starting a war over a path it never chose. The caller drops the order
+   * and the unit re-plans; a DELIBERATE attack is a deliberate click and
+   * never comes through here.
+   */
+  private neutralNomadInWay(unit: Unit, path: readonly { col: number; row: number }[]): boolean {
+    const step = path[0];
+    if (!step) return false;
+    const occupant = this.gameEngine.getUnitAt(step.col, step.row);
+    if (!occupant || occupant.civilizationId === unit.civilizationId) return false;
+    if (occupant.civilizationId !== NOMAD_CIV_ID) return false;
+    return !AIUtility.isHostileTo(this.gameEngine, unit.civilizationId, NOMAD_CIV_ID);
+  }
+
   private async processAutomatedMovements(civilizationId: number): Promise<void> {
     const unitsWithPaths = Array.from(this.unitPaths.entries())
       .filter(([unitId]) => {
@@ -1647,6 +1669,17 @@ export class TurnManager {
         this.clearUnitPath(unit.id);
         continue;
       }
+
+      // A neutral nomad camp stands on the next step: drop the order rather
+      // than walk into it. Entering an occupied tile resolves as combat, and
+      // first blood turns the tribe angry at whoever drew it — so an
+      // AUTOMATED walk (AI or player) never starts that fight; a deliberate
+      // attack is a deliberate click and never comes through here.
+      if (this.neutralNomadInWay(unit, path)) {
+        debugLog(`[TurnManager] ⛺ ${unit.id} stops: a neutral nomad camp stands on the route`);
+        this.clearUnitPath(unit.id);
+        continue;
+      }
       
       debugLog(`[TurnManager] ➡️ Unit ${unit.id} (${unit.type}) has GoTo path with ${path.length} steps, ${unit.movesRemaining} moves remaining`);
       
@@ -1672,6 +1705,13 @@ export class TurnManager {
         let safety = 0;
         while ((unit.movesRemaining || 0) > 0 && path.length > 0 && safety < 100) {
           safety++;
+          // Re-checked on EVERY step: the camp can wander onto the route
+          // between two steps of the same walk.
+          if (this.neutralNomadInWay(unit, path)) {
+            debugLog(`[TurnManager] ⛺ Unit ${unit.id} stops: a neutral nomad camp stands on the route`);
+            this.clearUnitPath(unit.id);
+            break;
+          }
           const next = path[0];
           const result = this.gameEngine.moveUnit(unit.id, next.col, next.row);
           if (result?.success) {

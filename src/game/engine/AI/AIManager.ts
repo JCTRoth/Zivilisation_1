@@ -19,6 +19,7 @@ import {
   villageEarlyGameFactor,
 } from '@/data/VillageConstants';
 import { EARLY_TECH_EXCHANGE_MAX_ROUND, isAutoScenario, SMALL_ISLAND_MAX_TILES } from '@/data/GameConstants';
+import { NOMAD_CIV_ID } from '@/data/NomadConstants';
 import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
 import { caravanRelevanceForCiv } from './CaravanEconomics';
 import { planCaravansForCiv, type CaravanCoordinatorWorld } from './CaravanCoordinator';
@@ -1049,9 +1050,11 @@ export class AIManager {
     if (aggressionState.posture === 'aggressive' && this.gameEngine.diplomacyManager) {
       const plan = storage?.turnData?.offensivePlan as { targetCivId?: number } | undefined | null;
       const targetCivId = plan?.targetCivId;
-      // Barbarians are always hostile but have no diplomacy relation — never
-      // "declare war" on them (a no-op); just attack.
-      if (typeof targetCivId === 'number' && targetCivId !== civilizationId && targetCivId !== BARBARIAN_CIV_ID) {
+      // Barbarians and the nomad tribe are always hostile but have no
+      // diplomacy relation — never "declare war" on a phantom seat (a no-op
+      // that would still write a relation with a civ that is not in the
+      // world); just fight them when the plan says to.
+      if (typeof targetCivId === 'number' && targetCivId !== civilizationId && targetCivId >= 0) {
         const dm = this.gameEngine.diplomacyManager;
         // Never start a war the AI cannot prosecute. An AI-vs-AI run produced 17
         // declarations and 3 attacks: the Huns declared war on Russia from
@@ -1327,10 +1330,14 @@ export class AIManager {
         for (const tile of adjacentTiles) {
           // Use your new engine method to check before moving
           if (this.gameEngine.canMoveUnit(unit.id, tile.col, tile.row)) {
-            console.warn(`[AI] 🔄🔄🔄 Breaking oscillation: Attempting random move to (${tile.col}, ${tile.row})`);
-            this.gameEngine.moveUnit(unit.id, tile.col, tile.row);
-            brokeLoop = true;
-            break; // Stop trying directions once one succeeds
+            // `moveAsAI` also refuses a tile a neutral nomad camp occupies:
+            // an oscillating unit must not break its deadlock by starting a
+            // fight — keep trying the other directions instead.
+            if (this.moveAsAI(unit, tile.col, tile.row).success) {
+              console.warn(`[AI] 🔄🔄🔄 Breaking oscillation: Attempting random move to (${tile.col}, ${tile.row})`);
+              brokeLoop = true;
+              break; // Stop trying directions once one succeeds
+            }
           }
         }
 
@@ -1507,7 +1514,7 @@ export class AIManager {
                 row: cityHere.row,
               });
               if (stepOut) {
-                const r = this.gameEngine.moveUnit(unit.id, stepOut.col, stepOut.row);
+                const r = this.moveAsAI(unit, stepOut.col, stepOut.row);
                 if (r?.success) {
                   debugLog(`[AI-SETTLER] Settler ${unit.id} moved out of city to (${stepOut.col},${stepOut.row})`);
                   break;
@@ -1540,7 +1547,7 @@ export class AIManager {
           if (shelter) {
             const step = this.findAffordableStep(unit, shelter);
             if (step) {
-              const r = this.gameEngine.moveUnit(unit.id, step.col, step.row);
+              const r = this.moveAsAI(unit, step.col, step.row);
               if (r?.success) {
                 debugLog(`[AI-SETTLER] Emergency evacuation: ${unit.id} -> (${step.col},${step.row})`);
                 break;
@@ -1748,6 +1755,7 @@ export class AIManager {
           && u.id !== unit.id
           && u.civilizationId !== unit.civilizationId
           && !this.isTeammate(unit.civilizationId, u.civilizationId)
+          && !this.isPeacefulNomad(unit.civilizationId, u.civilizationId)
           && !u.isDefeated);
         if (stackedEnemy) {
           // Pre-attack calculation (Civ1 guide: "do not attack without a quick
@@ -1853,7 +1861,7 @@ export class AIManager {
           this.caravanGovernor.recordTurn(roundNumber);
           const plan = this.caravanGovernor.planUnit(unit, this.gameEngine, roundNumber);
           if (plan.kind === 'move') {
-            const r = this.gameEngine.moveUnit(unit.id, plan.step.col, plan.step.row);
+            const r = this.moveAsAI(unit, plan.step.col, plan.step.row);
             if (r && r.success) {
               this.caravanGovernor.reportProgress(unit.id);
               this.gameEngine.log('ai', `Caravan move — ${civ.name} caravan(${unit.id}) → (${plan.step.col},${plan.step.row}) towards (${plan.target.col},${plan.target.row})${plan.risky ? ' [risky route]' : ''}`, {
@@ -2011,7 +2019,9 @@ export class AIManager {
             (c, r) => this.gameEngine.getUnitAt(c, r),
             (civId) => this.isTeammate(unit.civilizationId, civId),
           );
-          if (adjacentEnemy && adjacentEnemy.civilizationId !== unit.civilizationId) {
+          if (adjacentEnemy
+            && adjacentEnemy.civilizationId !== unit.civilizationId
+            && !this.isPeacefulNomad(unit.civilizationId, adjacentEnemy.civilizationId)) {
             // Look up the full Unit object (findNearbyEnemy returns a lightweight UnitData)
             const fullEnemy = this.gameEngine.units.find(
               (u: Unit) => u.id === adjacentEnemy.id && u.civilizationId === adjacentEnemy.civilizationId,
@@ -2057,6 +2067,15 @@ export class AIManager {
           if (targetUnit
             && targetUnit.civilizationId !== unit.civilizationId
             && !this.isTeammate(unit.civilizationId, targetUnit.civilizationId)) {
+            // A neutral nomad camp stands on our path: go round it, never
+            // through it — entering the tile would resolve as combat and
+            // start a war nobody planned. The tile is blacklisted so this
+            // unit stops re-targeting the same blocker every turn.
+            if (this.isPeacefulNomad(unit.civilizationId, targetUnit.civilizationId)) {
+              this.blacklistScoutTarget(unit, target.col, target.row);
+              this.gameEngine.skipUnit(unit.id);
+              break;
+            }
             // Pre-attack calculation: odds floor, focus-fire support and the
             // siege field rule (AttackOdds). A unit that must not start this
             // fight digs in instead of charging.
@@ -2094,7 +2113,7 @@ export class AIManager {
             const tt = this.gameEngine.getTileAt(dest.col, dest.row);
             const moveCost = Math.max(1, TERRAIN_PROPS[tt?.type ?? '']?.movement ?? 1);
             if (this.gameEngine.canUnitAffordMove(unit, moveCost)) {
-              const r = this.gameEngine.moveUnit(unit.id, dest.col, dest.row);
+              const r = this.moveAsAI(unit, dest.col, dest.row);
               if (!r || !r.success) {
                 // A scout that cannot enter this tile should stop re-targeting
                 // it forever (stuck-target guard).
@@ -2169,7 +2188,7 @@ export class AIManager {
               debugLog(`[AI] De-stacking march: ${unit.id} steps to (${spreadStep.col},${spreadStep.row}) instead of piling onto (${next.col},${next.row})`);
               next = spreadStep;
             }
-            const r = this.gameEngine.moveUnit(unit.id, next.col, next.row);
+            const r = this.moveAsAI(unit, next.col, next.row);
             if (!r || !r.success) {
               // A scout blocked on this step should not repeat it next turn.
               this.blacklistScoutTarget(unit, next.col, next.row);
@@ -2183,7 +2202,7 @@ export class AIManager {
               // target so it keeps moving and can route around the blocker.
               const fallbackStep = this.findAffordableStep(unit, target);
               if (fallbackStep) {
-                const fb = this.gameEngine.moveUnit(unit.id, fallbackStep.col, fallbackStep.row);
+                const fb = this.moveAsAI(unit, fallbackStep.col, fallbackStep.row);
                 if (fb && fb.success) {
                   debugLog(`[AI] Path step blocked — fallback move to (${fallbackStep.col},${fallbackStep.row})`);
                   this.gameEngine.log('ai', `Fallback move — ${civ.name} ${unit.type}(${unit.id}) → (${fallbackStep.col},${fallbackStep.row})`, { civilizationId, action: 'move', unitId: unit.id, unitType: unit.type, targetCol: fallbackStep.col, targetRow: fallbackStep.row, reason: 'path_step_fallback' });
@@ -2214,7 +2233,7 @@ export class AIManager {
             // best affordable adjacent tile toward it so it keeps moving.
             const fallbackStep = this.findAffordableStep(unit, target);
             if (fallbackStep) {
-              const fb = this.gameEngine.moveUnit(unit.id, fallbackStep.col, fallbackStep.row);
+              const fb = this.moveAsAI(unit, fallbackStep.col, fallbackStep.row);
               if (fb && fb.success) {
                 debugLog(`[AI] No path — fallback move to (${fallbackStep.col},${fallbackStep.row})`);
                 this.gameEngine.log('ai', `Fallback move — ${civ.name} ${unit.type}(${unit.id}) → (${fallbackStep.col},${fallbackStep.row})`, { civilizationId, action: 'move', unitId: unit.id, unitType: unit.type, targetCol: fallbackStep.col, targetRow: fallbackStep.row, reason: 'no_path_fallback' });
@@ -4553,15 +4572,46 @@ export class AIManager {
 
   /**
    * Whether `otherCivId` may be attacked by `unit`'s civ: a civ we are at war
-   * with, or the barbarian faction (always hostile). A missing
+   * with, or the barbarian faction (always hostile), or the nomad tribe when
+   * it has turned or our war plan names it (see
+   * `AIUtility.isHostileTo`, which owns the rule). A missing
    * `diplomacyManager` means the engine cannot declare war either, so nothing
    * is hostile — naval units then stay home instead of picking fights that
    * would kill them (a Ferry has 0 attack and always loses a sea fight).
    */
   private isHostileTo(unitCivId: number, otherCivId: number | null | undefined): boolean {
-    if (otherCivId == null || otherCivId === unitCivId) return false;
-    if (otherCivId === BARBARIAN_CIV_ID) return true;
-    return this.gameEngine.diplomacyManager?.isAtWar(unitCivId, otherCivId) === true;
+    return AIUtility.isHostileTo(this.gameEngine, unitCivId, otherCivId);
+  }
+
+  /**
+   * Is THAT unit a member of the neutral tribe we must not strike? True for a
+   * nomad camp that is neither angry nor named by our war plan — the AI walks
+   * around it instead of through it, because `moveUnit` resolves entering an
+   * occupied tile as combat and an unprovoked blow on a peaceful camp is taken
+   * as first blood (the tribe goes angry and raids the court that drew it).
+   * Real rivals are unaffected: they are struck exactly as before.
+   */
+  private isPeacefulNomad(unitCivId: number, otherCivId: number | null | undefined): boolean {
+    return otherCivId === NOMAD_CIV_ID
+      && !AIUtility.isHostileTo(this.gameEngine, unitCivId, otherCivId);
+  }
+
+  /**
+   * The AI's one way onto a tile. It refuses to step where a NEUTRAL nomad
+   * camp stands — entering an occupied tile resolves as combat, and first
+   * blood turns the tribe angry at whoever drew it, so a path the AI merely
+   * WALKED must never start that fight — and answers with the same blocked
+   * result `moveUnit` would, so every caller's existing handling (blacklist
+   * the tile, clear the route, skip the unit) applies unchanged. A deliberate
+   * attack never comes through here: it is a target the AI chose, which the
+   * hostility gate already cleared.
+   */
+  private moveAsAI(unit: Unit, col: number, row: number): ReturnType<GameEngine['moveUnit']> {
+    const occupant = this.gameEngine.getUnitAt(col, row);
+    if (occupant && this.isPeacefulNomad(unit.civilizationId, occupant.civilizationId)) {
+      return { success: false, reason: 'neutral_nomad_camp' } as ReturnType<GameEngine['moveUnit']>;
+    }
+    return this.gameEngine.moveUnit(unit.id, col, row);
   }
 
   /**
@@ -6160,7 +6210,9 @@ export class AIManager {
     // 1) Nearby hostile unit. Scouts flank it and a SCOUTING CARAVAN routes
     //    around it (it is cargo, not a fighter — charging the enemy would
     //    throw the delivery away); other units take it on.
-    if (enemy && unit.type !== 'caravan') {
+    if (enemy
+      && unit.type !== 'caravan'
+      && !this.isPeacefulNomad(unit.civilizationId, enemy.civilizationId)) {
       // Scouts are intelligence units, not disposable melee units.  When a
       // hostile unit blocks the direct route, choose a passable waypoint on
       // either side of it.  This creates a real flanking/scouting flow: the
@@ -8695,7 +8747,11 @@ export class AIManager {
     // 1. Nearest known enemy, regardless of staleness.
     if (storage?.enemyLocations) {
       let best: { col: number; row: number; dist: number } | null = null;
-      for (const enemyList of storage.enemyLocations.values()) {
+      for (const [enemyCivId, enemyList] of storage.enemyLocations) {
+        // A neutral nomad camp is not an enemy to march on: the picket pushes
+        // the front line toward RIVALS (contact → intel → war plan), never
+        // toward a tribe we may not strike.
+        if (this.isPeacefulNomad(unit.civilizationId, enemyCivId)) continue;
         for (const loc of enemyList) {
           if (!loc || typeof loc.col !== 'number' || typeof loc.row !== 'number') continue;
           const dist = distFn(unit.col, unit.row, loc.col, loc.row);

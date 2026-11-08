@@ -241,13 +241,18 @@ describe('Nomads — trigger and spawn', () => {
     }
     expect(parleyAt, 'they came and met the court').toBeGreaterThan(0);
 
-    // Face to face — ON the tile: the message binds to the nomads
-    // APPEARING ON your city, not to them standing beside it.
+    // Face to face — AT THE GATE: the message binds to the nomads reaching
+    // the court. They stop at its edge (a visitor never storms a city), so
+    // the envoy speaks from the tile beside the walls.
     const city = engine.cities[0];
-    const met = nomadUnits(engine).some(
-      (u) => u.col === city.col && u.row === city.row,
-    );
-    expect(met, 'they are standing ON the city when the envoy speaks').toBe(true);
+    const besideCity = (u: { col: number; row: number }) =>
+      Math.max(Math.abs(u.col - city.col), Math.abs(u.row - city.row)) <= 1;
+    const met = nomadUnits(engine).some(besideCity);
+    expect(met, 'they are standing at the city gate when the envoy speaks').toBe(true);
+    expect(
+      nomadUnits(engine).some((u) => u.col === city.col && u.row === city.row),
+      'a visitor never stands inside the walls',
+    ).toBe(false);
 
     // The audience carries where the horde stands — the camera takes the
     // viewer to the place the dialog is about.

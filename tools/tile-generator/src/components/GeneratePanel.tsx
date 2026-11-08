@@ -24,6 +24,7 @@ export default function GeneratePanel({ onGenerated, pendingSource, onPendingSou
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [modelSearch, setModelSearch] = useState('');
   const [prompt, setPrompt] = useState('');
+  const [negative, setNegative] = useState('');
   const [tileName, setTileName] = useState('');
   const [width, setWidth] = useState(256);
   const [height, setHeight] = useState(256);

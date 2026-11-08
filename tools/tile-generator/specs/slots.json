@@ -1,0 +1,3052 @@
+{
+  "COLOR_WORDS": [
+    "amber",
+    "apricot",
+    "ash",
+    "azure",
+    "beige",
+    "black",
+    "blue",
+    "brass",
+    "bronze",
+    "brown",
+    "burgundy",
+    "cerulean",
+    "charcoal",
+    "copper",
+    "coral",
+    "cream",
+    "crimson",
+    "cyan",
+    "ebony",
+    "emerald",
+    "fuchsia",
+    "gold",
+    "golden",
+    "gray",
+    "green",
+    "grey",
+    "indigo",
+    "ivory",
+    "jade",
+    "khaki",
+    "lavender",
+    "lime",
+    "magenta",
+    "maroon",
+    "mint",
+    "navy",
+    "ochre",
+    "olive",
+    "orange",
+    "peach",
+    "pearl",
+    "pewter",
+    "pink",
+    "plum",
+    "purple",
+    "red",
+    "russet",
+    "rust",
+    "saffron",
+    "salmon",
+    "sapphire",
+    "scarlet",
+    "sepia",
+    "sienna",
+    "silver",
+    "slate",
+    "tan",
+    "teal",
+    "tin",
+    "turquoise",
+    "umber",
+    "violet",
+    "white",
+    "yellow"
+  ],
+  "FEATURE_FORBIDDEN": {
+    "coal": [
+      "diamond",
+      "crystal",
+      "emerald"
+    ],
+    "fish": [
+      "school",
+      "pod",
+      "herd",
+      "group",
+      "multiple",
+      "pair",
+      "bowl",
+      "fishing",
+      "hook",
+      "rod"
+    ],
+    "forest_coniferous": [
+      "single tree",
+      "lone tree",
+      "broadleaf",
+      "stump",
+      "logs",
+      "clear-cut"
+    ],
+    "forest_deciduous": [
+      "single tree",
+      "lone tree",
+      "pine",
+      "spruce",
+      "fir",
+      "stump",
+      "logs",
+      "clear-cut"
+    ],
+    "forest_mixed": [
+      "single tree",
+      "lone tree",
+      "stump",
+      "logs",
+      "clear-cut"
+    ],
+    "game": [
+      "hunt",
+      "rifle",
+      "arrow",
+      "herd",
+      "group",
+      "multiple"
+    ],
+    "gems": [
+      "ring",
+      "necklace",
+      "crown",
+      "chest",
+      "treasure"
+    ],
+    "gold": [
+      "ring",
+      "necklace",
+      "crown",
+      "chest",
+      "treasure",
+      "bar"
+    ],
+    "hills_feature": [],
+    "horse": [
+      "stable",
+      "rider",
+      "saddle",
+      "carriage",
+      "grazing",
+      "plush",
+      "toy",
+      "cute",
+      "cartoon"
+    ],
+    "jungle_feature": [
+      "single tree",
+      "lone tree",
+      "foliage wall",
+      "clear-cut"
+    ],
+    "mountains_feature": [
+      "single peak",
+      "lone peak",
+      "plateau",
+      "mesa"
+    ],
+    "oasis": [
+      "camel",
+      "caravan",
+      "tent",
+      "building",
+      "city"
+    ],
+    "oil": [
+      "pump",
+      "derrick",
+      "rig",
+      "barrel",
+      "pipe"
+    ],
+    "seal": [
+      "fish",
+      "shark",
+      "whale",
+      "dolphin",
+      "human"
+    ],
+    "swamp_feature": [],
+    "unit_archer": [
+      "crossbow",
+      "firearm",
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_artillery": [
+      "tank",
+      "tracked",
+      "tripod",
+      "tower",
+      "legs",
+      "recoiling track",
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_battleship": [
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_bomber": [
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_cannon": [
+      "close-up",
+      "emerging",
+      "turret",
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_caravan": [
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_caravel": [
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_carrier": [
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_catapult": [
+      "firearm",
+      "rubber tyres",
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_cavalry": [
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_chariot": [
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_cruiser": [
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_destroyer": [
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_diplomat": [
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_ferry": [
+      "cruise ship",
+      "passenger liner",
+      "sailing ship",
+      "container ship",
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_fighter": [
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_fisher_boat": [
+      "large merchant ship",
+      "cargo crane",
+      "container ship",
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_frigate": [
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_ironclad": [
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_knights": [
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_legion": [
+      "firearm",
+      "musket",
+      "medieval",
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_mech_inf": [
+      "ancient",
+      "musket",
+      "sword",
+      "robot",
+      "android",
+      "humanoid machine",
+      "powered armor",
+      "exoskeleton",
+      "sci-fi",
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_musketeer": [
+      "sword",
+      "shield",
+      "pistol",
+      "rapier",
+      "dagger",
+      "rifle with scope",
+      "modern",
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_nuclear": [
+      "explosion",
+      "mushroom cloud",
+      "city",
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_phalanx": [
+      "firearm",
+      "musket",
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_riflemen": [
+      "laser",
+      "scope",
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_sail": [
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_scout": [
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_settler": [
+      "modern car",
+      "tractor",
+      "motor vehicle",
+      "tourist wagon",
+      "chuckwagon kitchen",
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_submarine": [
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_tank": [
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_trade_ship": [
+      "container ship",
+      "modern freighter",
+      "steam funnel",
+      "photograph",
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_transport": [
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_trireme": [
+      "steam",
+      "motor",
+      "engine",
+      "square sail",
+      "square rig",
+      "multiple banks",
+      "three rows of oars",
+      "container ship",
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ],
+    "unit_warrior": [
+      "storm",
+      "stormy",
+      "tattered",
+      "drenched",
+      "embattled",
+      "damaged",
+      "ruined",
+      "broken",
+      "weathered",
+      "battle-worn"
+    ]
+  },
+  "FEATURE_KIND_FORBIDDEN": {
+    "game": [
+      "antler",
+      "horn",
+      "carcass",
+      "cluster",
+      "group"
+    ],
+    "horse": [
+      "charge",
+      "rearing",
+      "standing",
+      "silhouette",
+      "pose",
+      "gesture",
+      "figure",
+      "statue",
+      "stern"
+    ],
+    "seal": [
+      "storm",
+      "lightning",
+      "myth"
+    ]
+  },
+  "FEATURE_SLOT_SPECS": [
+    {
+      "help": "the kind of thing the feature is - a plain noun phrase of 1-3 words such as 'fish', 'horse' or 'tree cluster'; no pose, no view, no adjectives",
+      "max_words": 3,
+      "name": "FEATURE_KIND",
+      "theme": false
+    },
+    {
+      "help": "the shape, pose and silhouette of the feature",
+      "max_words": 14,
+      "name": "FEATURE_FORM",
+      "theme": false
+    },
+    {
+      "help": "surface detail, markings and texture of the feature",
+      "max_words": 14,
+      "name": "FEATURE_DETAIL",
+      "theme": false
+    },
+    {
+      "help": "the natural colour range of the feature's own material",
+      "max_words": 10,
+      "name": "FEATURE_PALETTE",
+      "theme": false
+    },
+    {
+      "help": "neutral even light that keeps the feature's natural colors clear",
+      "max_words": 10,
+      "name": "FEATURE_LIGHTING",
+      "theme": false
+    },
+    {
+      "help": "the rendering treatment, e.g. 'clean dark outlines with soft cell shading'",
+      "max_words": 12,
+      "name": "FEATURE_RENDERING",
+      "theme": false
+    }
+  ],
+  "FEATURE_SPECS": {
+    "coal": {
+      "anchors": [
+        "coal",
+        "anthracite",
+        "carbon"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "angular split faces with a slick glossy sheen and fine dust in the cracks",
+        "FEATURE_FORM": "a small mound of chunky coal lumps over a grey rocky base",
+        "FEATURE_KIND": "coal outcrop",
+        "FEATURE_LIGHTING": "hard cool light with a wet-looking shine on the split faces",
+        "FEATURE_PALETTE": "deep charcoal black over cool slate grey rock",
+        "FEATURE_RENDERING": "clean dark outlines with matte stony shading"
+      },
+      "identity": "a small coal outcrop"
+    },
+    "fish": {
+      "anchors": [
+        "fish",
+        "carp",
+        "trout",
+        "salmon",
+        "perch",
+        "pike",
+        "eel",
+        "koi"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "clean outlined scales and a crisp fin silhouette",
+        "FEATURE_FORM": "a streamlined body with a forked tail and clearly separated fins",
+        "FEATURE_KIND": "fish",
+        "FEATURE_LIGHTING": "soft top light with a bright rim along the back",
+        "FEATURE_PALETTE": "grounded silver-blue and teal tones",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "identity": "a single fish"
+    },
+    "forest_coniferous": {
+      "anchors": [
+        "coniferous",
+        "pine",
+        "spruce",
+        "fir",
+        "evergreen",
+        "needle"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "dense layered needle branch fans, small cones and dark trunks in view",
+        "FEATURE_FORM": "five to seven individual conical trees standing together, needle foliage and slender trunks",
+        "FEATURE_KIND": "coniferous trees",
+        "FEATURE_LIGHTING": "cool clear highland light with deep green shadows",
+        "FEATURE_PALETTE": "deep fir greens with cool blue-green shadow tones",
+        "FEATURE_RENDERING": "semi-realistic digital painting with clean dark outlines"
+      },
+      "fixed": "The trees stand as clearly separated individuals with their own full trunks and crowns, and every tree is complete and fully visible inside the frame, with clear black margin around the whole group. Every tree is a conifer with dark needle foliage and a conical evergreen crown. The trunks end freely in mid-air, so the entire frame beneath the group stays empty solid black.",
+      "identity": "a coniferous forest group of trees",
+      "kind_help": "the tree kinds standing in the group, as plural noun phrases such as 'pines and spruces' - never singular",
+      "subject_template": "a group of #FEATURE_KIND#"
+    },
+    "forest_deciduous": {
+      "anchors": [
+        "deciduous",
+        "broadleaf",
+        "oak",
+        "beech",
+        "maple",
+        "birch"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "layered leaf clusters, soft dappled grass between the trunks and light foliage gaps",
+        "FEATURE_FORM": "five to seven individual broadleaf trees with full rounded crowns on visible trunks",
+        "FEATURE_KIND": "deciduous trees",
+        "FEATURE_LIGHTING": "warm daylight filtering through the crowns",
+        "FEATURE_PALETTE": "fresh greens with warm yellow-green highlights",
+        "FEATURE_RENDERING": "semi-realistic digital painting with clean dark outlines"
+      },
+      "fixed": "The trees stand as clearly separated individuals with their own full trunks and crowns, and every tree is complete and fully visible inside the frame, with clear black margin around the whole group. Every tree is a broadleaf deciduous tree with a full rounded crown. The trunks end freely in mid-air, so the entire frame beneath the group stays empty solid black.",
+      "identity": "a deciduous forest group of trees",
+      "kind_help": "the tree kinds standing in the group, as plural noun phrases such as 'oaks and beeches' - never singular",
+      "subject_template": "a group of #FEATURE_KIND#"
+    },
+    "forest_mixed": {
+      "anchors": [
+        "mixed forest",
+        "trees",
+        "broadleaf",
+        "conifers",
+        "forest group"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "each tree with its own visible trunk, layered leaf clusters and low undergrowth",
+        "FEATURE_FORM": "four to six individual trees, rounded broadleaf crowns beside conical needle crowns",
+        "FEATURE_KIND": "mixed forest trees",
+        "FEATURE_LIGHTING": "warm daylight filtering through the crowns",
+        "FEATURE_PALETTE": "layered greens with warm yellow-green highlights",
+        "FEATURE_RENDERING": "semi-realistic digital painting with clean dark outlines"
+      },
+      "fixed": "The trees stand as clearly separated individuals with their own full trunks and crowns, and every tree is complete and fully visible inside the frame, with clear black margin around the whole group. The mixture includes both rounded broadleaf crowns and a few conical needle crowns. The trunks and greenery end freely in mid-air, so the entire frame beneath the group stays empty solid black.",
+      "identity": "a mixed forest group of trees",
+      "kind_help": "the tree kinds standing in the group, as plural noun phrases such as 'deciduous trees' or 'conifers' - never singular",
+      "subject_template": "a group of #FEATURE_KIND#"
+    },
+    "game": {
+      "anchors": [
+        "deer",
+        "stag",
+        "elk",
+        "roe deer",
+        "buck",
+        "doe"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "smooth short summer coat with a pale chest patch and a soft dark nose",
+        "FEATURE_FORM": "an alert stag standing with the head raised and a fine branching antler crown",
+        "FEATURE_KIND": "stag",
+        "FEATURE_LIGHTING": "soft forest light with a warm rim along the back",
+        "FEATURE_PALETTE": "warm russet brown and tan tones with a cream belly",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "identity": "a single wild game animal",
+      "kind_help": "a plain animal noun such as 'stag', 'elk' or 'roe deer' - one animal"
+    },
+    "gems": {
+      "anchors": [
+        "gems",
+        "gemstones",
+        "crystals",
+        "jewels",
+        "precious stones"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "brilliant faceted cuts catching the light with sharp highlights and inner fire",
+        "FEATURE_FORM": "several cut gemstones of different sizes resting together on a small rocky base",
+        "FEATURE_KIND": "gemstone cluster",
+        "FEATURE_LIGHTING": "sparkling point light with tiny star glints on each facet",
+        "FEATURE_PALETTE": "rich jewel colours of ruby red, emerald green and sapphire blue",
+        "FEATURE_RENDERING": "clean dark outlines with glassy translucent shading"
+      },
+      "identity": "a small cluster of precious gemstones"
+    },
+    "gold": {
+      "anchors": [
+        "gold",
+        "gold nuggets",
+        "gold ore",
+        "gold vein",
+        "bullion"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "rough hammered surfaces with bright glints and small embedded quartz specks",
+        "FEATURE_FORM": "a small mound of irregular gold nuggets and a few coins",
+        "FEATURE_KIND": "gold nugget pile",
+        "FEATURE_LIGHTING": "warm glinting light with sharp specular sparkles",
+        "FEATURE_PALETTE": "warm gold and amber highlights over deeper bronze shadows",
+        "FEATURE_RENDERING": "clean dark outlines with polished metal shading"
+      },
+      "identity": "a small pile of gold",
+      "kind_help": "a plain noun phrase such as 'gold nugget pile' or 'gold seam' - singular"
+    },
+    "hills_feature": {
+      "anchors": [
+        "hill",
+        "mound",
+        "knoll",
+        "slope",
+        "rise",
+        "ridge"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "short grass tufts and a few mossy patches on the flanks",
+        "FEATURE_FORM": "a single rounded mound with a smooth continuous crest",
+        "FEATURE_KIND": "grassy hill mound",
+        "FEATURE_LIGHTING": "soft directional light modelling the curved surface",
+        "FEATURE_PALETTE": "muted earthy olive-green with lighter yellow-green crests",
+        "FEATURE_RENDERING": "semi-realistic digital painting with clean dark outlines"
+      },
+      "identity": "a grassy hill mound"
+    },
+    "horse": {
+      "anchors": [
+        "horse",
+        "stallion",
+        "mare",
+        "wild horse",
+        "mustang",
+        "charger",
+        "warhorse",
+        "nightmare"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "defined musculature, a long flowing mane, a raised tail and four strong legs",
+        "FEATURE_FORM": "a proud horse standing on all four legs with the neck arched and the head high",
+        "FEATURE_KIND": "wild horse",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a bright rim along the back",
+        "FEATURE_PALETTE": "rich bay brown and warm tan tones",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": "Every horse is drawn complete and anatomically correct, with all four legs clearly visible - standing, rearing or galloping are all fine. The frame may hold a single proud stallion or a small group of two or three horses, and every horse included is fully visible. Alert eyes, arched neck with the head held high, powerful defined musculature, long flowing mane and raised tail, full of untamed wild energy.",
+      "identity": "one or more proud, strong wild horses",
+      "kind_help": "a plain animal noun such as 'stallion', 'mare' or 'wild horse' - anatomy belongs to FEATURE_FORM, never here"
+    },
+    "jungle_feature": {
+      "anchors": [
+        "jungle",
+        "tropical trees",
+        "lianas",
+        "vines",
+        "palm",
+        "rainforest"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "broad glossy leaves, twisting vines, ferns and small bright flowers",
+        "FEATURE_FORM": "five tall tropical trees in a loose group with looping lianas",
+        "FEATURE_KIND": "tropical jungle trees",
+        "FEATURE_LIGHTING": "humid filtered light with deep green shadows",
+        "FEATURE_PALETTE": "deep emerald and olive greens with vine highlights",
+        "FEATURE_RENDERING": "semi-realistic digital painting with clean dark outlines"
+      },
+      "fixed": "Several tall tropical trees stand as a group, each tree complete and fully visible inside the frame with its own trunk and crown, and thick winding lianas with hanging vines loop between the trunks and drape from the crowns, with clear black margin around the whole group. The trunks and root tangle end freely in mid-air, so the entire frame beneath the group stays empty solid black.",
+      "identity": "a jungle group of trees with lianas",
+      "kind_help": "the tree kinds standing in the group, as plural noun phrases such as 'tropical jungle trees' - never singular",
+      "subject_template": "a group of #FEATURE_KIND#"
+    },
+    "mountains_feature": {
+      "anchors": [
+        "mountain",
+        "peak",
+        "summit",
+        "ridge",
+        "crag",
+        "alp"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "layered rock faces with clear ledges and visible summit tips",
+        "FEATURE_FORM": "four to six sharp peaks rising side by side with steep flanks",
+        "FEATURE_KIND": "mountain peaks",
+        "FEATURE_LIGHTING": "crisp cold light with hard small shadows",
+        "FEATURE_PALETTE": "cool granite grey with pale blue tones",
+        "FEATURE_RENDERING": "semi-realistic digital painting with clean dark outlines"
+      },
+      "fixed": "Several distinct rocky peaks rise side by side as one range, and every peak is whole and fully visible inside the frame with clear black margin around the entire range - each summit tip, each shoulder and each lower slope complete.",
+      "identity": "a mountain range of several peaks",
+      "kind_help": "the peaks of the range, as a plural noun phrase such as 'mountain peaks' - never singular",
+      "subject_template": "a range of #FEATURE_KIND#"
+    },
+    "oasis": {
+      "anchors": [
+        "oasis",
+        "watering hole",
+        "spring",
+        "water pool"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "shining water with a soft ripple, curved palm trunks and tall green fronds",
+        "FEATURE_FORM": "a small clear blue water pool ringed by fresh green palms and tufted grasses",
+        "FEATURE_KIND": "oasis",
+        "FEATURE_LIGHTING": "bright desert sunlight with cool shade under the palms",
+        "FEATURE_PALETTE": "vivid turquoise water with fresh greens over sandy gold",
+        "FEATURE_RENDERING": "semi-realistic digital painting with clean dark outlines"
+      },
+      "identity": "a small desert oasis",
+      "kind_help": "a plain noun phrase such as 'oasis' or 'water pool' - singular, no cluster",
+      "subject_template": "a small tropical #FEATURE_KIND#"
+    },
+    "oil": {
+      "anchors": [
+        "oil",
+        "crude oil",
+        "tar",
+        "bitumen",
+        "petroleum"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "thick glossy black liquid with slow bubbles and oily rainbow films at the rim",
+        "FEATURE_FORM": "a dark bubbling oil pool welling up out of cracked muddy ground",
+        "FEATURE_KIND": "oil seep",
+        "FEATURE_LIGHTING": "dim slick light with one bright skim of reflection",
+        "FEATURE_PALETTE": "ink black with petrol purple sheens over muddy brown earth",
+        "FEATURE_RENDERING": "clean dark outlines with glossy liquid shading"
+      },
+      "identity": "a natural oil seep"
+    },
+    "seal": {
+      "anchors": [
+        "seal",
+        "sea lion",
+        "harbour seal",
+        "ringed seal",
+        "fur seal"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "short wet fur, dark back and pale belly, long whiskers",
+        "FEATURE_FORM": "a plump seal resting upright on its rear flippers with both flippers visible",
+        "FEATURE_KIND": "seal",
+        "FEATURE_LIGHTING": "cold crisp polar light with a bright sheen along the wet back",
+        "FEATURE_PALETTE": "cool silver-grey tones with a pale cream belly",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "identity": "a single seal",
+      "kind_help": "a plain seal noun such as 'harbour seal', 'sea lion' or 'fur seal' - one animal"
+    },
+    "swamp_feature": {
+      "anchors": [
+        "stump",
+        "swamp",
+        "marsh",
+        "bog",
+        "moss",
+        "reed",
+        "lily"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "hanging moss, lily pads and marsh grass tufts",
+        "FEATURE_FORM": "gnarled stumps with tangled roots rising from shallow water",
+        "FEATURE_KIND": "swamp tree stump cluster",
+        "FEATURE_LIGHTING": "dim overcast light with soft murky shadows",
+        "FEATURE_PALETTE": "dark olive and brown tones with murky green water",
+        "FEATURE_RENDERING": "semi-realistic digital painting with clean dark outlines"
+      },
+      "identity": "a swamp tree stump cluster"
+    }
+  },
+  "GLOBAL_FALLBACKS": {
+    "GLOBAL_LIGHTING": "clear neutral daylight",
+    "GLOBAL_PALETTE": "sparse natural accent colors",
+    "THEME_PHRASE": "balanced natural daylight"
+  },
+  "GLOBAL_SLOT_SPECS": [
+    {
+      "forbidden": [
+        "valley",
+        "plain",
+        "mountain",
+        "hill",
+        "forest",
+        "field",
+        "river",
+        "sea",
+        "ocean",
+        "desert",
+        "city",
+        "castle",
+        "village",
+        "island",
+        "beach",
+        "branch",
+        "tree",
+        "lake",
+        "frozen",
+        "icy",
+        "glacier",
+        "tundra",
+        "arctic",
+        "jungle",
+        "battle",
+        "war",
+        "ruin",
+        "abandoned",
+        "destroyed",
+        "kingdom",
+        "empire",
+        "siege",
+        "dusk",
+        "twilight",
+        "night",
+        "dark",
+        "dramatic",
+        "eerie",
+        "spooky",
+        "flickering",
+        "glow",
+        "spectral",
+        "gloom"
+      ],
+      "help": "a short label for the requested theme, without changing any subject identity, terrain material, dominant colors, or lighting",
+      "max_words": 8,
+      "name": "THEME_PHRASE"
+    },
+    {
+      "forbidden": [
+        "light",
+        "shadow",
+        "glow",
+        "sun",
+        "moon",
+        "ray",
+        "beam",
+        "muted",
+        "pastel",
+        "desaturated",
+        "washed",
+        "faded",
+        "dull",
+        "dusty",
+        "black",
+        "neon",
+        "lurid",
+        "spectral",
+        "ghostly",
+        "fluorescent"
+      ],
+      "help": "one or two restrained accent colors for tiny decorations only; never the dominant colors of terrain, animals, or materials",
+      "max_words": 8,
+      "name": "GLOBAL_PALETTE"
+    },
+    {
+      "forbidden": [
+        "dusk",
+        "twilight",
+        "night",
+        "dark",
+        "dramatic",
+        "glow",
+        "flickering",
+        "colored",
+        "neon"
+      ],
+      "help": "neutral, even daylight shared by the whole set; no colored glow or dramatic shadows",
+      "max_words": 8,
+      "name": "GLOBAL_LIGHTING",
+      "not_color_list": true
+    }
+  ],
+  "GLOBAL_THEME_FORBIDDEN": [
+    "valley",
+    "plain",
+    "mountain",
+    "hill",
+    "forest",
+    "field",
+    "river",
+    "sea",
+    "ocean",
+    "desert",
+    "city",
+    "castle",
+    "village",
+    "island",
+    "beach",
+    "branch",
+    "tree",
+    "lake",
+    "frozen",
+    "icy",
+    "glacier",
+    "tundra",
+    "arctic",
+    "jungle",
+    "battle",
+    "war",
+    "ruin",
+    "abandoned",
+    "destroyed",
+    "kingdom",
+    "empire",
+    "siege"
+  ],
+  "TERRAIN_ANCHORS": {
+    "arctic": [
+      "ice",
+      "snow",
+      "frozen",
+      "glacier",
+      "arctic",
+      "tundra"
+    ],
+    "desert": [
+      "desert",
+      "sand",
+      "dune",
+      "arid",
+      "oasis"
+    ],
+    "forest": [
+      "forest",
+      "wood",
+      "leaf",
+      "moss",
+      "soil",
+      "floor",
+      "trees"
+    ],
+    "grassland": [
+      "grass",
+      "meadow",
+      "grassland",
+      "prairie",
+      "field",
+      "savanna"
+    ],
+    "hills": [
+      "hill",
+      "mound",
+      "slope",
+      "knoll",
+      "ridge",
+      "rolling"
+    ],
+    "jungle": [
+      "jungle",
+      "tropical",
+      "canopy",
+      "vines",
+      "fern",
+      "rainforest"
+    ],
+    "mountains": [
+      "mountain",
+      "rock",
+      "scree",
+      "stone",
+      "alpine",
+      "ground"
+    ],
+    "ocean": [
+      "ocean",
+      "sea",
+      "water",
+      "waves",
+      "marine",
+      "blue"
+    ],
+    "plains": [
+      "plain",
+      "steppe",
+      "prairie",
+      "grassland",
+      "dry",
+      "savanna"
+    ],
+    "river": [
+      "river",
+      "stream",
+      "water",
+      "brook",
+      "creek"
+    ],
+    "swamp": [
+      "swamp",
+      "marsh",
+      "bog",
+      "muddy",
+      "mire",
+      "fen"
+    ],
+    "tundra": [
+      "tundra",
+      "moss",
+      "lichen",
+      "cold",
+      "frost",
+      "plain"
+    ]
+  },
+  "TERRAIN_BASE_CONSTRAINT": "No horizon, no sky, no scenery, no buildings, no characters, no animals, no frame and no vignette - only the flat ground surface, edge to edge.",
+  "TERRAIN_COLOR_FORBIDDEN": {
+    "arctic": [
+      "sand",
+      "mud",
+      "palm",
+      "cactus",
+      "jungle",
+      "wade",
+      "kayak",
+      "canoe",
+      "buoy",
+      "anchor",
+      "harbour",
+      "harbor",
+      "black",
+      "crimson",
+      "magenta",
+      "purple",
+      "violet",
+      "lavender",
+      "neon",
+      "lurid",
+      "spectral",
+      "ghostly",
+      "fluorescent",
+      "electric",
+      "glowing"
+    ],
+    "desert": [
+      "ice",
+      "snow",
+      "frost",
+      "mud",
+      "moss",
+      "jungle",
+      "frozen",
+      "icy",
+      "glacier",
+      "snowdrift",
+      "permafrost",
+      "wade",
+      "kayak",
+      "canoe",
+      "buoy",
+      "anchor",
+      "harbour",
+      "harbor",
+      "black",
+      "crimson",
+      "magenta",
+      "purple",
+      "violet",
+      "lavender",
+      "neon",
+      "lurid",
+      "spectral",
+      "ghostly",
+      "fluorescent",
+      "electric",
+      "glowing"
+    ],
+    "forest": [
+      "sand",
+      "dune",
+      "cactus",
+      "snow",
+      "salt",
+      "ice",
+      "frozen",
+      "icy",
+      "glacier",
+      "snowdrift",
+      "permafrost",
+      "wade",
+      "kayak",
+      "canoe",
+      "buoy",
+      "anchor",
+      "harbour",
+      "harbor",
+      "black",
+      "crimson",
+      "magenta",
+      "purple",
+      "violet",
+      "lavender",
+      "neon",
+      "lurid",
+      "spectral",
+      "ghostly",
+      "fluorescent",
+      "electric",
+      "glowing"
+    ],
+    "grassland": [
+      "sand",
+      "dune",
+      "cactus",
+      "snow",
+      "ice",
+      "mud",
+      "rock face",
+      "frozen",
+      "icy",
+      "glacier",
+      "snowdrift",
+      "permafrost",
+      "wade",
+      "kayak",
+      "canoe",
+      "buoy",
+      "anchor",
+      "harbour",
+      "harbor",
+      "black",
+      "crimson",
+      "magenta",
+      "purple",
+      "violet",
+      "lavender",
+      "neon",
+      "lurid",
+      "spectral",
+      "ghostly",
+      "fluorescent",
+      "electric",
+      "glowing",
+      "dark",
+      "deep",
+      "muddy",
+      "orange",
+      "amber",
+      "burnt",
+      "pumpkin"
+    ],
+    "hills": [
+      "cactus",
+      "snow",
+      "ice",
+      "palm",
+      "swamp",
+      "frozen",
+      "icy",
+      "glacier",
+      "snowdrift",
+      "permafrost",
+      "wade",
+      "kayak",
+      "canoe",
+      "buoy",
+      "anchor",
+      "harbour",
+      "harbor",
+      "black",
+      "crimson",
+      "magenta",
+      "purple",
+      "violet",
+      "lavender",
+      "neon",
+      "lurid",
+      "spectral",
+      "ghostly",
+      "fluorescent",
+      "electric",
+      "glowing"
+    ],
+    "jungle": [
+      "snow",
+      "ice",
+      "frost",
+      "sand",
+      "dune",
+      "cactus",
+      "savanna",
+      "frozen",
+      "icy",
+      "glacier",
+      "snowdrift",
+      "permafrost",
+      "wade",
+      "kayak",
+      "canoe",
+      "buoy",
+      "anchor",
+      "harbour",
+      "harbor",
+      "black",
+      "crimson",
+      "magenta",
+      "purple",
+      "violet",
+      "lavender",
+      "neon",
+      "lurid",
+      "spectral",
+      "ghostly",
+      "fluorescent",
+      "electric",
+      "glowing"
+    ],
+    "mountains": [
+      "sand",
+      "dune",
+      "cactus",
+      "palm",
+      "mangrove",
+      "swamp",
+      "wade",
+      "kayak",
+      "canoe",
+      "buoy",
+      "anchor",
+      "harbour",
+      "harbor",
+      "black",
+      "crimson",
+      "magenta",
+      "purple",
+      "violet",
+      "lavender",
+      "neon",
+      "lurid",
+      "spectral",
+      "ghostly",
+      "fluorescent",
+      "electric",
+      "glowing"
+    ],
+    "ocean": [
+      "ice",
+      "snow",
+      "frost",
+      "sand",
+      "dune",
+      "mud",
+      "soil",
+      "polygon",
+      "voronoi",
+      "crust",
+      "mudflat",
+      "frozen",
+      "icy",
+      "glacier",
+      "snowdrift",
+      "permafrost",
+      "black",
+      "crimson",
+      "magenta",
+      "purple",
+      "violet",
+      "lavender",
+      "neon",
+      "lurid",
+      "spectral",
+      "ghostly",
+      "fluorescent",
+      "electric",
+      "glowing",
+      "navy",
+      "indigo",
+      "deep",
+      "dark"
+    ],
+    "plains": [
+      "snow",
+      "ice",
+      "frost",
+      "cactus",
+      "jungle",
+      "swamp",
+      "mangrove",
+      "frozen",
+      "icy",
+      "glacier",
+      "snowdrift",
+      "permafrost",
+      "wade",
+      "kayak",
+      "canoe",
+      "buoy",
+      "anchor",
+      "harbour",
+      "harbor",
+      "black",
+      "crimson",
+      "magenta",
+      "purple",
+      "violet",
+      "lavender",
+      "neon",
+      "lurid",
+      "spectral",
+      "ghostly",
+      "fluorescent",
+      "electric",
+      "glowing"
+    ],
+    "river": [
+      "sand",
+      "dune",
+      "cactus",
+      "ice",
+      "snow",
+      "jungle",
+      "moss",
+      "mud",
+      "frozen",
+      "icy",
+      "glacier",
+      "snowdrift",
+      "permafrost",
+      "black",
+      "crimson",
+      "magenta",
+      "purple",
+      "violet",
+      "lavender",
+      "neon",
+      "lurid",
+      "spectral",
+      "ghostly",
+      "fluorescent",
+      "electric",
+      "glowing"
+    ],
+    "swamp": [
+      "sand",
+      "dune",
+      "cactus",
+      "snow",
+      "ice",
+      "glacier",
+      "frozen",
+      "icy",
+      "glacier",
+      "snowdrift",
+      "permafrost",
+      "black",
+      "crimson",
+      "magenta",
+      "purple",
+      "violet",
+      "lavender",
+      "neon",
+      "lurid",
+      "spectral",
+      "ghostly",
+      "fluorescent",
+      "electric",
+      "glowing"
+    ],
+    "tundra": [
+      "sand",
+      "dune",
+      "cactus",
+      "palm",
+      "jungle",
+      "swamp",
+      "wade",
+      "kayak",
+      "canoe",
+      "buoy",
+      "anchor",
+      "harbour",
+      "harbor",
+      "black",
+      "crimson",
+      "magenta",
+      "purple",
+      "violet",
+      "lavender",
+      "neon",
+      "lurid",
+      "spectral",
+      "ghostly",
+      "fluorescent",
+      "electric",
+      "glowing"
+    ]
+  },
+  "TERRAIN_EXTRA_CONSTRAINTS": {
+    "forest": "No trees, no trunks, no canopies, no vertical elements - only the flat ground layer. Strict top-down bird's-eye view.",
+    "jungle": "No trees, no trunks, no canopy, no vertical elements - only the flat ground layer. Strict top-down bird's-eye view.",
+    "mountains": "No peaks, no cliffs, no vertical elements - only the flat rocky ground layer. Strict top-down bird's-eye view.",
+    "swamp": "No tree stumps, no vertical elements - only the flat ground layer. Strict top-down bird's-eye view."
+  },
+  "TERRAIN_FALLBACKS": {
+    "arctic": {
+      "ACCENT_ELEMENT": "a few sparse pale snow patches",
+      "BASE_MATERIAL": "packed white-blue glacial ice",
+      "COLOR_PALETTE": "white, ice blue and pale frost grey tones",
+      "EDGE_ELEMENT": "the same ice surface continues uniformly, without a distinct edge",
+      "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows",
+      "SURFACE_FORM": "vast frozen arctic ice plain",
+      "TEXTURE_DETAIL": "broad smooth ice fields with a few wide pressure ridges"
+    },
+    "desert": {
+      "ACCENT_ELEMENT": "a few sparse small stones",
+      "BASE_MATERIAL": "rolling ochre and golden sand",
+      "COLOR_PALETTE": "ochre, gold and sun-bleached tan tones",
+      "EDGE_ELEMENT": "the same sand surface continues uniformly, without a distinct edge",
+      "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows",
+      "SURFACE_FORM": "sun-scorched desert of golden sand dunes",
+      "TEXTURE_DETAIL": "broad wind-shaped dune bands with simple smooth shading"
+    },
+    "forest": {
+      "ACCENT_ELEMENT": "a few sparse leaves and twigs",
+      "BASE_MATERIAL": "dark brown forest soil",
+      "COLOR_PALETTE": "dark browns, deep greens and mossy tones",
+      "EDGE_ELEMENT": "the same forest floor continues uniformly, without a distinct edge",
+      "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows",
+      "SURFACE_FORM": "temperate forest floor ground surface",
+      "TEXTURE_DETAIL": "broad patches of soil, moss, and fallen leaves"
+    },
+    "grassland": {
+      "ACCENT_ELEMENT": "a few sparse tiny yellow and white flowers",
+      "BASE_MATERIAL": "lush bright green meadow grass",
+      "COLOR_PALETTE": "fresh greens with yellow and white accents",
+      "EDGE_ELEMENT": "the same grass surface continues uniformly, without a distinct edge",
+      "LIGHTING_NOTE": "Even natural daylight lays soft green shading across the meadow",
+      "SURFACE_FORM": "open green grassland",
+      "TEXTURE_DETAIL": "broad, softly shaded patches of short meadow grass"
+    },
+    "hills": {
+      "ACCENT_ELEMENT": "a few sparse rocks between the hills",
+      "BASE_MATERIAL": "grassy sod hilltops packed tightly across the surface",
+      "COLOR_PALETTE": "greens and light earth browns",
+      "EDGE_ELEMENT": "the same hill pattern continues uniformly, without a distinct edge",
+      "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows",
+      "SURFACE_FORM": "cluster of smooth rolling green and brown hills",
+      "TEXTURE_DETAIL": "broad green slopes with simple light-brown earth bands"
+    },
+    "jungle": {
+      "ACCENT_ELEMENT": "a few sparse leaves on the ground",
+      "BASE_MATERIAL": "dark moist soil covered in dense moss",
+      "COLOR_PALETTE": "dark greens and moist earth browns",
+      "EDGE_ELEMENT": "the same jungle floor continues uniformly, without a distinct edge",
+      "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows",
+      "SURFACE_FORM": "tropical jungle floor ground surface",
+      "TEXTURE_DETAIL": "broad patches of dark soil and simple tropical leaf shapes"
+    },
+    "mountains": {
+      "ACCENT_ELEMENT": "a few sparse larger stones",
+      "BASE_MATERIAL": "grey-brown scree and broken rocks",
+      "COLOR_PALETTE": "greys and muted browns",
+      "EDGE_ELEMENT": "the same rocky surface continues uniformly, without a distinct edge",
+      "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows",
+      "SURFACE_FORM": "rocky mountain ground surface",
+      "TEXTURE_DETAIL": "broad patches of bare rock and coarse scree"
+    },
+    "ocean": {
+      "ACCENT_ELEMENT": "a few small pale wave crests",
+      "BASE_MATERIAL": "natural blue water with realistic depth transparency",
+      "COLOR_PALETTE": "layered blues with turquoise accents",
+      "EDGE_ELEMENT": "the same blue water continues uniformly, without a distinct edge",
+      "LIGHTING_NOTE": "Clear neutral daylight with soft minimal highlights",
+      "SURFACE_FORM": "deep open ocean water surface",
+      "TEXTURE_DETAIL": "broad, calm blue wave bands with simple cyan highlights"
+    },
+    "plains": {
+      "ACCENT_ELEMENT": "a few sparse small stones",
+      "BASE_MATERIAL": "dry golden-green plain grassland with short patchy grass",
+      "COLOR_PALETTE": "warm earthy golden-green tones",
+      "EDGE_ELEMENT": "the same dry grass surface continues uniformly, without a distinct edge",
+      "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows",
+      "SURFACE_FORM": "open dry plains",
+      "TEXTURE_DETAIL": "broad patches of short golden-green steppe grass"
+    },
+    "river": {
+      "ACCENT_ELEMENT": "a few sparse stones along the water",
+      "BASE_MATERIAL": "natural blue river water with realistic depth transparency",
+      "COLOR_PALETTE": "fresh blues and greens",
+      "EDGE_ELEMENT": "the same river surface continues uniformly, without a distinct edge",
+      "LIGHTING_NOTE": "Clear neutral daylight with soft minimal highlights",
+      "SURFACE_FORM": "winding fresh water river",
+      "TEXTURE_DETAIL": "broad blue current bands with simple turquoise highlights"
+    },
+    "swamp": {
+      "ACCENT_ELEMENT": "a few sparse lily pads",
+      "BASE_MATERIAL": "dark muddy water and brown-green stagnant pools",
+      "COLOR_PALETTE": "dark olives, browns and muddy greens",
+      "EDGE_ELEMENT": "the same swamp surface continues uniformly, without a distinct edge",
+      "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows",
+      "SURFACE_FORM": "murky swamp ground surface",
+      "TEXTURE_DETAIL": "broad patches of muddy water and olive marsh grass"
+    },
+    "tundra": {
+      "ACCENT_ELEMENT": "a few sparse small stones",
+      "BASE_MATERIAL": "pale grey-green tundra ground",
+      "COLOR_PALETTE": "muted grey-green and pale cold tones",
+      "EDGE_ELEMENT": "the same tundra surface continues uniformly, without a distinct edge",
+      "LIGHTING_NOTE": "Clear neutral daylight with soft minimal shadows",
+      "SURFACE_FORM": "cold windswept tundra",
+      "TEXTURE_DETAIL": "broad pale patches of moss, lichen, and frozen soil"
+    }
+  },
+  "TERRAIN_FORBIDDEN": {
+    "arctic": [
+      "sand",
+      "grass",
+      "mud",
+      "palm",
+      "cactus",
+      "jungle",
+      "wade",
+      "kayak",
+      "canoe",
+      "buoy",
+      "anchor",
+      "harbour",
+      "harbor"
+    ],
+    "desert": [
+      "ice",
+      "snow",
+      "frost",
+      "mud",
+      "moss",
+      "jungle",
+      "water",
+      "frozen",
+      "icy",
+      "glacier",
+      "snowdrift",
+      "permafrost",
+      "wade",
+      "kayak",
+      "canoe",
+      "buoy",
+      "anchor",
+      "harbour",
+      "harbor"
+    ],
+    "forest": [
+      "sand",
+      "dune",
+      "cactus",
+      "snow",
+      "salt",
+      "water",
+      "wave",
+      "ice",
+      "frozen",
+      "icy",
+      "glacier",
+      "snowdrift",
+      "permafrost",
+      "wade",
+      "kayak",
+      "canoe",
+      "buoy",
+      "anchor",
+      "harbour",
+      "harbor"
+    ],
+    "grassland": [
+      "sand",
+      "dune",
+      "cactus",
+      "snow",
+      "ice",
+      "mud",
+      "rock face",
+      "frozen",
+      "icy",
+      "glacier",
+      "snowdrift",
+      "permafrost",
+      "wade",
+      "kayak",
+      "canoe",
+      "buoy",
+      "anchor",
+      "harbour",
+      "harbor"
+    ],
+    "hills": [
+      "cactus",
+      "snow",
+      "ice",
+      "palm",
+      "swamp",
+      "frozen",
+      "icy",
+      "glacier",
+      "snowdrift",
+      "permafrost",
+      "wade",
+      "kayak",
+      "canoe",
+      "buoy",
+      "anchor",
+      "harbour",
+      "harbor"
+    ],
+    "jungle": [
+      "snow",
+      "ice",
+      "frost",
+      "sand",
+      "dune",
+      "cactus",
+      "savanna",
+      "frozen",
+      "icy",
+      "glacier",
+      "snowdrift",
+      "permafrost",
+      "wade",
+      "kayak",
+      "canoe",
+      "buoy",
+      "anchor",
+      "harbour",
+      "harbor"
+    ],
+    "mountains": [
+      "sand",
+      "dune",
+      "cactus",
+      "palm",
+      "mangrove",
+      "swamp",
+      "wade",
+      "kayak",
+      "canoe",
+      "buoy",
+      "anchor",
+      "harbour",
+      "harbor"
+    ],
+    "ocean": [
+      "ice",
+      "snow",
+      "frost",
+      "sand",
+      "dune",
+      "grass",
+      "mud",
+      "soil",
+      "rock",
+      "leaf",
+      "bark",
+      "crack",
+      "cracked",
+      "cracks",
+      "dry",
+      "polygon",
+      "voronoi",
+      "crust",
+      "shell",
+      "mudflat",
+      "frozen",
+      "icy",
+      "glacier",
+      "snowdrift",
+      "permafrost"
+    ],
+    "plains": [
+      "snow",
+      "ice",
+      "frost",
+      "cactus",
+      "jungle",
+      "swamp",
+      "mangrove",
+      "frozen",
+      "icy",
+      "glacier",
+      "snowdrift",
+      "permafrost",
+      "wade",
+      "kayak",
+      "canoe",
+      "buoy",
+      "anchor",
+      "harbour",
+      "harbor"
+    ],
+    "river": [
+      "sand",
+      "dune",
+      "cactus",
+      "ice",
+      "snow",
+      "jungle",
+      "moss",
+      "mud",
+      "crack",
+      "cracked",
+      "cracks",
+      "dry",
+      "frozen",
+      "icy",
+      "glacier",
+      "snowdrift",
+      "permafrost"
+    ],
+    "swamp": [
+      "sand",
+      "dune",
+      "cactus",
+      "snow",
+      "ice",
+      "glacier",
+      "frozen",
+      "icy",
+      "glacier",
+      "snowdrift",
+      "permafrost"
+    ],
+    "tundra": [
+      "sand",
+      "dune",
+      "cactus",
+      "palm",
+      "jungle",
+      "swamp",
+      "wade",
+      "kayak",
+      "canoe",
+      "buoy",
+      "anchor",
+      "harbour",
+      "harbor"
+    ]
+  },
+  "TERRAIN_IDENTITIES": {
+    "arctic": "a frozen arctic ice field",
+    "desert": "a sun-scorched desert of golden sand dunes",
+    "forest": "a temperate forest floor ground surface (no trees)",
+    "grassland": "an open green grassland",
+    "hills": "rolling green and brown hills",
+    "jungle": "a tropical jungle floor ground surface (no trees)",
+    "mountains": "a rocky mountain ground surface (no peaks, ground only)",
+    "ocean": "a deep open ocean water surface",
+    "plains": "an open dry plains",
+    "river": "a fresh water river surface",
+    "swamp": "a murky swamp ground surface",
+    "tundra": "a cold windswept tundra"
+  },
+  "TERRAIN_IDENTITY_CLAUSE": {
+    "arctic": "Solid arctic ice and snow, unmistakably a frozen surface.",
+    "desert": "Dry sand and sun-baked earth, unmistakably arid ground.",
+    "forest": "Forest soil and leaf litter, unmistakably the floor of a forest.",
+    "grassland": "Open meadow grass, unmistakably grassland.",
+    "hills": "Grassy hills and slopes, unmistakably rolling high ground.",
+    "jungle": "Tropical soil and jungle litter, unmistakably a jungle floor.",
+    "mountains": "Bare rock and scree, unmistakably high mountain ground.",
+    "ocean": "Liquid open sea water with moving ripples, unmistakably deep water.",
+    "plains": "Short dry steppe grass, unmistakably open flat plains.",
+    "river": "Liquid fresh river water with moving ripples, unmistakably running water.",
+    "swamp": "Murky standing water, mud and marsh, unmistakably swamp.",
+    "tundra": "Moss, lichen and frozen soil, unmistakably cold tundra."
+  },
+  "TERRAIN_MATERIAL_SLOTS": [
+    "SURFACE_FORM",
+    "BASE_MATERIAL",
+    "TEXTURE_DETAIL",
+    "ACCENT_ELEMENT",
+    "EDGE_ELEMENT"
+  ],
+  "TERRAIN_PALETTE_ANCHORS": {
+    "arctic": [
+      "white",
+      "ice",
+      "blue",
+      "pale",
+      "cyan",
+      "grey",
+      "silver",
+      "frost"
+    ],
+    "desert": [
+      "ochre",
+      "gold",
+      "tan",
+      "sand",
+      "amber",
+      "yellow",
+      "beige",
+      "brown"
+    ],
+    "forest": [
+      "green",
+      "brown",
+      "moss",
+      "olive",
+      "umber",
+      "earth"
+    ],
+    "grassland": [
+      "green",
+      "yellow",
+      "lime",
+      "olive",
+      "emerald",
+      "fresh"
+    ],
+    "hills": [
+      "green",
+      "brown",
+      "olive",
+      "earth",
+      "tan"
+    ],
+    "jungle": [
+      "green",
+      "emerald",
+      "olive",
+      "lime",
+      "jade",
+      "forest"
+    ],
+    "mountains": [
+      "grey",
+      "gray",
+      "brown",
+      "slate",
+      "stone",
+      "mauve"
+    ],
+    "ocean": [
+      "blue",
+      "sapphire",
+      "teal",
+      "cyan",
+      "aqua",
+      "turquoise",
+      "sea green"
+    ],
+    "plains": [
+      "gold",
+      "green",
+      "olive",
+      "straw",
+      "tan",
+      "amber",
+      "yellow"
+    ],
+    "river": [
+      "blue",
+      "teal",
+      "cyan",
+      "aqua",
+      "green",
+      "turquoise",
+      "sapphire"
+    ],
+    "swamp": [
+      "olive",
+      "brown",
+      "green",
+      "murky",
+      "moss",
+      "umber",
+      "muddy"
+    ],
+    "tundra": [
+      "grey",
+      "gray",
+      "green",
+      "moss",
+      "lichen",
+      "olive",
+      "pale",
+      "brown"
+    ]
+  },
+  "TERRAIN_SLOT_SPECS": [
+    {
+      "help": "the overall kind of terrain, e.g. 'vast frozen glacial ice plain'",
+      "max_words": 10,
+      "name": "SURFACE_FORM",
+      "theme": false
+    },
+    {
+      "help": "the dominant ground material of the surface",
+      "max_words": 10,
+      "name": "BASE_MATERIAL",
+      "theme": false
+    },
+    {
+      "forbidden": [
+        "micro",
+        "intricate",
+        "busy",
+        "dense",
+        "high-frequency",
+        "bioluminescent",
+        "neon",
+        "spectral",
+        "glowing",
+        "glow",
+        "veins",
+        "sparkling",
+        "runes",
+        "webs",
+        "bones",
+        "border",
+        "rim",
+        "frame",
+        "ring",
+        "halo",
+        "vignette",
+        "shoreline",
+        "beach",
+        "dark corners",
+        "white perimeter",
+        "gradient edge"
+      ],
+      "help": "one or two broad, low-frequency ground patterns; simple and readable at small map scale, never fine or intricate",
+      "max_words": 14,
+      "name": "TEXTURE_DETAIL",
+      "theme": false
+    },
+    {
+      "forbidden": [
+        "dense",
+        "intricate",
+        "neon",
+        "spectral",
+        "glowing",
+        "glow",
+        "bioluminescent",
+        "runes",
+        "webs",
+        "bones",
+        "debris",
+        "sparkling"
+      ],
+      "help": "at most a few sparse, low-contrast details; no dense scatter or theme decoration",
+      "max_words": 14,
+      "name": "ACCENT_ELEMENT",
+      "theme": false
+    },
+    {
+      "forbidden": [
+        "border",
+        "rim",
+        "frame",
+        "ring",
+        "halo",
+        "vignette",
+        "shoreline",
+        "beach",
+        "dark corners",
+        "white perimeter",
+        "gradient edge"
+      ],
+      "help": "ordinary continuation of the same surface through the image boundary; no separate border, rim, or corner ornament",
+      "max_words": 14,
+      "name": "EDGE_ELEMENT",
+      "theme": false
+    },
+    {
+      "help": "one short sentence describing clear, neutral, even daylight and soft minimal shadows",
+      "max_words": 14,
+      "name": "LIGHTING_NOTE",
+      "theme": false
+    },
+    {
+      "help": "the terrain's natural dominant colors only, in a small clear range; ignore the theme and do not include accent colors",
+      "max_words": 10,
+      "name": "COLOR_PALETTE",
+      "theme": false
+    }
+  ],
+  "UNIT_SPECS": {
+    "unit_archer": {
+      "anchors": [
+        "archer",
+        "bowman",
+        "archery"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "quiver on the back, feathered fletching, leather bracers and cap",
+        "FEATURE_FORM": "an archer in strict side profile: his straight leading arm holds the fully bent bow out ahead of him, the bow limbs sweep clearly above and below the body with background space between bow and chest, the drawn string touches his cheek",
+        "FEATURE_KIND": "bronze-age archer",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "dulled bronze and forest tan",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": "The archer holds one strung, fully bent bow: both bow limbs, the taut string and the nocked arrow all stay clearly in view. Bow and body are two separate shapes: a strip of background always shows between the archer's torso and the bow limbs, and the arrow flies straight ahead past the bow hand. Every arm and every leg is drawn completely, clearly visible and in a natural easy stance, with no limb hidden, cropped or cut by the frame edge.",
+      "forbidden": [
+        "crossbow",
+        "firearm"
+      ],
+      "identity": "the Archer game unit: a bronze-age bowman",
+      "kind_help": "the noun is 'archer' (or 'bowman') - one fighter whose whole identification is the bent bow he draws",
+      "unit": true
+    },
+    "unit_artillery": {
+      "anchors": [
+        "howitzer",
+        "artillery piece"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "army-green painted plate steel, canvas-wrapped shells stacked on a rack and a periscope sight post",
+        "FEATURE_FORM": "a massive artillery howitzer with a thick dark barrel raised high on a wheeled steel split-trail carriage, its open breech and hinged elevating gear on the wheels",
+        "FEATURE_KIND": "heavy howitzer",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "military green and dark iron",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": null,
+      "forbidden": [
+        "tank",
+        "tracked",
+        "tripod",
+        "tower",
+        "legs",
+        "recoiling track"
+      ],
+      "identity": "the Artillery game unit: a heavy howitzer artillery piece",
+      "kind_help": "the noun is 'howitzer': one gun barrel on its wheeled split-trail carriage, complete with breech and wheels",
+      "unit": true
+    },
+    "unit_battleship": {
+      "anchors": [
+        "battleship"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "heavy calibre barrels, a range-finder on top and rows of rivets",
+        "FEATURE_FORM": "a mighty grey battleship with towering turret guns fore and aft, a tall bridge tower and a flared hull",
+        "FEATURE_KIND": "battleship",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "steel grey with a deep blue sea shadow",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": null,
+      "forbidden": [],
+      "identity": "the Battleship game unit: a mighty battleship of the line",
+      "kind_help": "one singular noun phrase naming the unit itself - one person, one vehicle, one ship or one machine, never a plural and never a whole army",
+      "unit": true
+    },
+    "unit_bomber": {
+      "anchors": [
+        "bomber",
+        "strategic bomber",
+        "bomber aircraft"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "twin tail fins, gun turrets and a closed bomb-bay outline",
+        "FEATURE_FORM": "a heavy four-engined bomber aircraft with broad wings in level flight, seen from a low three-quarter view",
+        "FEATURE_KIND": "strategic bomber",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "night black-green with sky reflection",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": null,
+      "forbidden": [],
+      "identity": "the Bomber game unit: a heavy strategic bomber plane",
+      "kind_help": "one singular noun phrase naming the unit itself - one person, one vehicle, one ship or one machine, never a plural and never a whole army",
+      "unit": true
+    },
+    "unit_cannon": {
+      "anchors": [
+        "cannon",
+        "artillery gun"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "iron reinforcement bands around the barrel, a coil of fuse rope and a neat pyramid of round iron shot",
+        "FEATURE_FORM": "a black-powder field cannon built of a long tapered bronze barrel mounted on a tall-arched wooden carriage with two large spoked wheels clearly visible, a rammer and a powder barrel standing beside it",
+        "FEATURE_KIND": "field cannon",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "aged bronze and pale carriage wood",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": null,
+      "forbidden": [
+        "close-up",
+        "emerging",
+        "turret"
+      ],
+      "identity": "the Cannon game unit: a black-powder field cannon",
+      "kind_help": "the complete gun: barrel, wooden carriage and its two large spoked wheels - all three parts belong to the noun, nothing may be dropped",
+      "unit": true
+    },
+    "unit_caravan": {
+      "anchors": [
+        "caravan",
+        "camel caravan",
+        "pack train"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "rolled rugs, brass jugs and trade beads hanging off the packs",
+        "FEATURE_FORM": "a loaded trade caravan of two camels with woven saddlebags, led forward by a turbaned trader",
+        "FEATURE_KIND": "trade caravan",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "desert sand tan with indigo saddle cloth",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": "Every camel is anatomically correct and drawn complete, with all four legs clearly visible.",
+      "forbidden": [],
+      "identity": "the Caravan game unit: a loaded trade caravan led by camels",
+      "kind_help": "one singular noun phrase naming the unit itself - one person, one vehicle, one ship or one machine, never a plural and never a whole army",
+      "unit": true
+    },
+    "unit_caravel": {
+      "anchors": [
+        "caravel",
+        "sailing ship",
+        "exploring vessel"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "billowing canvas, rigging lines and a long banner at the masthead",
+        "FEATURE_FORM": "a late-medieval caravel with two lateen masts and a high stern castle gliding on calm sea",
+        "FEATURE_KIND": "caravel",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "weathered oak and sun-bleached canvas",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": null,
+      "forbidden": [],
+      "identity": "the Caravel game unit: a late-medieval exploring caravel",
+      "kind_help": "one singular noun phrase naming the unit itself - one person, one vehicle, one ship or one machine, never a plural and never a whole army",
+      "unit": true
+    },
+    "unit_carrier": {
+      "anchors": [
+        "aircraft carrier",
+        "carrier"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "arresting cables across the deck, jaunty deck markings and a radar mast",
+        "FEATURE_FORM": "a huge flat-topped aircraft carrier with a wide flight deck lined with parked planes and a starboard island tower",
+        "FEATURE_KIND": "aircraft carrier",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "flight-deck blue-grey and bleached deck boards",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": null,
+      "forbidden": [],
+      "identity": "the Carrier game unit: an aircraft carrier",
+      "kind_help": "one singular noun phrase naming the unit itself - one person, one vehicle, one ship or one machine, never a plural and never a whole army",
+      "unit": true
+    },
+    "unit_catapult": {
+      "anchors": [
+        "catapult",
+        "mangonel",
+        "onager"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "fresh timber planks, crossed support beams with rope lashings, a windlass crank and a second stone ball beside the wheels",
+        "FEATURE_FORM": "a classic siege catapult with two large spoked wheels, a sturdy A-shaped timber frame and a long throwing arm cranked down ready to fire, a sling with a round grey stone at the arm tip",
+        "FEATURE_KIND": "wooden catapult",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "warm oak planks and pale birch beams",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": null,
+      "forbidden": [
+        "firearm",
+        "rubber tyres"
+      ],
+      "identity": "the Catapult game unit: a wooden siege catapult on wheels",
+      "kind_help": "one singular noun phrase naming the unit itself - one person, one vehicle, one ship or one machine, never a plural and never a whole army",
+      "unit": true
+    },
+    "unit_cavalry": {
+      "anchors": [
+        "cavalry",
+        "dragoon",
+        "cavalier",
+        "mounted soldier"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "high boots, plumed helmet and a carbine slung across the back",
+        "FEATURE_FORM": "a uniformed dragoon riding a galloping horse, sabre raised and a pennant snapping in the wind",
+        "FEATURE_KIND": "dragoon cavalryman",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "midnight blue uniform and glossy black horse",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": "Every horse shown is anatomically correct and drawn complete, with all four legs clearly visible. Every arm and every leg is drawn completely, clearly visible and in a natural easy stance, with no limb hidden, cropped or cut by the frame edge.",
+      "forbidden": [],
+      "identity": "the Cavalry game unit: a sabre-armed dragoon mounted on a horse",
+      "kind_help": "one singular noun phrase naming the unit itself - one person, one vehicle, one ship or one machine, never a plural and never a whole army",
+      "unit": true
+    },
+    "unit_chariot": {
+      "anchors": [
+        "chariot",
+        "war chariot"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "braided reins, a quiver mounted at the rail and polished fittings",
+        "FEATURE_FORM": "a light two-wheeled war chariot in three-quarter isometric view, pulled by its matched team of two harnessed horses seen in full profile galloping left to right, the team clearly IN FRONT of the chariot, a driver and an archer standing in the chariot box",
+        "FEATURE_KIND": "horse-drawn war chariot",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "warm wood and gleaming bronze",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": "Every horse shown is anatomically correct and drawn complete, with all four legs clearly visible. The chariot and the horses are two clearly separate objects joined only by their harness: visible background space separates the horses' hindquarters from the chariot's front, and the draught pole leads from the horses' yoke straight to the chariot box. Both horses run side by side in step, galloping in one and the same direction.",
+      "forbidden": [],
+      "identity": "the Chariot game unit: a horse-drawn war chariot with its crew",
+      "kind_help": "exactly the plain noun 'war chariot' - the draught team and the direction belong to FEATURE_FORM, the noun is never dressed with weather or story words",
+      "unit": true
+    },
+    "unit_cruiser": {
+      "anchors": [
+        "cruiser"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "twin funnels with smoke, secondary turrets and a boat crane amidships",
+        "FEATURE_FORM": "a grey armoured cruiser with triple gun turrets fore and aft and a stepped pagoda bridge",
+        "FEATURE_KIND": "armoured cruiser",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "battleship grey with a navy blue waterline",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": null,
+      "forbidden": [],
+      "identity": "the Cruiser game unit: a heavy armoured cruiser",
+      "kind_help": "one singular noun phrase naming the unit itself - one person, one vehicle, one ship or one machine, never a plural and never a whole army",
+      "unit": true
+    },
+    "unit_destroyer": {
+      "anchors": [
+        "destroyer"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "torpedo launchers, depth-charge racks and a painted pennant number",
+        "FEATURE_FORM": "a long lean grey destroyer with a raked clipper bow, twin funnels with smoke and deck guns fore and aft",
+        "FEATURE_KIND": "destroyer warship",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "haze grey with slate shadows",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": null,
+      "forbidden": [],
+      "identity": "the Destroyer game unit: a fast grey destroyer warship",
+      "kind_help": "one singular noun phrase naming the unit itself - one person, one vehicle, one ship or one machine, never a plural and never a whole army",
+      "unit": true
+    },
+    "unit_diplomat": {
+      "anchors": [
+        "diplomat",
+        "envoy",
+        "courtier"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "silver-buckled shoes, a pocket watch chain and quill-and-ink accents",
+        "FEATURE_FORM": "a dignified diplomat in a long morning coat with a silk top hat, a leather satchel under one arm and a rolled treaty in a gloved hand",
+        "FEATURE_KIND": "court diplomat",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "black coat, pearl grey waistcoat and polished boots",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": "Every arm and every leg is drawn completely, clearly visible and in a natural easy stance, with no limb hidden, cropped or cut by the frame edge.",
+      "forbidden": [],
+      "identity": "the Diplomat game unit: a dignified courtly diplomat",
+      "kind_help": "one singular noun phrase naming the unit itself - one person, one vehicle, one ship or one machine, never a plural and never a whole army",
+      "unit": true
+    },
+    "unit_ferry": {
+      "anchors": [
+        "ferry",
+        "landing craft",
+        "vehicle ferry"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "one small armored vehicle secured on the open vehicle deck, visible ramp chains, simple railings and a short antenna mast",
+        "FEATURE_FORM": "a low, broad steel military ferry with a blunt squared bow and a large hinged bow ramp lowered, a compact pilothouse at the stern, seen in three-quarter view",
+        "FEATURE_KIND": "military landing craft ferry",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "muted naval grey, dark steel edges and restrained olive-drab cargo accents",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": null,
+      "forbidden": [
+        "cruise ship",
+        "passenger liner",
+        "sailing ship",
+        "container ship"
+      ],
+      "identity": "the Ferry game unit: a practical vehicle-carrying landing craft",
+      "kind_help": "one singular noun phrase naming the unit itself - one person, one vehicle, one ship or one machine, never a plural and never a whole army",
+      "unit": true
+    },
+    "unit_fighter": {
+      "anchors": [
+        "fighter jet",
+        "fighter aircraft"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "air-to-air missiles under the wings, roundel markings and a bubble canopy",
+        "FEATURE_FORM": "a sleek fighter jet banking in flight, afterburner glow trailing, seen from a low three-quarter view",
+        "FEATURE_KIND": "fighter jet",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "iron-radar grey with a sky-blue afterburner",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": null,
+      "forbidden": [],
+      "identity": "the Fighter game unit: a fast fighter jet",
+      "kind_help": "one singular noun phrase naming the unit itself - one person, one vehicle, one ship or one machine, never a plural and never a whole army",
+      "unit": true
+    },
+    "unit_fisher_boat": {
+      "anchors": [
+        "fishing boat",
+        "fishing vessel",
+        "botter"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "a low open cockpit, raised wooden leeboard, bundled fishing nets, coiled rope and a small basket of fish",
+        "FEATURE_FORM": "a compact, stout wooden North Sea fishing boat with a rounded hull, one mast and a simple gaff sail, shown in three-quarter view",
+        "FEATURE_KIND": "traditional wooden fishing botter",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "tarred dark oak, weathered warm canvas, muted sea green and silver accents",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": null,
+      "forbidden": [
+        "large merchant ship",
+        "cargo crane",
+        "container ship"
+      ],
+      "identity": "the Fisher Boat game unit: a small traditional inshore wooden fishing vessel",
+      "kind_help": "one singular noun phrase naming the unit itself - one person, one vehicle, one ship or one machine, never a plural and never a whole army",
+      "unit": true
+    },
+    "unit_frigate": {
+      "anchors": [
+        "frigate",
+        "sailing warship"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "a bow figurehead, striped gun ports and a ship's gig hanging at the stern davits",
+        "FEATURE_FORM": "an Age-of-Sail frigate under full sail, two rows of gun ports along the hull and a streamer flying",
+        "FEATURE_KIND": "sailing frigate",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "navy black hull with sun-yellow bands",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": null,
+      "forbidden": [],
+      "identity": "the Frigate game unit: an Age-of-Sail frigate",
+      "kind_help": "one singular noun phrase naming the unit itself - one person, one vehicle, one ship or one machine, never a plural and never a whole army",
+      "unit": true
+    },
+    "unit_ironclad": {
+      "anchors": [
+        "ironclad",
+        "steam warship",
+        "armoured ship"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "riveted armour plates, a paddle housing and gun barrels at portholes",
+        "FEATURE_FORM": "a low armoured steam ironclad with a casemate battery, twin smokestacks and a ram bow",
+        "FEATURE_KIND": "steam ironclad",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "gunmetal grey with pitch-black smoke",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": null,
+      "forbidden": [],
+      "identity": "the Ironclad game unit: a steam-powered armoured ironclad",
+      "kind_help": "one singular noun phrase naming the unit itself - one person, one vehicle, one ship or one machine, never a plural and never a whole army",
+      "unit": true
+    },
+    "unit_knights": {
+      "anchors": [
+        "knight",
+        "crusader",
+        "knightly"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "visored great helm, heraldic surcoat and laminated armour plates",
+        "FEATURE_FORM": "one iron-armoured knight riding one caparisoned warhorse in three-quarter isometric view: the single horse's head, neck, saddle and hindquarters all clearly belong to the same one animal, the rider sitting centred in the saddle",
+        "FEATURE_KIND": "medieval knight",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "iron grey with heraldic blue and gold",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": "The knight rides exactly ONE single warhorse: one head, one neck and one body, with clear background space between its head and chest. The rider straddles the saddle of that single animal once and once only. Every horse shown is anatomically correct and drawn complete, with all four legs clearly visible. Every arm and every leg is drawn completely, clearly visible and in a natural easy stance, with no limb hidden, cropped or cut by the frame edge.",
+      "forbidden": [],
+      "identity": "the Knights game unit: an armoured medieval knight mounted on a warhorse",
+      "kind_help": "exactly the noun 'knight' - one rider",
+      "unit": true
+    },
+    "unit_legion": {
+      "anchors": [
+        "legionary",
+        "legion",
+        "centurion"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "red-plumed galea helmet, segmented lorica armour and leather skirt strips",
+        "FEATURE_FORM": "a Roman legionary at attention, a rectangular scutum shield planted and a short gladius drawn",
+        "FEATURE_KIND": "Roman legionary",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "oxblood red and burnished iron",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": "Every arm and every leg is drawn completely, clearly visible and in a natural easy stance, with no limb hidden, cropped or cut by the frame edge.",
+      "forbidden": [
+        "firearm",
+        "musket",
+        "medieval"
+      ],
+      "identity": "the Legion game unit: an armoured Roman legionary",
+      "kind_help": "one singular noun phrase naming the unit itself - one person, one vehicle, one ship or one machine, never a plural and never a whole army",
+      "unit": true
+    },
+    "unit_mech_inf": {
+      "anchors": [
+        "mechanized infantry",
+        "mech infantry",
+        "infantry fighting vehicle",
+        "APC"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "ordinary rifles, webbing, a rear troop ramp and practical armor plates; the soldiers are dismounted and visibly separate from the vehicle",
+        "FEATURE_FORM": "three clearly human modern infantry soldiers in helmets and field uniforms advancing beside a compact tracked infantry fighting vehicle, with an angular armored hull, broad visible tracks, a troop compartment and a small roof-mounted autocannon",
+        "FEATURE_KIND": "mechanized infantry squad",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "olive drab and gunmetal",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": "The vehicle is a real crewed armored personnel carrier or infantry fighting vehicle, not a humanoid machine: keep its tracks, low armored body and troop-carrying shape plainly visible. Show ordinary human riflemen on foot beside it; they wear practical uniforms and helmets, not powered suits.",
+      "forbidden": [
+        "ancient",
+        "musket",
+        "sword",
+        "robot",
+        "android",
+        "humanoid machine",
+        "powered armor",
+        "exoskeleton",
+        "sci-fi"
+      ],
+      "identity": "the Mech. Inf. game unit: human mechanized infantry fighting alongside its armored personnel carrier",
+      "kind_help": "one singular noun phrase naming the unit itself - one person, one vehicle, one ship or one machine, never a plural and never a whole army",
+      "unit": true
+    },
+    "unit_musketeer": {
+      "anchors": [
+        "musketeer",
+        "arquebusier"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "a bandolier of powder charges, bucket-top boots and lace cuffs",
+        "FEATURE_FORM": "a plumed wide-brimmed musketeer in strict side profile resting the slim long musket on a forked rest: both hands grip the light wooden stock together, the muzzle rises clearly beyond his hat with background space between barrel and face",
+        "FEATURE_KIND": "musketeer",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "royal blue coat and buff leather",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": "The musket is historically proportioned and held the way a real musketeer would hold it: slim tapered barrel with a light wooden stock sized like a genuine early-modern weapon, the stock line passing beside the cheek and not across it, barrel and hat clearly separated by air. Every arm and every leg is drawn completely, clearly visible and in a natural easy stance, with no limb hidden, cropped or cut by the frame edge.",
+      "forbidden": [
+        "sword",
+        "shield",
+        "pistol",
+        "rapier",
+        "dagger",
+        "rifle with scope",
+        "modern"
+      ],
+      "identity": "the Musketeer game unit: an early-modern musketeer",
+      "kind_help": "exactly the noun 'musketeer': a soldier whose central weapon is the long smoking musket",
+      "unit": true
+    },
+    "unit_nuclear": {
+      "anchors": [
+        "nuclear missile",
+        "thermonuclear missile",
+        "missile"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "warning chevrons, access panels and a chain rig at the cradle base",
+        "FEATURE_FORM": "a white strategic missile with fins and a red nose cone standing upright on a launch cradle",
+        "FEATURE_KIND": "thermonuclear missile",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "pale launcher white with hazard orange stripes",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": null,
+      "forbidden": [
+        "explosion",
+        "mushroom cloud",
+        "city"
+      ],
+      "identity": "the Nuclear game unit: a strategic thermonuclear missile",
+      "kind_help": "one singular noun phrase naming the unit itself - one person, one vehicle, one ship or one machine, never a plural and never a whole army",
+      "unit": true
+    },
+    "unit_phalanx": {
+      "anchors": [
+        "spearman",
+        "phalanx",
+        "hoplite"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "horsehair-crested helmet, bronze cuirass and greaves",
+        "FEATURE_FORM": "a disciplined rank of classical Greek hoplites, each braced behind a round bronze shield with a long spear held upright",
+        "FEATURE_KIND": "hoplite",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "polished bronze and deep crimson cloth",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": "Show a compact shoulder-to-shoulder rank of living human hoplites, not a single isolated soldier: overlapping round shields make one clear defensive front, with upright spears visible above the helmets. Keep the formation readable as one unit emblem.",
+      "forbidden": [
+        "firearm",
+        "musket"
+      ],
+      "identity": "the Phalanx game unit: a disciplined classical Greek hoplite shield-wall",
+      "kind_help": "one singular noun phrase naming a hoplite; the formation template carries the group count",
+      "subject_template": "a tight classical Greek phalanx of #FEATURE_KIND#",
+      "unit": true
+    },
+    "unit_riflemen": {
+      "anchors": [
+        "rifleman",
+        "infantry soldier",
+        "redcoat"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "tailcoat uniform, shako with cords, cross-belts and a puff of muzzle smoke",
+        "FEATURE_FORM": "a uniformed rifleman in strict side profile holding his long rifle in a two-handed carry: both hands on the wooden stock, the muzzle raised diagonally ahead of him and clearly beyond the hat line, the butt resting at the shoulder",
+        "FEATURE_KIND": "line rifleman",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "deep field blue with brass buttons",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": "The rifle is held as a real weapon is carried: the whole stock, lock and barrel read as one straight line, both hands grip the wood, and a visible gap of background separates the barrel from the face and hat. Every arm and every leg is drawn completely, clearly visible and in a natural easy stance, with no limb hidden, cropped or cut by the frame edge.",
+      "forbidden": [
+        "laser",
+        "scope"
+      ],
+      "identity": "the Riflemen game unit: a line-infantry rifleman of the industrial era",
+      "kind_help": "one singular noun phrase naming the unit itself - one person, one vehicle, one ship or one machine, never a plural and never a whole army",
+      "unit": true
+    },
+    "unit_sail": {
+      "anchors": [
+        "sailboat",
+        "sailing boat",
+        "boat"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "hull planking, a coiled mooring line and a pennant at the masthead",
+        "FEATURE_FORM": "a small single-mast sailing boat with a triangular sail fully set, seen broadside",
+        "FEATURE_KIND": "small sailing boat",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "weathered wood and canvas white",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": null,
+      "forbidden": [],
+      "identity": "the Sail game unit: a small early sailing boat",
+      "kind_help": "one singular noun phrase naming the unit itself - one person, one vehicle, one ship or one machine, never a plural and never a whole army",
+      "unit": true
+    },
+    "unit_scout": {
+      "anchors": [
+        "scout",
+        "pathfinder",
+        "explorer"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "worn travel cloak, a rolled map and a coil of rope on the belt",
+        "FEATURE_FORM": "an agile scout striding forward with a walking staff and a leather haversack",
+        "FEATURE_KIND": "woodland scout",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "muted greens and worn leather browns",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": "Every arm and every leg is drawn completely, clearly visible and in a natural easy stance, with no limb hidden, cropped or cut by the frame edge.",
+      "forbidden": [],
+      "identity": "the Scout game unit: a lightly equipped explorer",
+      "kind_help": "one singular noun phrase naming the unit itself - one person, one vehicle, one ship or one machine, never a plural and never a whole army",
+      "unit": true
+    },
+    "unit_settler": {
+      "anchors": [
+        "covered wagon",
+        "settler wagon",
+        "Conestoga wagon",
+        "pioneer"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "muted canvas curtains rolled open, a few travel bundles secured on the wagon and one plainly human pioneer walking beside the team",
+        "FEATURE_FORM": "a sturdy wooden pioneer wagon with a high arched canvas canopy on curved ribs, tall plank sides, large iron-rimmed spoked wheels and a long front drawbar, pulled by a pair of oxen",
+        "FEATURE_KIND": "covered settler wagon",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "warm oak, canvas beige, iron grey and subdued homespun earth tones",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": "The covered wagon is the unmistakable central silhouette: a barrel-arched canvas roof on visible ribs over a wooden box body, with large spoked wheels and a long drawbar. Keep the ox team and walking pioneer secondary and clearly attached to the wagon journey.",
+      "forbidden": [
+        "modern car",
+        "tractor",
+        "motor vehicle",
+        "tourist wagon",
+        "chuckwagon kitchen"
+      ],
+      "identity": "the Settler game unit: a covered pioneer wagon carrying a small founding party",
+      "kind_help": "one singular noun phrase naming the unit itself - one person, one vehicle, one ship or one machine, never a plural and never a whole army",
+      "unit": true
+    },
+    "unit_submarine": {
+      "anchors": [
+        "submarine"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "a raised periscope, hull plate seams and trailing wake foam",
+        "FEATURE_FORM": "a dark grey attack submarine seen from a low three-quarter view, with a conning tower, diving planes and bow torpedo tubes",
+        "FEATURE_KIND": "attack submarine",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "deep sea grey and black rubber",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": null,
+      "forbidden": [],
+      "identity": "the Submarine game unit: a military attack submarine",
+      "kind_help": "one singular noun phrase naming the unit itself - one person, one vehicle, one ship or one machine, never a plural and never a whole army",
+      "unit": true
+    },
+    "unit_tank": {
+      "anchors": [
+        "tank",
+        "battle tank"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "an open commander's hatch, track guards and a small radio antenna",
+        "FEATURE_FORM": "a sloped-armoured main battle tank in three-quarter view with a long gun barrel, side skirts and tracks",
+        "FEATURE_KIND": "main battle tank",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "sand-dust camouflage tan and gunmetal",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": null,
+      "forbidden": [],
+      "identity": "the Tank game unit: a modern main battle tank",
+      "kind_help": "one singular noun phrase naming the unit itself - one person, one vehicle, one ship or one machine, never a plural and never a whole army",
+      "unit": true
+    },
+    "unit_trade_ship": {
+      "anchors": [
+        "merchant ship",
+        "trade ship",
+        "cargo ship"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "visible rigging, a few neatly lashed cargo crates on deck and a small company pennant without readable lettering",
+        "FEATURE_FORM": "a sturdy 17th-century Dutch-style merchant sailing ship with three masts, square cream sails, a deep rounded wooden hull and a high ornate stern, shown in a clear three-quarter view",
+        "FEATURE_KIND": "wooden sailing merchantman",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "weathered oak brown, sailcloth cream, muted navy and restrained ochre accents",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": null,
+      "forbidden": [
+        "container ship",
+        "modern freighter",
+        "steam funnel",
+        "photograph"
+      ],
+      "identity": "the Trade Ship game unit: a large age-of-sail merchantman carrying overseas cargo",
+      "kind_help": "one singular noun phrase naming the unit itself - one person, one vehicle, one ship or one machine, never a plural and never a whole army",
+      "unit": true
+    },
+    "unit_transport": {
+      "anchors": [
+        "transport ship",
+        "troop ship",
+        "freighter"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "a grid of portholes, cargo cranes and a striped dummy funnel",
+        "FEATURE_FORM": "a bulky grey troop transport ship with davit-mounted landing boats along the hull",
+        "FEATURE_KIND": "troop transport",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "dust grey and weathered steel",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": null,
+      "forbidden": [],
+      "identity": "the Transport game unit: a troop transport ship",
+      "kind_help": "one singular noun phrase naming the unit itself - one person, one vehicle, one ship or one machine, never a plural and never a whole army",
+      "unit": true
+    },
+    "unit_trireme": {
+      "anchors": [
+        "trireme",
+        "galley",
+        "warship"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "a rectangular banner flying from the masthead, a painted eye on the bow, low railings and oar ports along the hull, coiled rope at the stern",
+        "FEATURE_FORM": "an ancient Mediterranean war galley seen in full profile: a single low bank of long parallel wooden oars sweeping out and down to the water, one tall mast carrying a large diagonal lateen sail furled along its long yardarm, and a heavy steering oar slanting over the stern",
+        "FEATURE_KIND": "ancient war galley",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "tarred warm oak with cream sailcloth, red and ochre paintwork",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": "The galley has ONE single low bank of long parallel wooden oars sweeping out along the hull and down to the water. The single mast carries one large lateen sail furled along its long diagonal yardarm - a triangular lateen rig. A rectangular flag flies from the masthead, and a long steering oar slants over the stern.",
+      "forbidden": [
+        "steam",
+        "motor",
+        "engine",
+        "square sail",
+        "square rig",
+        "multiple banks",
+        "three rows of oars",
+        "container ship"
+      ],
+      "identity": "the Trireme game unit: an ancient Mediterranean war galley with one bank of oars and a furled lateen sail",
+      "kind_help": "the complete ship: hull, its single bank of long oars, the furled diagonal lateen sail and the stern steering oar - all of them belong to the noun, nothing may be dropped",
+      "unit": true
+    },
+    "unit_warrior": {
+      "anchors": [
+        "warrior",
+        "tribesman",
+        "clubman"
+      ],
+      "fallbacks": {
+        "FEATURE_DETAIL": "painted skin stripes, fur straps and a bone necklace",
+        "FEATURE_FORM": "a brawny tribal fighter mid-stride swinging a rough wooden club, a bark-lined shield raised on the other arm",
+        "FEATURE_KIND": "stone-age tribal warrior",
+        "FEATURE_LIGHTING": "warm key light from the upper left with a soft shaded side",
+        "FEATURE_PALETTE": "earthen hides of brown ochre and umber",
+        "FEATURE_RENDERING": "clean dark outlines with smooth cell shading"
+      },
+      "fixed": "Every arm and every leg is drawn completely, clearly visible and in a natural easy stance, with no limb hidden, cropped or cut by the frame edge.",
+      "forbidden": [],
+      "identity": "the Warrior game unit: a stone-age tribal fighter",
+      "kind_help": "one singular noun phrase naming the unit itself - one person, one vehicle, one ship or one machine, never a plural and never a whole army",
+      "unit": true
+    }
+  },
+  "_IRREGULAR_PLURALS": {
+    "bowman": "bowmen",
+    "child": "children",
+    "clubman": "clubmen",
+    "foot": "feet",
+    "footman": "footmen",
+    "goose": "geese",
+    "horseman": "horsemen",
+    "leaf": "leaves",
+    "loaf": "loaves",
+    "man": "men",
+    "mouse": "mice",
+    "ox": "oxen",
+    "person": "people",
+    "spearman": "spearmen",
+    "tooth": "teeth",
+    "woman": "women"
+  },
+  "_MASS_NOUNS": [
+    "coal",
+    "deer",
+    "fish",
+    "gold",
+    "horse",
+    "ice",
+    "oil",
+    "seal",
+    "snow",
+    "water",
+    "year"
+  ],
+  "version": 1
+}

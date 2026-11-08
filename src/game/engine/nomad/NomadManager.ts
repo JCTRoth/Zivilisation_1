@@ -81,6 +81,7 @@ import {
   NOMAD_CARAVAN_BUILD_ROUNDS,
   NOMAD_CARAVAN_MAX_IN_FLIGHT,
   NOMAD_GROWTH_ROUNDS,
+  NOMAD_GROUP_RADIUS,
   NOMAD_GROUP_SPLIT_SIZE,
   NOMAD_HIRE_COST_FACTOR,
   NOMAD_KNOWLEDGE_PRICE_DIVISOR,
@@ -734,7 +735,9 @@ export class NomadManager {
   /**
    * A rival court answers the envoy: they may buy the technology on offer
    * (half research cost, the clan's factor, their diplomacy is the chance),
-   * hire the riders standing at their gate, or simply wave the tribe on.
+   * hire the riders standing at their gate (read against the court's own
+   * case — at war or short of troops it buys readily, a peacetime court
+   * rarely: see `aiHireThreshold`), or simply wave the tribe on.
    * Either way the meeting is answered, the camp lingers, and the route
    * continues to the next court.
    */
@@ -766,7 +769,8 @@ export class NomadManager {
         gold: price,
       });
     } else if (this.camps.length > 1 && meeting.length > 0 && ai
-      && (ai.resources?.gold ?? 0) >= this.hirePriceFor(meeting) && mood > 0.85) {
+      && (ai.resources?.gold ?? 0) >= this.hirePriceFor(meeting)
+      && mood > this.aiHireThreshold(ai, aiId)) {
       // They buy ONE GROUP — and never the tribe's last camp (see the race).
       const cost = this.hirePriceFor(meeting);
       ai.resources.gold = (ai.resources.gold ?? 0) - cost;
@@ -778,6 +782,27 @@ export class NomadManager {
     // They came, they dealt (or they didn't), they stay a while — the same
     // linger as at your gate, then their own route rides on.
     this.endVisitWithLinger(camp);
+  }
+
+  /**
+   * How eager THIS court is to buy the riders standing at its gate.
+   *
+   * The ruler AI uses the tribe when it has a use for it: a court AT WAR, or
+   * one with no more soldiers than it has cities, wants the spears and buys
+   * at good odds (0.55); a peacetime court with a full purse still buys — a
+   * bargain is a bargain — but rarely (0.9). The caller has already rolled
+   * the one dice this decision gets: the same stream drives the wander, so a
+   * second roll here would decide whether they ever ARRIVE to make the deal.
+   */
+  private aiHireThreshold(ai: Civilization, aiId: number): number {
+    const atWar = (ai.warWith?.size ?? 0) > 0;
+    const soldiers = (this.gameEngine.units ?? []).filter(
+      (u) => u.civilizationId === aiId
+        && u.isDefeated !== true
+        && (UNIT_PROPS[String(u.type)]?.attack ?? 0) > 0,
+    ).length;
+    const cities = (this.gameEngine.cities ?? []).filter((c) => c.civilizationId === aiId).length;
+    return atWar || soldiers <= cities ? 0.55 : 0.9;
   }
 
   // ── The tribe's economy (their own AI-player turn) ────────────────────
@@ -1724,20 +1749,25 @@ export class NomadManager {
     // — the market and the plea — is valid in every state the tribe still
     // exists (it stands on the promised terms in `pending`).
     if (this.liveParley === null || this.visitCount === 0) return { ok: false };
-    // A settlement can only be built by choosing the explicit offer currently
-    // on the table. This also rejects stale or guessed choice ids after an
-    // offer has been withdrawn.
-    if (!this.liveChoices?.some((choice) => choice.id === choiceId)) return { ok: false };
     const humanId = this.humanCivId();
     if (humanId === null) return { ok: false };
     const human = this.gameEngine.civilizations?.[humanId];
     if (!human) return { ok: false };
-    // THE GATE RULE, checked before anything is spent: a door that sells
-    // riders can only be answered while your units stand with theirs. The
-    // audience stays open — walking away is not an answer.
+    // THE GATE RULE, checked before anything is spent — and BEFORE the
+    // "is this door even on the table" filter below: the hire door is no
+    // longer tabled from afar (the audience shows only what can be had
+    // from where you stand), so a stale click on it would otherwise fall
+    // through to the generic refusal and the player would never be told
+    // WHY (`notMeeting` is the documented answer, and the warning toast
+    // the UI shows for it). The audience stays open — walking away is not
+    // an answer.
     if (choiceId === 'hire' && this.meetingUnitIds(humanId, this.openCamp).length === 0) {
       return { ok: false, result: 'notMeeting' };
     }
+    // A settlement can only be built by choosing the explicit offer currently
+    // on the table. This also rejects stale or guessed choice ids after an
+    // offer has been withdrawn.
+    if (!this.liveChoices?.some((choice) => choice.id === choiceId)) return { ok: false };
     const wasParley = this.liveParley === 'first' || this.liveParley === 'second';
     this.liveParley = null;
 
@@ -2292,7 +2322,11 @@ export class NomadManager {
       // of teleported. Until then they ride up to the gate and mill there.
       const waiting = round < leg.arriveAt;
       const hold = waiting ? NOMAD_RIDE_HOLD_DISTANCE : 0;
-      for (const rider of riders) this.rideStep(rider, target, hold);
+      // The leg rides as ONE pack: the rider nearest the court leads and the
+      // rest hold `NOMAD_GROUP_RADIUS` around it, so the group arrives
+      // together instead of strung out along the road (the scout's extra
+      // move used to leave the spears behind).
+      this.rideAsGroup(leg.unitIds, target, hold);
 
       // ARRIVAL: somebody stands beside the host's city (or beside one of
       // its units) — contact, exactly as on the first visit.
@@ -2985,11 +3019,72 @@ export class NomadManager {
     if (camp.unitIds.length === 0) return;
     const target = this.nearestPlayerTarget({ col: camp.col, row: camp.row }, courtId);
     if (!target) return;
-    for (const id of camp.unitIds) {
-      const unit = this.unitById(id);
-      if (!unit) continue;
-      this.rideStep(unit, target);
+    this.rideAsGroup(camp.unitIds, target, 0);
+  }
+
+  /**
+   * THE PACK — the horde travels as ONE group. The rider closest to the
+   * court LEADS: it walks first and free, and the rest hold
+   * `NOMAD_GROUP_RADIUS` around it — a step toward the leader is a step
+   * toward the court, so the formation never has to recede to keep together.
+   * Nobody may take more steps in a round than the SLOWEST rider of the
+   * group (the two spears walk 1, the scout 2), so the scout's extra move
+   * cannot carry it away from its mates. A leader that could not move at all
+   * releases the ring for a round, so a wall of swamp can never cage the
+   * pack. The ordering is by distance then id, so no RNG enters the choice
+   * and the deterministic turn stream stays put.
+   */
+  private rideAsGroup(
+    unitIds: readonly string[],
+    target: { col: number; row: number },
+    stopAt: number,
+  ): void {
+    const riders = unitIds
+      .map((id) => this.unitById(id))
+      .filter((u): u is Unit => u !== undefined && u.isDefeated !== true);
+    if (riders.length === 0) return;
+    const dist = (u: Unit) => Math.max(Math.abs(u.col - target.col), Math.abs(u.row - target.row));
+    const byId = (a: Unit, b: Unit) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+    const pace = Math.min(...riders.map((u) => u.maxMoves ?? 1));
+    const leader = [...riders].sort((a, b) => dist(a) - dist(b) || byId(a, b))[0];
+    const before = { col: leader.col, row: leader.row };
+    this.rideStep(leader, target, stopAt, null, pace);
+    const pack = { col: leader.col, row: leader.row };
+    const leaderStuck = leader.col === before.col && leader.row === before.row;
+    for (const rider of riders) {
+      if (rider.id === leader.id) continue;
+      this.rideStep(rider, target, stopAt, leaderStuck ? null : pack, pace);
     }
+  }
+
+  /**
+   * COHESION: cut a rider's candidate steps down to the ones that keep it
+   * with its group.
+   *
+   *  * A step that stays inside the ring wins — the normal case, and what
+   *    stops the scout from running ahead of the spears.
+   *  * When the ring cannot be kept (a mate on the only tile, a cliff, a
+   *    river, or the pack already strung out along a single-file ford) the
+   *    rider takes the step that leaves it CLOSEST to the pack instead of
+   *    its ordinary step. It still moves — nobody ever holds and jams the
+   *    rider behind it — but it never bolts away while a better, equally
+   *    legal step would have kept the group together.
+   *
+   * Every candidate handed in is already non-receding toward the target, so
+   * no branch can walk a rider away from the court it is visiting, and the
+   * returned list is never empty while the input was not.
+   */
+  private keepTogether(
+    steps: Array<{ col: number; row: number }>,
+    pack: { col: number; row: number } | null,
+  ): Array<{ col: number; row: number }> {
+    if (!pack || steps.length === 0) return steps;
+    const ring = (p: { col: number; row: number }) =>
+      Math.max(Math.abs(p.col - pack.col), Math.abs(p.row - pack.row));
+    const tight = steps.filter((s) => ring(s) <= NOMAD_GROUP_RADIUS);
+    if (tight.length > 0) return tight;
+    const closest = Math.min(...steps.map(ring));
+    return steps.filter((s) => ring(s) === closest);
   }
 
   /**
@@ -2997,11 +3092,29 @@ export class NomadManager {
    * some drift sideways — a walk that meanders yet always lands) stops at
    * the city's edge. Visitors do not enter or assault cities. Shared by
    * the camp's wander and by the ride between courts.
+   *
+   * `pack` is the leader — the rider closest to the court, which sets the
+   * line and walks free (`null` for it). Every other rider's candidate
+   * steps are filtered through {@link keepTogether} so the group arrives as
+   * a group.
    */
-  private rideStep(unit: Unit, target: { col: number; row: number }, stopAt = 0): void {
+  private rideStep(
+    unit: Unit,
+    target: { col: number; row: number },
+    stopAt = 0,
+    pack: { col: number; row: number } | null = null,
+    stepBudget: number | null = null,
+  ): void {
     unit.isFortified = false;
     unit.movesRemaining = unit.maxMoves ?? unit.movesRemaining;
-    const maxSteps = Math.max(1, unit.maxMoves ?? 1);
+    // The pack's step budget: nobody walks further in one round than the
+    // slowest rider of the group, so the scout's extra move cannot carry it
+    // away from the spears even where the ring cannot be kept (a single-file
+    // ford, a queue around a swamp).
+    const maxSteps = Math.max(
+      1,
+      stepBudget === null ? (unit.maxMoves ?? 1) : Math.min(unit.maxMoves ?? 1, stepBudget),
+    );
 
     // Repair an old visitor position if the unit is already on its court's
     // city tile: move it to an open neighboring tile before continuing.
@@ -3037,7 +3150,9 @@ export class NomadManager {
             && (this.gameEngine.canUnitMoveTo?.(unit.id, n.col, n.row) ?? false),
         );
         if (lateral.length === 0) break;
-        const step = lateral[Math.floor(Math.random() * lateral.length)];
+        const milling = this.keepTogether(lateral, pack);
+        if (milling.length === 0) break; // defensive: a non-empty list stays non-empty
+        const step = milling[Math.floor(Math.random() * milling.length)];
         if (!this.gameEngine.moveUnit(unit.id, step.col, step.row).success) break;
         continue;
       }
@@ -3046,7 +3161,7 @@ export class NomadManager {
         // Stop at the city's edge or beside the unit target — no shared tile.
         break;
       }
-      const next = this.wanderStepToward(unit, target);
+      const next = this.wanderStepToward(unit, target, pack);
       if (!next) break;
       if (!this.gameEngine.moveUnit(unit.id, next.col, next.row).success) break;
     }
@@ -3057,11 +3172,14 @@ export class NomadManager {
    * — a walk that meanders rather than beelines, yet always LANDS. Every
    * candidate step is non-receding (a closer or same-distance neighbour), so
    * the distance to the court never grows however the dice fall; a drifting
-   * step is only ever taken sideways, never away.
+   * step is only ever taken sideways, never away. With `pack` set the
+   * candidates are then cut to the ones that keep this rider with its group
+   * (see {@link keepTogether}).
    */
   private wanderStepToward(
     unit: Unit,
     target: { col: number; row: number },
+    pack: { col: number; row: number } | null = null,
   ): { col: number; row: number } | null {
     const grid = this.gameEngine.squareGrid;
     const enterable = (n: { col: number; row: number }) =>
@@ -3080,7 +3198,11 @@ export class NomadManager {
     }
     // Close steps carry the walk; same-distance steps only drift it.
     const drift = lateral.length > 0 && Math.random() < NOMAD_WANDER_DRIFT_CHANCE;
-    const options = drift ? lateral : closer.length > 0 ? closer : lateral;
+    const options = this.keepTogether(
+      drift ? lateral : closer.length > 0 ? closer : lateral,
+      pack,
+    );
+    if (options.length === 0) return null; // defensive: a non-empty list stays non-empty
     return options[Math.floor(Math.random() * options.length)];
   }
 

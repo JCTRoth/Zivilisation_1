@@ -1,0 +1,13 @@
+{
+  "feature": "scenery, backdrop, environment, landscape, horizon, sky, clouds, terrain, ground plane, grass, dirt, sand, water surface, waves, foam, rocks, trees, plants, bushes, forest, border frame, cast shadow, diamond tile, hexagon, isometric tile, tile grid, snowflakes, photorealistic, photography, 3D render, blurry lines, low resolution, text, watermark, multiple objects, collage, thumbnail layout, white background, light background, gradient background, textured background, studio backdrop, floor, wall, table",
+  "terrain": "photorealistic, realistic landscape, photography, border frame, ground plane background, horizon line, sky, ambient occlusion shadows on canvas, cut off edges, blurry lines, 3D render artifacts, low resolution, empty background, transparent corners, visible grid lines, diamond layout, isolated subject on black, black background, pitch black, vignette, frame, picture, poster, text, watermark, characters, buildings, animals, 3D render, 3D scene, isometric perspective, tilted camera, side view, depth of field, ray tracing, volumetric light, dramatic cast shadows across the surface, desaturated colours, muted palette, washed out colours, dull faded tones, high-frequency detail, excessive microtexture, noisy texture, intricate repeating detail, neon, bioluminescent veins, spectral glow, glowing lines, runes, webs, bones, scattered debris, painterly brushwork, framed picture, border band, contrasting perimeter, white halo, cloudy edge, muddy edge, shoreline border, land ring, dark corners, gradient edge, drop shadow, isolated patch",
+  "unit": "scenery, backdrop, environment, landscape, horizon, sky, clouds, terrain, ground plane, border frame, cast shadow, diamond tile, hexagon, tile grid, photorealistic, photography, photo, 3D render, glossy CGI, blurry lines, low resolution, text, letters, watermark, collage, thumbnail layout, white background, light background, gradient background, textured background, studio backdrop, floor, wall, table, chibi, cute mascot, super-deformed proportions, cropped subject",
+  "unitExtra": {
+    "unit_ferry": "cruise ship, passenger liner, sailing ship, container ship",
+    "unit_fisher_boat": "large merchantman, cargo crane, container ship",
+    "unit_mech_inf": "humanoid robot, android, robot soldier, powered armor, exoskeleton, futuristic sci-fi machine",
+    "unit_settler": "tractor, modern car, motor vehicle, tourist wagon",
+    "unit_trade_ship": "modern container ship, diesel freighter, cruise liner"
+  },
+  "version": 1
+}
