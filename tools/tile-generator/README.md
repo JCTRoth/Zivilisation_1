@@ -174,9 +174,9 @@ python3 generate_variated_tile_sets.py --emit-prompts bundle.json --dry-run
 web UI. `--spec-json` points both tools at an alternative `specs/` directory.
 
 **Want to ask for a set without running any of this?** Write a `request.json`
-and send it — link:../../doc/TILE_GENERATOR_REQUESTS.adoc[Tile Generator
-Requests] documents every key, the rosters, ready-made examples and
-`--check`, which validates a request without starting a model:
+and send it — [Tile Generator Requests](../../doc/TILE_GENERATOR_REQUESTS.adoc)
+documents every key, the rosters, ready-made examples and `--check`, which
+validates a request without starting a model:
 
 ```bash
 python3 tools/tile-generator/abstract_generator.py --check --request request.json

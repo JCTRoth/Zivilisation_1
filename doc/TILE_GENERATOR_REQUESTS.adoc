@@ -6,8 +6,10 @@ abstract slots plus the local image model (`sd-server`) to render. What travels
 is a small JSON *request*. Write it, check it, send it — the request is the
 whole contract, and every key in it is validated before a single image is made.
 
-Companion documents: `tools/tile-generator/README.md` (the engine, `specs/*.json`,
-the bundle) and `doc/RENDERING_ASSETS.adoc` (assets, installing a run).
+Companion documents: link:../tools/tile-generator/README.md[`tools/tile-generator/README.md`]
+(the engine, `specs/*.json`, the bundle) and
+link:RENDERING_ASSETS.adoc[`doc/RENDERING_ASSETS.adoc`] (assets, installing a
+run).
 
 == 1. The short version
 
@@ -124,7 +126,8 @@ are never silently ignored.
 |all 35 units
 |===
 
-The rosters (authoritative copy: `tools/tile-generator/specs/assets.json`):
+The rosters (authoritative copy:
+link:../tools/tile-generator/specs/assets.json[`tools/tile-generator/specs/assets.json`]):
 
 *Terrains (12)* — `arctic`, `desert`, `forest`, `grassland`, `hills`, `jungle`,
 `mountains`, `ocean`, `plains`, `river`, `swamp`, `tundra`
@@ -293,8 +296,8 @@ Rules:
 
 == 6. Errors
 
-Everything wrong with a request is reported as one line on stderr-ish output
-and exit code `2`:
+Everything wrong with a request is reported as a single `[-]` line on standard
+output and exit code `2`:
 
 [cols="2,3", options="header"]
 |===
@@ -350,6 +353,7 @@ tile/input instead of writing a broken file).
 * Unit ids come from `specs/assets.json`. The renderer also picks up units the
   game gained later (automatic sync), but a *request* has to use ids
   `--check` accepts: if it rejects a unit the game really has, the roster needs
-  one line — see "Adding a roster entry" in `tools/tile-generator/README.md`.
+  one line — see "Adding a roster entry" in
+  link:../tools/tile-generator/README.md[`tools/tile-generator/README.md`].
 * Requests are plain JSON: no comments, no trailing commas, one object per
   file.
