@@ -25,9 +25,9 @@
  *            deficits only.
  */
 import { describe, it, expect } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { EconomicManager } from '@/game/engine/EconomicManager';
-import type { City, Civilization, Unit } from '../types/game';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { EconomicManager } from '@shared/game/engine/EconomicManager';
+import type { City, Civilization, Unit } from '@shared/types/game';
 
 // `EM` is consumed only by deleted tests below; keep the name as documentation.
 const EM = EconomicManager as unknown as { DEBT_REPAYMENT_PER: number };

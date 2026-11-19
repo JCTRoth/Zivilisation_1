@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { ScoutMemory } from '@/game/engine/ScoutMemory';
-import { EnemyLocation } from '@/game/engine/EnemySearcher';
+import { ScoutMemory } from '@shared/game/engine/ScoutMemory';
+import { EnemyLocation } from '@shared/game/engine/EnemySearcher';
 
 describe('ScoutMemory', () => {
   let scoutMemory: ScoutMemory;

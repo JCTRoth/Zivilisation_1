@@ -36,7 +36,7 @@ import {
   FISHER_BOAT_STORAGE,
   UNIT_PROPERTIES,
   fisherCatchValue,
-} from '@/data/UnitConstants';
+} from '../../data/UnitConstants';
 
 /** Gold-equivalent value of one food delivered (growth ≈ a taxman's 2 gold). */
 export const FISHER_FOOD_VALUE = 2;

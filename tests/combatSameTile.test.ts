@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { AIManager } from '@/game/engine/AI/AIManager';
-import type { Unit } from '@/../types/game';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { AIManager } from '@shared/game/engine/AI/AIManager';
+import type { Unit } from '@shared/types/game';
 
 /**
  * Same-tile combat: two enemy units stacked on one tile must be able to attack

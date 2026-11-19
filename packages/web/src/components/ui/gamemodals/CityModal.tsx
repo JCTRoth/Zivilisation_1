@@ -2,22 +2,22 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Button, Badge, ProgressBar, Tab, Tabs } from 'react-bootstrap';
 import { CityModalLogic } from './CityModalLogic';
 import { ModalUtils } from './ModalUtils';
-import { UNIT_PROPS, BUILDING_PROPS } from '@/utils/Constants';
-import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
-import { isWonderObsolete, getWonder } from '@/data/WonderData';
-import { SPECIALIST_YIELDS, PURCHASE_GOLD_PER_SHIELD } from '@/data/GameConstants';
-import { MAX_TRADE_ROUTES } from '@/game/engine/GameEngine';
-import { CITY_GOVERNOR_OPTIONS, governorOption, terrainLabel } from '@/utils/CityGovernorUtils';
+import { UNIT_PROPS, BUILDING_PROPS } from '@shared/utils/Constants';
+import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '@shared/data/BuildingConstants';
+import { isWonderObsolete, getWonder } from '@shared/data/WonderData';
+import { SPECIALIST_YIELDS, PURCHASE_GOLD_PER_SHIELD } from '@shared/data/GameConstants';
+import { MAX_TRADE_ROUTES } from '@shared/game/engine/GameEngine';
+import { CITY_GOVERNOR_OPTIONS, governorOption, terrainLabel } from '../../../utils/CityGovernorUtils';
 import ProductionSelectionModal from './ProductionSelectionModal';
-import { productionFailureText } from '@/utils/ProductionUtils';
-import { formatCombatStat, unitRankBadge, unitStatus } from '@/utils/UnitStatus';
+import { productionFailureText } from '../../../utils/ProductionUtils';
+import { formatCombatStat, unitRankBadge, unitStatus } from '../../../utils/UnitStatus';
 import '../../../styles/unitRank.css';
-import GameEngine from '@/game/engine/GameEngine';
-import { useGameStore } from '@/stores/GameStore';
-import { useTranslation } from '@/i18n/useTranslation';
-import { tBuildingName, tSpecialistName, tTechName, tUnitName, tWonderName } from '@/i18n/dataNames';
-import type { TranslationKey } from '@/i18n';
-import ClanPortrait from '@/components/ui/ClanPortrait';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { useGameStore } from '../../../stores/GameStore';
+import { useTranslation } from '../../../i18n/useTranslation';
+import { tBuildingName, tSpecialistName, tTechName, tUnitName, tWonderName } from '@shared/i18n/dataNames';
+import type { TranslationKey } from '@shared/i18n/index';
+import ClanPortrait from '../ClanPortrait';
 import {
   NOMAD_CAMP_FOOD_COST,
   NOMAD_SETTLEMENT_DEFENDERS,
@@ -26,11 +26,11 @@ import {
   NOMAD_SETTLEMENT_TRADE_GOLD,
   NOMAD_STANDING_COLORS,
   NOMAD_TRADE_ROUTE_SLOT_BONUS,
-} from '@/data/NomadConstants';
-import { GameUtils } from '@/utils/GameUtils';
+} from '@shared/data/NomadConstants';
+import { GameUtils } from '../../../utils/GameUtils';
 import GameModal from './ModalShell';
-import { UnitIcon } from '@/components/ui/UnitIcon';
-import type { AudienceChoice, City, Civilization, GameActions, ProductionItem } from '../../../../types/game';
+import { UnitIcon } from '../UnitIcon';
+import type { AudienceChoice, City, Civilization, GameActions, ProductionItem } from '@shared/types/game';
 import '../../../styles/cityModal.css';
 import '../../../styles/wonders.css';
 

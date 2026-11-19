@@ -1,7 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { mkdirSync, appendFileSync, readFileSync, existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 /**
  * Dev-server middleware that persists structured game-log lines to disk.
@@ -66,18 +69,25 @@ function gameLogPlugin() {
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  // The app lives in the `web` workspace; shared/ and server/ are outside it.
+  root: 'packages/web',
+  // Keep the generated tile assets where the tile-generator tools expect them.
+  publicDir: join(__dirname, 'public'),
   plugins: [react(), gameLogPlugin()],
   server: {
     host: true,
     port: 3000,
   },
   build: {
-    outDir: 'dist',
+    // Relative to `root` (packages/web) → repository dist/.
+    outDir: '../../dist',
+    emptyOutDir: true,
     sourcemap: true,
   },
   resolve: {
     alias: {
-      '@': '/src',
+      '@shared': join(__dirname, 'packages/shared'),
+      '@': join(__dirname, 'packages/web/src'),
     },
   },
 })

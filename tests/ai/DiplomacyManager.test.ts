@@ -4,10 +4,10 @@ import {
   bribeOutcomeForRoll,
   bribeUnitCost,
   type BribeOutcome,
-} from '@/game/engine/DiplomacyManager';
-import { ESPIONAGE_DIPLOMAT_ACTIONS } from '@/game/engine/DiplomacyTypes';
-import { TREATY_ROUTE_TRADE_MULTIPLIER } from '@/data/GameConstants';
-import { EconomicManager } from '@/game/engine/EconomicManager';
+} from '@shared/game/engine/DiplomacyManager';
+import { ESPIONAGE_DIPLOMAT_ACTIONS } from '@shared/game/engine/DiplomacyTypes';
+import { TREATY_ROUTE_TRADE_MULTIPLIER } from '@shared/data/GameConstants';
+import { EconomicManager } from '@shared/game/engine/EconomicManager';
 
 /**
  * Creates a minimal mock GameEngine with the fields DiplomacyManager needs.

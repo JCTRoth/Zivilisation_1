@@ -25,7 +25,7 @@
  * pathfinder, the UI preview and the AI can all share the exact same rule.
  */
 
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
+import { TERRAIN_TYPES } from '../../data/TerrainConstants';
 
 /** Minimal tile shape the river rules need. */
 export interface RiverTileLike {

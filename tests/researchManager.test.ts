@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { ResearchManager, MIN_RESEARCH_TURNS, MAX_RESEARCH_TURNS } from '@/game/engine/ResearchManager';
+import { ResearchManager, MIN_RESEARCH_TURNS, MAX_RESEARCH_TURNS } from '@shared/game/engine/ResearchManager';
 
 /**
  * Civ I research model: tech cost scaling (map/difficulty/tech-count), beaker

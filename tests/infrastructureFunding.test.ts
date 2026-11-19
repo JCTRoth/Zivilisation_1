@@ -17,11 +17,11 @@ import {
   INFRASTRUCTURE_FULL_COVERAGE_POP,
   type InfrastructureContext,
   type InfrastructureTile,
-} from '@/game/engine/AI/InfrastructurePlanner';
-import { IMPROVEMENT_TYPES } from '@/data/TileImprovementConstants';
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
-import { AICoordinator, type BuildingFundingCandidate, type FundingDemand } from '@/game/engine/AI/AICoordinator';
-import { evaluateBuildingEconomics, NEUTRAL_CITY_ECONOMICS } from '@/game/engine/AI/BuildingEconomics';
+} from '@shared/game/engine/AI/InfrastructurePlanner';
+import { IMPROVEMENT_TYPES } from '@shared/data/TileImprovementConstants';
+import { TERRAIN_TYPES } from '@shared/data/TerrainConstants';
+import { AICoordinator, type BuildingFundingCandidate, type FundingDemand } from '@shared/game/engine/AI/AICoordinator';
+import { evaluateBuildingEconomics, NEUTRAL_CITY_ECONOMICS } from '@shared/game/engine/AI/BuildingEconomics';
 
 const city = (overrides: Partial<{ id: string; name: string; population: number; col: number; row: number }> = {}) => ({
   id: 'town', name: 'Town', population: 8, col: 10, row: 10, ...overrides,

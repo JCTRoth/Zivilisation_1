@@ -1,9 +1,9 @@
 import React, { useEffect } from 'react';
 import GameModal from './ModalShell';
-import { useTranslation } from '@/i18n/useTranslation';
-import { playSfx, type SfxCue } from '@/utils/Sfx';
-import type { CityEventNotice } from '../../../../types/game';
-import { CITY_EVENT_ART } from '@/data/StoryEvents';
+import { useTranslation } from '../../../i18n/useTranslation';
+import { playSfx, type SfxCue } from '../../../utils/Sfx';
+import type { CityEventNotice } from '@shared/types/game';
+import { CITY_EVENT_ART } from '@shared/data/StoryEvents';
 import '../../../styles/cityCaptureModal.css';
 
 interface CityEventModalProps {

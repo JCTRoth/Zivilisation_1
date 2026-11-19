@@ -1,15 +1,17 @@
 import { SquareGrid } from '../SquareGrid';
-import { Constants, TERRAIN_PROPS, UNIT_PROPS } from '@/utils/Constants';
-import { CIVILIZATIONS, TECHNOLOGIES } from '@/data/GameData';
-import { SMALL_ISLAND_MAX_TILES, VERY_SMALL_ISLAND_MAX_TILES, RESEARCH_UNLOCK_ROUND, isAutoScenario, isSpectatorGame, clampGameSpeedStep, SPEED_STEP_MOVE_DELAY_MS, SPEED_STEP_TURN_DELAY_MS, PURCHASE_GOLD_PER_SHIELD } from '@/data/GameConstants';
-import { useGameStore } from '../../stores/GameStore';
-import { staticMapForMapType, SIZE_LOCKED_MAP_TYPES } from '@/data/maps';
-import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
-import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_REQUIREMENTS, IMPROVEMENT_TYPES } from '@/data/TileImprovementConstants';
-import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
-import { TERRAIN_RESOURCES, TERRAIN_TYPES, WATER_TERRAIN_TYPES } from '@/data/TerrainConstants';
-import { FISHER_BOAT_STORAGE, fisherFoodPerFish, UNIT_TYPES } from '@/data/UnitConstants';
-import { NOMAD_TRADE_ROUTE_SLOT_BONUS } from '@/data/NomadConstants';
+import { Constants, TERRAIN_PROPS, UNIT_PROPS } from '../../utils/Constants';
+import { CIVILIZATIONS, TECHNOLOGIES } from '../../data/GameData';
+import { SMALL_ISLAND_MAX_TILES, VERY_SMALL_ISLAND_MAX_TILES, RESEARCH_UNLOCK_ROUND, isAutoScenario, isSpectatorGame, clampGameSpeedStep, SPEED_STEP_MOVE_DELAY_MS, SPEED_STEP_TURN_DELAY_MS, PURCHASE_GOLD_PER_SHIELD } from '../../data/GameConstants';
+import { headlessRuntime, type GameRuntime } from '../../ports/runtime';
+import { createGameplayRng, type Rng } from './Rng';
+import { browserSaveStore, type SaveStore } from '../../ports/saveStore';
+import { staticMapForMapType, SIZE_LOCKED_MAP_TYPES } from '../../data/maps/index';
+import { TECHNOLOGIES_DATA } from '../../data/TechnologyData';
+import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_REQUIREMENTS, IMPROVEMENT_TYPES } from '../../data/TileImprovementConstants';
+import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '../../data/BuildingConstants';
+import { TERRAIN_RESOURCES, TERRAIN_TYPES, WATER_TERRAIN_TYPES } from '../../data/TerrainConstants';
+import { FISHER_BOAT_STORAGE, fisherFoodPerFish, UNIT_TYPES } from '../../data/UnitConstants';
+import { NOMAD_TRADE_ROUTE_SLOT_BONUS } from '../../data/NomadConstants';
 import {
   BARBARIAN_CIV_ID,
   VILLAGE_OUTCOME,
@@ -19,7 +21,7 @@ import {
   VILLAGE_BARBARIAN_TYPES,
   VILLAGE_BARBARIAN_MIN,
   VILLAGE_BARBARIAN_MAX,
-} from '@/data/VillageConstants';
+} from '../../data/VillageConstants';
 import { CombatSystem } from './CombatSystem';
 import {
   COMBAT_XP,
@@ -72,8 +74,8 @@ import { WonderEffects } from './WonderEffects';
 import { AIResearch } from './AI/AIResearch';
 import MapGenerator from './MapGenerator/MapGenerator';
 import { MIN_CITY_CENTER_DISTANCE } from './SettlementEvaluator';
-import type { GameActions, Unit, City, CityGovernorMode, Civilization, VillageResult, Technology, ProductionItem, TradeRoute, SpecialistType } from '../../../types/game';
-import type { Command, CommandContext, CommandResult } from '../../../types/commands';
+import type { GameActions, Unit, City, CityGovernorMode, Civilization, VillageResult, Technology, ProductionItem, TradeRoute, SpecialistType } from '../../types/game';
+import type { Command, CommandContext, CommandResult } from '../../types/commands';
 import { debugLog } from '../../utils/DevLog';
 
 
@@ -167,6 +169,12 @@ export interface GameSettings {
    * time); tests and AI-vs-AI diagnostics set it so a run is reproducible.
    */
   mapSeed?: number;
+  /**
+   * Seed for ALL gameplay rolls (combat, villages, AI, nomads, …), kept
+   * distinct from `mapSeed` so map generation does not consume the gameplay
+   * stream. Set by the lobby; omit to use the ambient `Math.random`.
+   */
+  rngSeed?: number;
   mapWidth?: number;
   mapHeight?: number;
   /**
@@ -288,6 +296,77 @@ export default class GameEngine {
   private static readonly IRRIGATION_WATER_REACH = 5;
   
   storeActions: GameActions | null;
+  /** Presentation/timing port. Headless by default; the web app injects its own. */
+  readonly runtime: GameRuntime;
+  /** Storage port for save/load. Defaults to the browser's localStorage. */
+  readonly saveStore: SaveStore;
+
+  private _rng: Rng = () => Math.random();
+
+  /** The single stream every gameplay roll draws from. */
+  get rng(): Rng {
+    return this._rng;
+  }
+
+  /** Install a custom stream (test harness, replay, server room). */
+  setRng(random: Rng): void {
+    this._rng = random;
+  }
+
+  /** Pin the gameplay stream from a lobby seed. */
+  seedRng(seed: number): void {
+    this._rng = createGameplayRng(seed);
+  }
+
+  // ── Simulation clock ───────────────────────────────────────────────
+  // The browser keeps wall-clock timers so death animations look right. A
+  // server room enables the tick clock: every deferred removal then becomes a
+  // deadline on `currentTick`, so replaying N ticks is deterministic.
+  static readonly TICK_MS = 100;
+  currentTick = 0;
+  private tickClockEnabled = false;
+  private tickDeadlines: Array<{ tick: number; run: () => void }> = [];
+
+  enableTickClock(): void {
+    this.tickClockEnabled = true;
+  }
+
+  /** Defer a corpse removal by the animation window, in sim time when pinned. */
+  scheduleCorpseRemoval(run: () => void): void {
+    if (!this.tickClockEnabled) {
+      setTimeout(run, DEFEATED_UNIT_REMOVAL_DELAY_MS);
+      return;
+    }
+    const ticks = Math.ceil(DEFEATED_UNIT_REMOVAL_DELAY_MS / GameEngine.TICK_MS);
+    this.tickDeadlines.push({ tick: this.currentTick + ticks, run });
+  }
+
+  /** Advance simulation time and run every deadline that has come due. */
+  advanceTick(): void {
+    if (!this.tickClockEnabled) return;
+    this.currentTick++;
+    const due = this.tickDeadlines.filter((d) => d.tick <= this.currentTick);
+    this.tickDeadlines = this.tickDeadlines.filter((d) => d.tick > this.currentTick);
+    for (const deadline of due) deadline.run();
+  }
+
+  private readonly idCounters = new Map<string, number>();
+
+  /**
+   * Deterministic per-engine id. Replaces timestamp+random ids so the same
+   * seed and command sequence produces byte-identical saves and replays.
+   */
+  nextId(prefix: string): string {
+    let next = (this.idCounters.get(prefix) ?? 0) + 1;
+    // Loading a save resets the counters but not the ids on board: skip any
+    // suffix already in use so a post-load spawn can never alias a live unit.
+    while (this.units?.some((u) => u.id === `${prefix}_${next}`)
+      || this.cities?.some((c) => c.id === `${prefix}_${next}`)) {
+      next++;
+    }
+    this.idCounters.set(prefix, next);
+    return `${prefix}_${next}`;
+  }
   squareGrid: SquareGrid | null;
   map: MapData | null;
   units: Unit[];
@@ -394,8 +473,14 @@ export default class GameEngine {
     return this.roundManager;
   }
 
-  constructor(storeActions: GameActions | null = null) {
+  constructor(
+    storeActions: GameActions | null = null,
+    runtime: GameRuntime = headlessRuntime,
+    saveStore: SaveStore = browserSaveStore,
+  ) {
     this.storeActions = storeActions;
+    this.runtime = runtime;
+    this.saveStore = saveStore;
     this.squareGrid = null;
     this.map = null;
     this.units = [];
@@ -522,7 +607,7 @@ export default class GameEngine {
    * inside the AI turn, far away from any React component.
    */
   getGameSpeedStep(): number {
-    return clampGameSpeedStep(useGameStore.getState().settings.gameSpeedStep ?? 0);
+    return clampGameSpeedStep(this.runtime.gameSpeedStep());
   }
 
   /**
@@ -1083,6 +1168,13 @@ export default class GameEngine {
     
     // Merge custom settings
     this.gameSettings = { ...this.gameSettings, ...settings };
+    // One RNG for the whole simulation. A pinned seed makes a lobby game
+    // reproducible; without one the stream follows the ambient Math.random so
+    // the seeded test harness keeps controlling every roll.
+    if (typeof settings.rngSeed === 'number') {
+      this.seedRng(settings.rngSeed);
+      this.disasterManager.reseed(settings.rngSeed);
+    }
 
     // Fresh game setup resets victory checks and player visibility storage
     this.isGameOver = false;
@@ -3396,12 +3488,12 @@ const occupiedLandmasses = new Set(
       const cargo = this.units.find((u) => u.id === cargoId);
       if (!cargo || cargo.isDefeated) continue;
       cargo.isDefeated = true;
-      cargo.defeatTimestamp = Date.now();
+      cargo.defeatTimestamp = this.tickClockEnabled ? this.currentTick : Date.now();
       this.onStateChange?.('UNIT_DEFEATED', { unit: cargo });
-      setTimeout(() => {
+      this.scheduleCorpseRemoval(() => {
         this.units = this.units.filter((u) => u.id !== cargo.id);
         this.onStateChange?.('UNIT_REMOVED', { unit: cargo });
-      }, DEFEATED_UNIT_REMOVAL_DELAY_MS);
+      });
     }
     ferry.cargoUnitIds = [];
     ferry.cargoUnitId = null;
@@ -5099,7 +5191,7 @@ const occupiedLandmasses = new Set(
         }
 
         // 30% chance to capture an undefended city
-        if (Math.random() < 0.30) {
+        if (this.rng() < 0.30) {
           console.log(`[SCOUT RUSH] Scout ${unit.id} rushes ${targetCity.name} — success!`);
 
           // Declare war first
@@ -5420,7 +5512,7 @@ const occupiedLandmasses = new Set(
     let attempts = 0;
     while (placed < target && attempts < target * 40) {
       attempts++;
-      const tile = tiles[Math.floor(Math.random() * tiles.length)];
+      const tile = tiles[Math.floor(this.rng() * tiles.length)];
       if (!tile || tile.village) continue;
       const type = String(tile.type ?? tile.terrain);
       if (type === Constants.TERRAIN.OCEAN || type === Constants.TERRAIN.MOUNTAINS || type === TERRAIN_TYPES.RIVER) continue;
@@ -5460,7 +5552,7 @@ const occupiedLandmasses = new Set(
     tile.village = false;
 
     for (let attempt = 0; attempt < 10; attempt++) {
-      const outcome = VILLAGE_OUTCOMES[Math.floor(Math.random() * VILLAGE_OUTCOMES.length)];
+      const outcome = VILLAGE_OUTCOMES[Math.floor(this.rng() * VILLAGE_OUTCOMES.length)];
       switch (outcome) {
         case VILLAGE_OUTCOME.ADVANCED_TRIBE: {
           // Only a SETTLER's hut can become a new city — a military or other
@@ -5521,7 +5613,7 @@ const occupiedLandmasses = new Set(
 
   /** Roll a Civ1 Valuable Metals payout: 25, 50, or 100 gold. */
   private rollVillageGold(): number {
-    return VILLAGE_GOLD_AMOUNTS[Math.floor(Math.random() * VILLAGE_GOLD_AMOUNTS.length)] ?? 50;
+    return VILLAGE_GOLD_AMOUNTS[Math.floor(this.rng() * VILLAGE_GOLD_AMOUNTS.length)] ?? 50;
   }
 
   /** Whether the tile at (col,row) is on or adjacent to an existing city. */
@@ -5540,7 +5632,7 @@ const occupiedLandmasses = new Set(
     const civ = this.civilizations[civId];
     if (!civ) return null;
     const cityName = this.getNextCityName(civId);
-    const building = VILLAGE_FREE_BUILDINGS[Math.floor(Math.random() * VILLAGE_FREE_BUILDINGS.length)];
+    const building = VILLAGE_FREE_BUILDINGS[Math.floor(this.rng() * VILLAGE_FREE_BUILDINGS.length)];
     const city: City = {
       id: this.nextCityId(civId),
       name: cityName,
@@ -5589,7 +5681,7 @@ const occupiedLandmasses = new Set(
     if (!civ) return null;
     const available = AIResearch.getAvailableTechnologies(civ);
     if (available.length === 0) return null;
-    return available[Math.floor(Math.random() * available.length)];
+    return available[Math.floor(this.rng() * available.length)];
   }
 
   /** Add a researched tech to a civ (free from a village or the nomads) and refresh the tree. */
@@ -5660,15 +5752,15 @@ const occupiedLandmasses = new Set(
     }
     // Shuffle and pick 2–4 (or as many as are free).
     for (let i = spots.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor(this.rng() * (i + 1));
       [spots[i], spots[j]] = [spots[j], spots[i]];
     }
     const count = Math.min(
-      VILLAGE_BARBARIAN_MIN + Math.floor(Math.random() * (VILLAGE_BARBARIAN_MAX - VILLAGE_BARBARIAN_MIN + 1)),
+      VILLAGE_BARBARIAN_MIN + Math.floor(this.rng() * (VILLAGE_BARBARIAN_MAX - VILLAGE_BARBARIAN_MIN + 1)),
       spots.length,
     );
     for (let i = 0; i < count; i++) {
-      const type = VILLAGE_BARBARIAN_TYPES[Math.floor(Math.random() * VILLAGE_BARBARIAN_TYPES.length)];
+      const type = VILLAGE_BARBARIAN_TYPES[Math.floor(this.rng() * VILLAGE_BARBARIAN_TYPES.length)];
       this.createUnit(BARBARIAN_CIV_ID, type, spots[i].col, spots[i].row);
     }
 
@@ -6168,20 +6260,20 @@ const occupiedLandmasses = new Set(
       const destroyed = (other.health ?? 0) <= 0;
       if (destroyed) {
         other.isDefeated = true;
-        other.defeatTimestamp = Date.now();
+        other.defeatTimestamp = this.tickClockEnabled ? this.currentTick : Date.now();
         this.destroyCargoOf(other);
         if (this.onStateChange) {
           this.onStateChange('UNIT_DEFEATED', { unit: other });
         }
         const otherId = other.id;
         const otherType = other.type;
-        setTimeout(() => {
+        this.scheduleCorpseRemoval(() => {
           this.units = this.units.filter(u => u.id !== otherId);
           this.onStateChange?.('UNIT_REMOVED', { unit: other });
           if (otherType === 'scout') {
             this.onScoutDeath(other);
           }
-        }, DEFEATED_UNIT_REMOVAL_DELAY_MS);
+        });
       }
       splashed.push({ unit: other, damage, destroyed });
     }
@@ -6261,6 +6353,7 @@ const occupiedLandmasses = new Set(
     // roll, the overrun rule and exactly how much damage each side takes.
     const defenderTile = this.getTileAt(defender.col, defender.row);
     const outcome = CombatSystem.resolveUnitRound(attacker, defender, {
+      random: this.rng,
       defenderTile: defenderTile as {
         type?: string;
         terrain?: string;
@@ -6300,7 +6393,7 @@ const occupiedLandmasses = new Set(
         console.log(`[COMBAT] ${attacker.type} killed ${defender.type} (${damage} dmg) and remains at (${attacker.col},${attacker.row})`);
 
         defender.isDefeated = true;
-        defender.defeatTimestamp = Date.now();
+        defender.defeatTimestamp = this.tickClockEnabled ? this.currentTick : Date.now();
         this.destroyCargoOf(defender);
 
         // Sinking a Trade Ship awards the sinker the full prize value of
@@ -6322,13 +6415,13 @@ const occupiedLandmasses = new Set(
         if (this.onStateChange) {
           this.onStateChange('UNIT_DEFEATED', { unit: defender });
         }
-        setTimeout(() => {
+        this.scheduleCorpseRemoval(() => {
           this.units = this.units.filter(u => u.id !== defender.id);
           this.onStateChange?.('UNIT_REMOVED', { unit: defender });
           if (defender.type === 'scout') {
             this.onScoutDeath(defender);
           }
-        }, DEFEATED_UNIT_REMOVAL_DELAY_MS);
+        });
 
         // Victors learn from killing: a round win plus a destruction bonus.
         // Awarded BEFORE the COMBAT_VICTORY event so the UI sync already
@@ -6448,7 +6541,7 @@ const occupiedLandmasses = new Set(
       if (attacker.health <= 0) {
         // Mark attacker as defeated and delay removal (5 seconds to show black X)
         attacker.isDefeated = true;
-        attacker.defeatTimestamp = Date.now();
+        attacker.defeatTimestamp = this.tickClockEnabled ? this.currentTick : Date.now();
         this.destroyCargoOf(attacker);
 
         if (attacker.type === 'trade_ship'
@@ -6466,7 +6559,7 @@ const occupiedLandmasses = new Set(
         if (this.onStateChange) {
           this.onStateChange('UNIT_DEFEATED', { unit: attacker });
         }
-        setTimeout(() => {
+        this.scheduleCorpseRemoval(() => {
           this.units = this.units.filter(u => u.id !== attacker.id);
 
           // Sync the store so the defeated unit actually disappears.
@@ -6476,7 +6569,7 @@ const occupiedLandmasses = new Set(
           if (attacker.type === 'scout') {
             this.onScoutDeath(attacker);
           }
-        }, DEFEATED_UNIT_REMOVAL_DELAY_MS);
+        });
       }
 
       // Holding the line teaches too: a defender that repels an attack earns
@@ -6561,6 +6654,7 @@ const occupiedLandmasses = new Set(
     // walls entirely, which is what makes the catapult/cannon the answer to a
     // walled city.
     const round = CombatSystem.resolveCityRound(attacker, city, {
+      random: this.rng,
       ignoresWalls: CombatSystem.ignoresCityWalls(attacker),
     });
 
@@ -6579,16 +6673,16 @@ const occupiedLandmasses = new Set(
         defender.health = 0;
         defender.battleDamageTaken = (defender.battleDamageTaken ?? 0) + defenderDamage;
         defender.isDefeated = true;
-        defender.defeatTimestamp = Date.now();
+        defender.defeatTimestamp = this.tickClockEnabled ? this.currentTick : Date.now();
         this.destroyCargoOf(defender);
         if (this.onStateChange) {
           this.onStateChange('UNIT_DEFEATED', { unit: defender });
         }
-        setTimeout(() => {
+        this.scheduleCorpseRemoval(() => {
           this.units = this.units.filter(u => u.id !== defender.id);
           this.onStateChange?.('UNIT_REMOVED', { unit: defender });
           if (defender.type === 'scout') this.onScoutDeath(defender);
-        }, DEFEATED_UNIT_REMOVAL_DELAY_MS);
+        });
         console.log(`[COMBAT] ${attacker.type} defeated garrison ${defender.type} in ${city.name} (${garrison.length - 1} defenders remain)`);
         // Breaking a garrison counts as a round win plus a kill.
         this.awardUnitCombatExperience(attacker, COMBAT_XP.ROUND_WON + COMBAT_XP.UNIT_DESTROYED);
@@ -6686,18 +6780,18 @@ const occupiedLandmasses = new Set(
     const attackerDestroyed = counterDamage && attacker.health <= 0;
     if (attackerDestroyed) {
       attacker.isDefeated = true;
-      attacker.defeatTimestamp = Date.now();
+      attacker.defeatTimestamp = this.tickClockEnabled ? this.currentTick : Date.now();
       this.destroyCargoOf(attacker);
       if (this.onStateChange) {
         this.onStateChange('UNIT_DEFEATED', { unit: attacker });
       }
-      setTimeout(() => {
+      this.scheduleCorpseRemoval(() => {
         this.units = this.units.filter(u => u.id !== attacker.id);
         this.onStateChange?.('UNIT_REMOVED', { unit: attacker });
-      }, DEFEATED_UNIT_REMOVAL_DELAY_MS);
+      });
       console.log(`[COMBAT] ${attacker.type} destroyed attacking city ${city.name}`);
     }
-    if (!round.cityHasWalls && (city.population || 1) > 1 && Math.random() < 0.5) {
+    if (!round.cityHasWalls && (city.population || 1) > 1 && this.rng() < 0.5) {
       city.population -= 1;
       this.economicManager?.fitCityToPopulation(city);
       console.log(`[COMBAT] City ${city.name} lost a citizen to a failed attack (no city walls)`);
@@ -6735,7 +6829,7 @@ const occupiedLandmasses = new Set(
 
     const lost = [...defensives];
     if (candidates.length > 0) {
-      lost.push(candidates[Math.floor(Math.random() * candidates.length)]);
+      lost.push(candidates[Math.floor(this.rng() * candidates.length)]);
     }
     if (lost.length === 0) return;
 
@@ -6797,7 +6891,7 @@ const occupiedLandmasses = new Set(
     const removedIds = new Set<string>();
     for (const u of living) {
       u.isDefeated = true;
-      u.defeatTimestamp = Date.now();
+      u.defeatTimestamp = this.tickClockEnabled ? this.currentTick : Date.now();
       this.destroyCargoOf(u);
       this.unitTurnQueue?.removeUnit?.(u.id);
       removedIds.add(u.id);
@@ -7490,7 +7584,7 @@ const occupiedLandmasses = new Set(
     if (!this.isResearchUnlocked()) return null;
     const candidates = this.availableResearchFor(civId);
     if (candidates.length === 0) return null;
-    const pick = candidates[Math.floor(Math.random() * candidates.length)];
+    const pick = candidates[Math.floor(this.rng() * candidates.length)];
     this.setResearch(civId, pick.id, savedProgress);
     console.log(`[GameEngine] Auto-selected research ${pick.name} for ${civ.name} (no technology was chosen)`);
     if (this.onStateChange) {
@@ -8344,7 +8438,7 @@ const occupiedLandmasses = new Set(
   plunderTechOnCapture(capturerCivId: number, ownerCivId: number): { techId: string; techName: string } | null {
     const options = this.diplomacyManager.getTechTradeOptions(capturerCivId, ownerCivId).theyHaveWeLack;
     if (options.length === 0) return null;
-    const techId = options[Math.floor(Math.random() * options.length)];
+    const techId = options[Math.floor(this.rng() * options.length)];
     this.grantTech(capturerCivId, techId);
     const techName = TECHNOLOGIES_DATA.find((t) => t.id === techId)?.name ?? techId;
     return { techId, techName };
@@ -9222,7 +9316,7 @@ const occupiedLandmasses = new Set(
     try {
       const json = this.getSaveJSON();
       if (!json) return false;
-      localStorage.setItem(slot, json);
+      this.saveStore.set(slot, json);
       console.log(`[GameEngine] Game saved (${(json.length / 1024).toFixed(1)} KB) to ${slot}`);
 
       if (this.onStateChange) {
@@ -9241,7 +9335,7 @@ const occupiedLandmasses = new Set(
    */
   async loadGame(): Promise<boolean> {
     try {
-      const json = localStorage.getItem('civ1_savegame');
+      const json = this.saveStore.get('civ1_savegame');
       if (!json) {
         console.warn('[GameEngine] No save game found');
         return false;

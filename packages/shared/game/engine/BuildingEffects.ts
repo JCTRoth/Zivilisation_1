@@ -32,7 +32,7 @@
  * Pure — no engine handle, safe for the zustand store and tests.
  */
 
-import { BUILDING_PROPERTIES } from '@/data/BuildingConstants';
+import { BUILDING_PROPERTIES } from '../../data/BuildingConstants';
 
 /** Anything with a buildings list — a City, a fixture, a save-game stub. */
 export interface HasBuildings {

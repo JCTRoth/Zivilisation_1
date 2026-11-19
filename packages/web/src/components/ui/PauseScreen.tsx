@@ -1,5 +1,5 @@
 import React from 'react';
-import { useTranslation } from '@/i18n/useTranslation';
+import { useTranslation } from '../../i18n/useTranslation';
 import '../../styles/pauseScreen.css';
 
 interface PauseScreenProps {

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
+import GameEngine from '@shared/game/engine/GameEngine';
 import { EngineEventRouter } from '@/utils/EngineEventHandlers';
 import { useGameStore } from '@/stores/GameStore';
 import { playSfx } from '@/utils/Sfx';

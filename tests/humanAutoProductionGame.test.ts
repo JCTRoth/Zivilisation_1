@@ -1,6 +1,6 @@
 import { describe, expect, it, afterEach } from 'vitest';
 import { useSeededRandom } from './helpers/world';
-import GameEngine from '@/game/engine/GameEngine';
+import GameEngine from '@shared/game/engine/GameEngine';
 
 /**
  * Human autoproduction over a real game: the auto-managed human capital must

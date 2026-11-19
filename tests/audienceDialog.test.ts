@@ -7,7 +7,7 @@
  * like every other decision screen.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
+import GameEngine from '@shared/game/engine/GameEngine';
 import { EngineEventRouter } from '@/utils/EngineEventHandlers';
 import { useGameStore } from '@/stores/GameStore';
 

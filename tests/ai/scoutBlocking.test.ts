@@ -4,7 +4,7 @@
  * fight, flank around, or keep moving.
  */
 import { describe, expect, it, afterEach } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
+import GameEngine from '@shared/game/engine/GameEngine';
 import { useSeededRandom } from '../helpers/world';
 
 describe('AI scouts blocking each other', () => {

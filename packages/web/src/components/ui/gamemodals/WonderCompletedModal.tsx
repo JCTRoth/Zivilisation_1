@@ -1,13 +1,13 @@
 import React, { useEffect } from 'react';
-import { getWonder } from '@/data/WonderData';
-import { useGameStore } from '@/stores/GameStore';
-import { useTranslation } from '@/i18n/useTranslation';
-import type { TranslationKey } from '@/i18n';
-import { GameUtils } from '@/utils/GameUtils';
+import { getWonder } from '@shared/data/WonderData';
+import { useGameStore } from '../../../stores/GameStore';
+import { useTranslation } from '../../../i18n/useTranslation';
+import type { TranslationKey } from '@shared/i18n/index';
+import { GameUtils } from '../../../utils/GameUtils';
 import { WonderArtwork } from './WonderArtwork';
 import GameModal from './ModalShell';
-import { localizedWonder } from '@/i18n/wonderLore';
-import '@/styles/wonders.css';
+import { localizedWonder } from '@shared/i18n/wonderLore';
+import '../../../styles/wonders.css';
 
 /** The 'completed' variant of the wonder dialog queue entry. */
 interface WonderCompletedNotice {

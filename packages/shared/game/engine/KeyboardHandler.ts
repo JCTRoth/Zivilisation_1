@@ -1,6 +1,5 @@
-import { Unit, type GameActions } from '../../../types/game';
+import { Unit, type GameActions } from '../../types/game';
 import GameEngine from './GameEngine';
-import { notify } from '../../utils/NotificationUtils';
 
 /**
  * KeyboardHandler - Manages keyboard input for unit actions
@@ -231,7 +230,7 @@ export class KeyboardHandler {
    * Show notification to user
    */
   private showNotification(type: 'info' | 'success' | 'warning' | 'error', message: string): void {
-    notify(type, message);
+    this.gameEngine.runtime.notify(type, message);
   }
 
   /**

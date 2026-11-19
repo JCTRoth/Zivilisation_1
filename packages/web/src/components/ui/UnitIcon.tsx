@@ -1,5 +1,5 @@
 import React, { useCallback, useSyncExternalStore } from 'react';
-import { getUnitIcon, subscribeUnitIcons } from '@/utils/UnitIconLoader';
+import { getUnitIcon, subscribeUnitIcons } from '../../utils/UnitIconLoader';
 
 /**
  * One unit's picture: its SVG artwork when it has any, its emoji otherwise.

@@ -16,8 +16,8 @@
  * the outcome is fully deterministic (Math.random mocked).
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { TERRAIN_TYPES } from '@shared/data/TerrainConstants';
 
 interface TestUnit {
   id: string;

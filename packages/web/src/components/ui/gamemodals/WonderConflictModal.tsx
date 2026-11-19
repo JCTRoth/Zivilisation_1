@@ -1,9 +1,9 @@
 import React from 'react';
-import { getWonder } from '@/data/WonderData';
-import { useTranslation } from '@/i18n/useTranslation';
-import type { TranslationKey } from '@/i18n';
+import { getWonder } from '@shared/data/WonderData';
+import { useTranslation } from '../../../i18n/useTranslation';
+import type { TranslationKey } from '@shared/i18n/index';
 import GameModal from './ModalShell';
-import '@/styles/wonders.css';
+import '../../../styles/wonders.css';
 
 /** The 'conflict' variant of the wonder dialog queue entry. */
 interface WonderConflictNotice {

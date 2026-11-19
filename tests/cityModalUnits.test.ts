@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { CityModalLogic } from '@/components/ui/gamemodals/CityModalLogic';
-import type { City, Unit } from '../types/game';
-import type GameEngine from '@/game/engine/GameEngine';
+import type { City, Unit } from '@shared/types/game';
+import type GameEngine from '@shared/game/engine/GameEngine';
 
 /**
  * The city screen's Units tab: only the units standing INSIDE the city (the

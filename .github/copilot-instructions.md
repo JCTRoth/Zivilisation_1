@@ -1,11 +1,11 @@
 - Use specific types: Always define explicit types, interfaces, or generic constraints for all variables, parameters, and return types
 - Avoid `any`: The `any` type is strictly forbidden. If the type is truly uncertain, use `unknown` combined with type narrowing or type guards instead.
-- Put interfaces and types in the `types/` folder, and import them from there
+- Put interfaces and types in `packages/shared/types/`, and import them from there
 - Always define function parameter with types and return types
 - Keep TSX components purely presentational (JSX only)
-- Move CSS → src/styles, static data → src/data, utility functions → src/utils, tests -> __tests__
+- Move CSS → packages/web/src/styles, static data → packages/shared/data, utility functions → packages/shared/utils or packages/web/src/utils, tests -> tests/
 - You are running on a Ubuntu/Fedora system all command are availablell, install what is missing if needed
-- ...Modal.tsx Classes should never conatine any extended logic. If needed create a class in the /src/game/engine folder.
+- ...Modal.tsx Classes should never conatine any extended logic. If needed create a class in the packages/shared/game/engine folder.
 - On linux chrome is installed here: /usr/bin/chromium-browser
 - All state changes flow through one command layer; UI never calls engine methods directly
 - Commands are serializable data with actorId, turn, seq — one intent per command

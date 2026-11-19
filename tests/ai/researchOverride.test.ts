@@ -19,9 +19,9 @@
  * reset).
  */
 import { describe, it, expect, vi } from 'vitest';
-import { AIManager } from '@/game/engine/AI/AIManager';
-import { AIResearch } from '@/game/engine/AI/AIResearch';
-import type { Civilization, City, Unit } from '../../types/game';
+import { AIManager } from '@shared/game/engine/AI/AIManager';
+import { AIResearch } from '@shared/game/engine/AI/AIResearch';
+import type { Civilization, City, Unit } from '@shared/types/game';
 
 /** A one-civ world whose current research may have been set by the LEGACY picker. */
 const legacyWorld = (opts: {

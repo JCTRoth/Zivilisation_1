@@ -20,8 +20,8 @@ import {
   filterLogEntries,
   LOG_EVENT_ALLOWLIST,
   DIAGNOSTIC_STALL_REASONS,
-} from '../src/utils/GameProgression';
-import type { ProgressionLogEntry } from '../types/progression';
+} from '@/utils/GameProgression';
+import type { ProgressionLogEntry } from '@shared/types/progression';
 
 /** Mirrors the real log shape: the interesting fields live under `detail.data`. */
 function entry(

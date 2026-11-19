@@ -1,7 +1,7 @@
-import type { Unit, City, ForgeOfWarPlan } from '../../../types/game';
+import type { Unit, City, ForgeOfWarPlan } from '../../types/game';
 import GameEngine from './GameEngine';
-import { UNIT_PROPS } from '@/utils/Constants';
-import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
+import { UNIT_PROPS } from '../../utils/Constants';
+import { BARBARIAN_CIV_ID } from '../../data/VillageConstants';
 import { debugLog } from '../../utils/DevLog';
 import { getUnitRank, rankStrengthMultiplier } from './UnitRankSystem';
 import { cityBuildingEffects } from './BuildingEffects';

@@ -4,7 +4,7 @@
 //  - progression is delta-encoded (summary.encoding === 'delta')
 //  - cities use the slim CompactCity shape
 //  - log contains only analysis-relevant, de-duplicated events
-import type { CompactCity } from '../src/utils/CitySnapshots';
+import type { CompactCity } from '../utils/CitySnapshots';
 
 /** Compact, JSON-safe unit state captured at periodic world snapshots. */
 export interface CompactUnit {

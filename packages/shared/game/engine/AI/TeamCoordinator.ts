@@ -38,9 +38,9 @@
  */
 
 import type GameEngine from '../GameEngine';
-import type { Unit } from '../../../../types/game';
-import { UNIT_PROPS } from '@/utils/Constants';
-import { isSpectatorGame } from '@/data/GameConstants';
+import type { Unit } from '../../../types/game';
+import { UNIT_PROPS } from '../../../utils/Constants';
+import { isSpectatorGame } from '../../../data/GameConstants';
 import {
   assessCityThreat,
   calculateDangerThreshold,

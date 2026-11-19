@@ -1,6 +1,6 @@
 import GameModal from './ModalShell';
-import { useGameStore } from '@/stores/GameStore';
-import { useTranslation } from '@/i18n/useTranslation';
+import { useGameStore } from '../../../stores/GameStore';
+import { useTranslation } from '../../../i18n/useTranslation';
 import VillageGoldModal from './village/VillageGoldModal';
 import VillageTechModal from './village/VillageTechModal';
 import VillageUnitModal from './village/VillageUnitModal';

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Modal } from 'react-bootstrap';
-import { useTranslation } from '@/i18n/useTranslation';
+import { useTranslation } from '../../i18n/useTranslation';
 import '../../styles/confirmDialog.css';
 
 interface ConfirmDialogProps {

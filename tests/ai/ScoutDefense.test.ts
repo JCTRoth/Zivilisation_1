@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { AIManager } from '@/game/engine/AI/AIManager';
-import type { Unit } from '@/../types/game';
+import { AIManager } from '@shared/game/engine/AI/AIManager';
+import type { Unit } from '@shared/types/game';
 
 /**
  * Scout defense override.

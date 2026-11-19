@@ -12,7 +12,7 @@
  * and English is the source of truth every other dictionary falls back to.
  */
 import { beforeEach } from 'vitest';
-import { setLanguage } from '@/i18n';
+import { setLanguage } from '@shared/i18n/index';
 
 beforeEach(() => {
   setLanguage('en');

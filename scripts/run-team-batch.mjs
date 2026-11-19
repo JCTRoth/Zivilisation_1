@@ -45,7 +45,7 @@ const CONFIGS = [
 const spec = `
 import { describe, it, expect, vi } from 'vitest';
 import { makeEngine, useSeededRandom } from '../helpers/world';
-import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
+import { BARBARIAN_CIV_ID } from '@shared/data/VillageConstants';
 
 const ROUNDS = ${ROUNDS};
 const SEEDS = ${JSON.stringify(SEEDS.slice(0, GAMES))};

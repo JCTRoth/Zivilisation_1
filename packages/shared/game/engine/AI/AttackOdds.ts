@@ -33,8 +33,8 @@
  * refuses pure suicide — the army keeps its strength for the next wave.
  */
 
-import { UNIT_PROPS } from '@/utils/Constants';
-import { IMPROVEMENT_TYPES } from '@/data/TileImprovementConstants';
+import { UNIT_PROPS } from '../../../utils/Constants';
+import { IMPROVEMENT_TYPES } from '../../../data/TileImprovementConstants';
 import {
   CombatSystem,
   type CombatUnitLike,

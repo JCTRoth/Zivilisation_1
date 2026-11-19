@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { AIManager } from '@/game/engine/AI/AIManager';
-import type { Unit } from '../../types/game';
+import { AIManager } from '@shared/game/engine/AI/AIManager';
+import type { Unit } from '@shared/types/game';
 
 /**
  * Regression tests for the Civ1 income strategy "roads on worked tiles":

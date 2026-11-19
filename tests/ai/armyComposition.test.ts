@@ -19,11 +19,11 @@
  * regression is caught without running a 150-round game.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { AutoProduction } from '@/game/engine/AutoProduction';
-import { AIManager } from '@/game/engine/AI/AIManager';
-import { SquareGrid } from '@/game/SquareGrid';
-import type { City, Civilization } from '../../types/game';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { AutoProduction } from '@shared/game/engine/AutoProduction';
+import { AIManager } from '@shared/game/engine/AI/AIManager';
+import { SquareGrid } from '@shared/game/SquareGrid';
+import type { City, Civilization } from '@shared/types/game';
 
 // ─── A minimal theatre ────────────────────────────────────────────────────
 

@@ -1,7 +1,7 @@
 import React from 'react';
 import GameModal from './ModalShell';
-import { useTranslation } from '@/i18n/useTranslation';
-import type { CombatReportNotice } from '../../../../types/game';
+import { useTranslation } from '../../../i18n/useTranslation';
+import type { CombatReportNotice } from '@shared/types/game';
 
 interface CombatReportModalProps {
   show: boolean;

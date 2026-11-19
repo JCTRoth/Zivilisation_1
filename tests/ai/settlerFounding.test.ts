@@ -15,7 +15,7 @@
  * isPaused immediately after init to keep the test fast and terminating.
  */
 import { describe, it, expect } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
+import GameEngine from '@shared/game/engine/GameEngine';
 import { useSeededRandom } from '../helpers/world';
 
 const MAX_SETTLE_WALK_DISTANCE = 4;

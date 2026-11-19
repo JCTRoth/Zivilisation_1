@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { makeEngine, type TestWorld } from './helpers/world';
-import type GameEngine from '@/game/engine/GameEngine';
-import { createLocalSession, isCommandRejection, sendCommand, setActiveSession } from '@/utils/session';
-import type { CommandContext } from '../types/commands';
+import type GameEngine from '@shared/game/engine/GameEngine';
+import { createLocalSession, isCommandRejection, sendCommand, setActiveSession } from '@/session';
+import type { CommandContext } from '@shared/types/commands';
 
 /**
  * Command layer — authorisation rules.

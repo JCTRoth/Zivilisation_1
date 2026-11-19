@@ -1,19 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Form } from 'react-bootstrap';
-import { CIVILIZATIONS, DIFFICULTY_LEVELS } from '@/data/GameData';
-import { LEADER_PORTRAITS } from '@/data/LeaderPortraits';
-import LeaderPortrait from '@/components/ui/LeaderPortrait';
-import { useTranslation } from '@/i18n/useTranslation';
-import { translateDynamic, type TranslationKey } from '@/i18n';
-import LanguageSwitcher from '@/components/ui/LanguageSwitcher';
-import { defaultNationIndexForBrowser } from '@/data/CivilizationByLanguage';
-import { tGovernmentName } from '@/i18n/dataNames';
+import { CIVILIZATIONS, DIFFICULTY_LEVELS } from '@shared/data/GameData';
+import { LEADER_PORTRAITS } from '@shared/data/LeaderPortraits';
+import LeaderPortrait from './LeaderPortrait';
+import { useTranslation } from '../../i18n/useTranslation';
+import { translateDynamic, type TranslationKey } from '@shared/i18n/index';
+import LanguageSwitcher from './LanguageSwitcher';
+import { defaultNationIndexForBrowser } from '@shared/data/CivilizationByLanguage';
+import { tGovernmentName } from '@shared/i18n/dataNames';
 import '../../styles/gameModalShell.css';
 import '../../styles/gameSetupModal.css';
-import { isAutoScenario } from '@/data/GameConstants';
-import { validateTeamAssignments } from '@/game/engine/TeamManager';
-import { TEAM_COLORS } from '@/data/TeamConstants';
-import { SIZE_LOCKED_MAP_TYPES, staticMapForMapType } from '@/data/maps';
+import { isAutoScenario } from '@shared/data/GameConstants';
+import { validateTeamAssignments } from '@shared/game/engine/TeamManager';
+import { TEAM_COLORS } from '@shared/data/TeamConstants';
+import { SIZE_LOCKED_MAP_TYPES, staticMapForMapType } from '@shared/data/maps/index';
 import {
   MAP_DIM_MAX_HEIGHT,
   MAP_DIM_MAX_WIDTH,
@@ -29,7 +29,7 @@ import {
   sizeFactorLabel,
   tilesPerCiv,
   type MapSizePreset,
-} from '@/data/MapSizePresets';
+} from '@shared/data/MapSizePresets';
 
 /** Translation keys for the map presets — the raw ids are for the engine. */
 const MAP_TYPE_LABEL_KEYS: Record<string, TranslationKey> = {

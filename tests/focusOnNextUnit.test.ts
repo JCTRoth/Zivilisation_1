@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useGameStore } from '@/stores/GameStore';
-import type { Unit, City, Civilization, ProductionItem } from '../types/game';
+import type { Unit, City, Civilization, ProductionItem } from '@shared/types/game';
 
 /**
  * Camera-focus rule: the camera only follows the human player's own unit

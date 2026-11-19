@@ -16,10 +16,10 @@
  *     that is the prize the scenario is supposed to fight over.
  */
 import { describe, it, expect } from 'vitest';
-import { validateStaticMap, terrainIdForChar } from '@/data/maps/types';
-import { STATIC_MAPS, staticMapForMapType } from '@/data/maps';
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
-import { SMALL_ISLAND_MAX_TILES } from '@/data/GameConstants';
+import { validateStaticMap, terrainIdForChar } from '@shared/data/maps/types';
+import { STATIC_MAPS, staticMapForMapType } from '@shared/data/maps/index';
+import { TERRAIN_TYPES } from '@shared/data/TerrainConstants';
+import { SMALL_ISLAND_MAX_TILES } from '@shared/data/GameConstants';
 
 /** Cardinal neighbours — the landmass notion the test suite pins. */
 const NAV4: ReadonlyArray<readonly [number, number]> = [[0, -1], [1, 0], [0, 1], [-1, 0]];

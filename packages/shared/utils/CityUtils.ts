@@ -2,13 +2,13 @@
  * City-related calculation utilities
  */
 
-import { BUILDING_TYPES, BUILDING_PROPERTIES } from '@/data/BuildingConstants';
+import { BUILDING_TYPES, BUILDING_PROPERTIES } from '../data/BuildingConstants';
 import {
   CORRUPTION_DISTANCE_STEP,
   MAX_CORRUPTION_DISTANCE_MULTIPLIER,
-} from '@/data/CorruptionConstants';
-import { getGovernment } from '@/data/GovernmentData';
-import type { City, Civilization } from '../../types/game';
+} from '../data/CorruptionConstants';
+import { getGovernment } from '../data/GovernmentData';
+import type { City, Civilization } from '../types/game';
 
 export const CityUtils = {
     /**

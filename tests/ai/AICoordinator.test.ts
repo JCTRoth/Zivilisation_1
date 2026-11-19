@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { AICoordinator } from '@/game/engine/AI/AICoordinator';
-import type { ArmyGroup } from '@/game/engine/AI/AITypes';
-import type { Unit, City } from '@/../types/game';
+import { AICoordinator } from '@shared/game/engine/AI/AICoordinator';
+import type { ArmyGroup } from '@shared/game/engine/AI/AITypes';
+import type { Unit, City } from '@shared/types/game';
 
 const makeUnit = (overrides: Partial<Unit> = {}): Unit => ({
   id: `unit-${Math.random().toString(36).slice(2, 6)}`,

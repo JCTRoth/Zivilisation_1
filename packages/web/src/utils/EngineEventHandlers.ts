@@ -1,28 +1,28 @@
 import { useGameStore } from '../stores/GameStore';
-import { CombatSystem, type CombatEventKind } from '../game/engine/CombatSystem';
-import { UNIT_RANK_INFO, getUnitRank } from '../game/engine/UnitRankSystem';
+import { CombatSystem, type CombatEventKind } from '@shared/game/engine/CombatSystem';
+import { UNIT_RANK_INFO, getUnitRank } from '@shared/game/engine/UnitRankSystem';
 import { firstUnresearchedInPath } from './ResearchPath';
 import { awaitCameraGlide, isCameraGliding } from '../game/rendering/CameraGlideGate';
-import { HUMAN_PLAYER_ID } from './PlayerConstants';
-import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
+import { HUMAN_PLAYER_ID } from '@shared/utils/PlayerConstants';
+import { BARBARIAN_CIV_ID } from '@shared/data/VillageConstants';
 import { humanOrFirst, notify } from './NotificationUtils';
-import type GameEngine from '../game/engine/GameEngine';
-import { isNomadStance } from '../game/engine/nomad/NomadAI';
-import type { Technology, Unit, City, Civilization, VillageOutcome, AudienceNotice, AudienceChoice } from '../../types/game';
-import { trackAIAnimation } from '@/game/rendering/GlideAnimation';
-import { getWonder } from '@/data/WonderData';
-import { debugLog } from './DevLog';
+import type GameEngine from '@shared/game/engine/GameEngine';
+import { isNomadStance } from '@shared/game/engine/nomad/NomadAI';
+import type { Technology, Unit, City, Civilization, VillageOutcome, AudienceNotice, AudienceChoice } from '@shared/types/game';
+import { trackAIAnimation } from '../game/rendering/GlideAnimation';
+import { getWonder } from '@shared/data/WonderData';
+import { debugLog } from '@shared/utils/DevLog';
 import { recordAiTarget, clearAiTargetMarkers } from './DevOverlayState';
 import { playSfx, type SfxCue } from './Sfx';
 import { unitAttackCue, cityAssaultCue } from './SoundEngine';
-import { t } from '../i18n';
-import type { TranslationKey } from '../i18n';
-import { tBuildingName, tTechName } from '../i18n/dataNames';
-import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
-import { UNIT_PROPERTIES, UNIT_TYPES } from '@/data/UnitConstants';
-import { BUILDING_PROPERTIES, BUILDING_TYPES } from '@/data/BuildingConstants';
-import { TILE_SIZE } from '@/data/TerrainData';
-import { getGameViewport } from '@/utils/CameraUtils';
+import { t } from '@shared/i18n/index';
+import type { TranslationKey } from '@shared/i18n/index';
+import { tBuildingName, tTechName } from '@shared/i18n/dataNames';
+import { TECHNOLOGIES_DATA } from '@shared/data/TechnologyData';
+import { UNIT_PROPERTIES, UNIT_TYPES } from '@shared/data/UnitConstants';
+import { BUILDING_PROPERTIES, BUILDING_TYPES } from '@shared/data/BuildingConstants';
+import { TILE_SIZE } from '@shared/data/TerrainData';
+import { getGameViewport } from './CameraUtils';
 
 /**
  * The year a captured city starts playing the *modern* entry march instead of

@@ -1,18 +1,10 @@
-import { Unit } from '../../../types/game';
-import type { TurnMarker } from '../../../types/game';
+import { Unit } from '../../types/game';
+import type { TurnMarker } from '../../types/game';
 import { computeMovementPreview } from '../../utils/MovementPreview';
 import GameEngine, { type MapTile } from './GameEngine';
 import type { TurnManager } from './TurnManager';
-import {
-  BASE_GLIDE_DURATION_MS,
-  registerGlide,
-  removeGlide,
-  resolveAnimationDuration,
-  sleep,
-} from '../rendering/GlideAnimation';
-import { awaitCameraGlide, isCameraGliding } from '../rendering/CameraGlideGate';
+import { BASE_GLIDE_DURATION_MS } from '../../ports/runtime';
 import { findNewlySightedEnemies, getVisibleEnemyUnitIds } from './EnemySighting';
-import { notify } from '../../utils/NotificationUtils';
 import { HUMAN_PLAYER_ID } from '../../utils/PlayerConstants';
 import { debugLog } from '../../utils/DevLog';
 
@@ -235,7 +227,7 @@ export class GoToManager {
     const startUnit = this.gameEngine.units.find((u: Unit) => u.id === unitId);
     const hasHumanCiv = (this.gameEngine.civilizations ?? []).some((c) => c.isHuman);
     const watchesForEnemies = hasHumanCiv && startUnit?.civilizationId === HUMAN_PLAYER_ID;
-    let visibleEnemies = watchesForEnemies ? getVisibleEnemyUnitIds() : null;
+    let visibleEnemies = watchesForEnemies ? getVisibleEnemyUnitIds(this.gameEngine.runtime) : null;
 
     while (continueMoving) {
       const unit = this.gameEngine.units.find((u: Unit) => u.id === unitId);
@@ -257,7 +249,7 @@ export class GoToManager {
       // a time. When animations are disabled the duration resolves to 0, no glide
       // is registered, and the legacy inter-step delay below keeps the previous
       // (instant) pacing that the `?noanim` e2e runs rely on.
-      const glideMs = resolveAnimationDuration(BASE_GLIDE_DURATION_MS);
+      const glideMs = this.gameEngine.runtime.resolveAnimationDuration(BASE_GLIDE_DURATION_MS);
       let glideId: string | null = null;
       if (
         glideMs > 0 &&
@@ -265,8 +257,8 @@ export class GoToManager {
         this.gameEngine.canUnitMoveTo(unitId, nextStep.col, nextStep.row)
       ) {
         // Don't start the step until the camera has arrived (no-op when idle).
-        if (isCameraGliding()) await awaitCameraGlide();
-        glideId = registerGlide({
+        if (this.gameEngine.runtime.isCameraGliding()) await this.gameEngine.runtime.awaitCameraGlide();
+        glideId = this.gameEngine.runtime.registerGlide({
           unitId,
           fromCol: unit.col,
           fromRow: unit.row,
@@ -275,11 +267,11 @@ export class GoToManager {
           duration: glideMs,
           idPrefix: 'goto',
         });
-        await sleep(glideMs);
+        await this.gameEngine.runtime.sleep(glideMs);
       }
 
       const result = this.executeFirstStep(unitId);
-      removeGlide(glideId);
+      this.gameEngine.runtime.removeGlide(glideId);
       
       if (result.success) {
         stepsCompleted++;
@@ -288,17 +280,17 @@ export class GoToManager {
         // seen before. The path was plotted blind, so stop and hand control
         // back to the player instead of walking into an ambush.
         if (watchesForEnemies && visibleEnemies) {
-          const newlySighted = findNewlySightedEnemies(visibleEnemies);
+          const newlySighted = findNewlySightedEnemies(visibleEnemies, this.gameEngine.runtime);
           if (newlySighted.length > 0) {
             const first = newlySighted[0];
             debugLog(`[GoToManager] Enemy unit sighted at (${first.col},${first.row}) — aborting path for ${unitId}`);
             this.clearUnitPath(unitId);
-            notify('warning', 'Enemy unit sighted!');
+            this.gameEngine.runtime.notify('warning', 'Enemy unit sighted!');
             // Also drop the caller's local path overlay.
             if (onStepComplete) onStepComplete(0);
             break;
           }
-          visibleEnemies = getVisibleEnemyUnitIds();
+          visibleEnemies = getVisibleEnemyUnitIds(this.gameEngine.runtime);
         }
 
         if (onStepComplete) {
@@ -309,7 +301,7 @@ export class GoToManager {
           // Animated runs are already paced by the glide above; keep the legacy
           // delay only when animations are disabled.
           if (glideMs <= 0) {
-            await sleep(delayMs);
+            await this.gameEngine.runtime.sleep(delayMs);
           }
         } else {
           continueMoving = false;

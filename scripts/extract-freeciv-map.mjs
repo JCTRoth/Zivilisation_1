@@ -23,7 +23,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const OUT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../src/data/maps');
+const OUT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../packages/shared/data/maps');
 
 /** `"foo"` → `foo` (Freeciv quotes strings). */
 function unquote(value) {

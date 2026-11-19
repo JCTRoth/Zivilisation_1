@@ -10,15 +10,15 @@
  * behaviour looked competent while its books were wrong.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { AIEconomicManager } from '@/game/engine/AI/AIEconomicManager';
-import { AutoProduction } from '@/game/engine/AutoProduction';
-import { AIManager } from '@/game/engine/AI/AIManager';
-import { AICoordinator } from '@/game/engine/AI/AICoordinator';
-import { AIResearch } from '@/game/engine/AI/AIResearch';
-import { planCityInfrastructure } from '@/game/engine/AI/InfrastructurePlanner';
-import { evaluateBuildingEconomics, NEUTRAL_CITY_ECONOMICS } from '@/game/engine/AI/BuildingEconomics';
-import { BUILDING_PROPERTIES } from '@/data/BuildingConstants';
-import type { Civilization } from '../../types/game';
+import { AIEconomicManager } from '@shared/game/engine/AI/AIEconomicManager';
+import { AutoProduction } from '@shared/game/engine/AutoProduction';
+import { AIManager } from '@shared/game/engine/AI/AIManager';
+import { AICoordinator } from '@shared/game/engine/AI/AICoordinator';
+import { AIResearch } from '@shared/game/engine/AI/AIResearch';
+import { planCityInfrastructure } from '@shared/game/engine/AI/InfrastructurePlanner';
+import { evaluateBuildingEconomics, NEUTRAL_CITY_ECONOMICS } from '@shared/game/engine/AI/BuildingEconomics';
+import { BUILDING_PROPERTIES } from '@shared/data/BuildingConstants';
+import type { Civilization } from '@shared/types/game';
 
 // ── helpers ────────────────────────────────────────────────────────────────
 

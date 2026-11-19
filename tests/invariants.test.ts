@@ -12,7 +12,7 @@
  * between the rules and the data.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
+import GameEngine from '@shared/game/engine/GameEngine';
 import { checkInvariants, makeEngine, makeGridEngine, useSeededRandom, world } from './helpers/world';
 
 describe('Engine invariants over a long game', () => {

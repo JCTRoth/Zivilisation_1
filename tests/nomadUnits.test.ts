@@ -23,11 +23,11 @@ import {
   NOMAD_MOUNTED_UNITS,
   nomadFootType,
   nomadMountedType,
-} from '@/data/UnitConstants';
-import { UNIT_PROPS } from '@/utils/Constants';
-import { canBuildUnit } from '@/game/engine/AI/AITypes';
-import { NOMAD_MOUNT_ICONS, NOMAD_SPAWN_UNITS } from '@/data/NomadConstants';
-import { tUnitName } from '@/i18n/dataNames';
+} from '@shared/data/UnitConstants';
+import { UNIT_PROPS } from '@shared/utils/Constants';
+import { canBuildUnit } from '@shared/game/engine/AI/AITypes';
+import { NOMAD_MOUNT_ICONS, NOMAD_SPAWN_UNITS } from '@shared/data/NomadConstants';
+import { tUnitName } from '@shared/i18n/dataNames';
 
 type Engine = Awaited<ReturnType<typeof makeEngine>>['engine'];
 

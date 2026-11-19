@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { assessCityThreat, scoreEnemyTarget } from '@/game/engine/AI/AIStrategy';
-import type { EnemyLocation } from '@/game/engine/EnemySearcher';
+import { assessCityThreat, scoreEnemyTarget } from '@shared/game/engine/AI/AIStrategy';
+import type { EnemyLocation } from '@shared/game/engine/EnemySearcher';
 
 const makeLocation = (overrides: Partial<EnemyLocation> = {}): EnemyLocation => ({
   col: 5,

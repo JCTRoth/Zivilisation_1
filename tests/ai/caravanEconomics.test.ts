@@ -11,9 +11,9 @@ import { describe, it, expect } from 'vitest';
 import {
   caravanRelevanceForCiv,
   MAX_TRADE_ROUTES_PER_CITY,
-} from '@/game/engine/AI/CaravanEconomics';
-import { AIResearch } from '@/game/engine/AI/AIResearch';
-import { MAX_TRADE_ROUTES } from '@/game/engine/GameEngine';
+} from '@shared/game/engine/AI/CaravanEconomics';
+import { AIResearch } from '@shared/game/engine/AI/AIResearch';
+import { MAX_TRADE_ROUTES } from '@shared/game/engine/GameEngine';
 
 const city = (population: number, tradeRoutes: number, civilizationId = 0) => ({
   population, tradeRoutes: Array.from({ length: tradeRoutes }), civilizationId,

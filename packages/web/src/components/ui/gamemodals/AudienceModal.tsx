@@ -1,18 +1,18 @@
 import React from 'react';
 import { Modal } from 'react-bootstrap';
-import { useTranslation } from '@/i18n/useTranslation';
-import { useGameStore } from '@/stores/GameStore';
-import LeaderPortrait from '@/components/ui/LeaderPortrait';
-import ClanPortrait from '@/components/ui/ClanPortrait';
-import { NOMAD_CHOICE_ICONS, NOMAD_STANDING_COLORS } from '@/data/NomadConstants';
-import type { NomadStanding } from '@/game/engine/nomad/NomadManager';
-import { LEADER_PORTRAITS, MOOD_COLORS } from '@/data/LeaderPortraits';
-import { attitudeFromScore, type Attitude } from '@/game/engine/DiplomacyTypes';
-import { EARLY_TECH_EXCHANGE_MAX_ROUND } from '@/data/GameConstants';
-import { tTechName } from '@/i18n/dataNames';
-import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
-import type { AudienceNotice, Civilization } from '../../../../types/game';
-import type { TranslationKey } from '@/i18n';
+import { useTranslation } from '../../../i18n/useTranslation';
+import { useGameStore } from '../../../stores/GameStore';
+import LeaderPortrait from '../LeaderPortrait';
+import ClanPortrait from '../ClanPortrait';
+import { NOMAD_CHOICE_ICONS, NOMAD_STANDING_COLORS } from '@shared/data/NomadConstants';
+import type { NomadStanding } from '@shared/game/engine/nomad/NomadManager';
+import { LEADER_PORTRAITS, MOOD_COLORS } from '@shared/data/LeaderPortraits';
+import { attitudeFromScore, type Attitude } from '@shared/game/engine/DiplomacyTypes';
+import { EARLY_TECH_EXCHANGE_MAX_ROUND } from '@shared/data/GameConstants';
+import { tTechName } from '@shared/i18n/dataNames';
+import { TECHNOLOGIES_DATA } from '@shared/data/TechnologyData';
+import type { AudienceNotice, Civilization } from '@shared/types/game';
+import type { TranslationKey } from '@shared/i18n/index';
 import '../../../styles/audienceModal.css';
 
 interface AudienceModalProps {

@@ -1,11 +1,11 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { useGameStore } from '@/stores/GameStore';
-import { useTranslation } from '@/i18n/useTranslation';
-import type { TranslationKey } from '@/i18n';
-import { tTechName } from '@/i18n/dataNames';
-import { getTechIcon } from '@/data/TechnologyIcons';
-import type { Technology } from '../../../types/game';
-import GameEngine from '@/game/engine/GameEngine';
+import { useGameStore } from '../../stores/GameStore';
+import { useTranslation } from '../../i18n/useTranslation';
+import type { TranslationKey } from '@shared/i18n/index';
+import { tTechName } from '@shared/i18n/dataNames';
+import { getTechIcon } from '@shared/data/TechnologyIcons';
+import type { Technology } from '@shared/types/game';
+import GameEngine from '@shared/game/engine/GameEngine';
 
 interface ResearchIndicatorProps {
   gameEngine?: GameEngine | null;

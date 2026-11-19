@@ -4,8 +4,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import { findPathToTech, firstUnresearchedInPath, firstResearchableInPath } from '@/utils/ResearchPath';
-import { getTechIcon } from '@/data/TechnologyIcons';
-import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
+import { getTechIcon } from '@shared/data/TechnologyIcons';
+import { TECHNOLOGIES_DATA } from '@shared/data/TechnologyData';
 
 describe('findPathToTech', () => {
   it('returns a single-node path for a root tech', () => {

@@ -8,8 +8,8 @@
  * the research "known tech" discount.
  */
 import { describe, it, expect } from 'vitest';
-import GameEngine from '../../src/game/engine/GameEngine';
-import { ResearchManager } from '../../src/game/engine/ResearchManager';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { ResearchManager } from '@shared/game/engine/ResearchManager';
 
 const MAP_W = 20;
 const MAP_H = 20;

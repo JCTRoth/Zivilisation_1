@@ -30,8 +30,8 @@
  *     under Democracy's 10% cap — the same building, opposite verdicts.
  */
 
-import { BUILDING_PROPERTIES } from '@/data/BuildingConstants';
-import { PURCHASE_GOLD_PER_SHIELD } from '@/data/GameConstants';
+import { BUILDING_PROPERTIES } from '../../../data/BuildingConstants';
+import { PURCHASE_GOLD_PER_SHIELD } from '../../../data/GameConstants';
 import { TRADE_GOLD_MULTIPLIER } from '../EconomicManager';
 
 /**

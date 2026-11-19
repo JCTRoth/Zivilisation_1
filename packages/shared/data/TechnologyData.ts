@@ -1,4 +1,4 @@
-import { Technology } from '../../types/game';
+import { Technology } from '../types/game';
 
 export const TECHNOLOGIES_DATA: Technology[] = [
   { id: "pottery", name: "Pottery", researched: false, researching: false, available: true, cost: 20, description: "Allows construction of granaries, boosting food storage.", prerequisites: [] },

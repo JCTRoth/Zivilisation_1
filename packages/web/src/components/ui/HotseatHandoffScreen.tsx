@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useTranslation } from '@/i18n/useTranslation';
+import { useTranslation } from '../../i18n/useTranslation';
 import '../../styles/hotseatHandoff.css';
 
 interface HotseatHandoffScreenProps {

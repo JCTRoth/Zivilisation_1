@@ -1,4 +1,4 @@
-import {Constants, TERRAIN_PROPS} from '@/utils/Constants';
+import {Constants, TERRAIN_PROPS} from '../../utils/Constants';
 import { debugLog } from '../../utils/DevLog';
 
 /** Minimal tile/city/unit shapes used by the settlement-evaluator callbacks. */

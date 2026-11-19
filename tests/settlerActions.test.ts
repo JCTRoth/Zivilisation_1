@@ -7,8 +7,8 @@
  *  - canFoundCity: land tile + minimum spacing from other cities.
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { TERRAIN_TYPES } from '@shared/data/TerrainConstants';
 
 describe('settler action availability (context menu gating)', () => {
   let engine: GameEngine | null = null;

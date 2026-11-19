@@ -1,5 +1,5 @@
 import { describe, expect, it, afterEach } from 'vitest';
-import { AIUtility } from '@/game/engine/AI/AIUtility';
+import { AIUtility } from '@shared/game/engine/AI/AIUtility';
 
 /**
  * Civ1 exploration randomness — regression coverage for the weighted-random

@@ -1,7 +1,7 @@
 import React from 'react';
-import type { Notification } from '../../../types/game';
-import { useGameStore } from '@/stores/GameStore';
-import { useTranslation } from '@/i18n/useTranslation';
+import type { Notification } from '@shared/types/game';
+import { useGameStore } from '../../stores/GameStore';
+import { useTranslation } from '../../i18n/useTranslation';
 
 const ICONS: Record<Notification['type'], string> = {
   info: 'ℹ️',

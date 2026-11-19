@@ -11,12 +11,12 @@
  *    water" — unreachable targets are excluded until shipbuilding is possible.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { SquareGrid } from '@/game/SquareGrid';
-import { Pathfinding } from '@/game/engine/Pathfinding';
-import MapGenerator, { LAKE_MAX_TILES } from '@/game/engine/MapGenerator/MapGenerator';
-import { GroupKind } from '@/game/engine/MapGenerator/MapGeneratorHelper';
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { SquareGrid } from '@shared/game/SquareGrid';
+import { Pathfinding } from '@shared/game/engine/Pathfinding';
+import MapGenerator, { LAKE_MAX_TILES } from '@shared/game/engine/MapGenerator/MapGenerator';
+import { GroupKind } from '@shared/game/engine/MapGenerator/MapGeneratorHelper';
+import { TERRAIN_TYPES } from '@shared/data/TerrainConstants';
 
 /**
  * Build a minimal GameEngine whose world is a small, fully controlled map.
@@ -400,7 +400,7 @@ describe('Wide rivers act as water gaps', () => {
 
 describe('AI naval production pivot', () => {
   it('builds a ship when every known enemy is across the water', async () => {
-    const { AutoProduction } = await import('@/game/engine/AutoProduction');
+    const { AutoProduction } = await import('@shared/game/engine/AutoProduction');
 
     const city = {
       id: 'city-1', name: 'Port', civilizationId: 1, col: 0, row: 0,

@@ -1,8 +1,8 @@
 /// <reference types="vite/client" />
 
-import { UNIT_PROPS } from '../../../utils/Constants';
-import { BUILDING_PROPERTIES } from '../../../data/BuildingConstants';
-import type { City, ProductionItem } from '../../../../types/game';
+import { UNIT_PROPS } from '@shared/utils/Constants';
+import { BUILDING_PROPERTIES } from '@shared/data/BuildingConstants';
+import type { City, ProductionItem } from '@shared/types/game';
 
 // Shared utilities for modal logic
 export class ModalUtils {

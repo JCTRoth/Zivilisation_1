@@ -15,9 +15,9 @@
  *     ferry, and the islands stayed empty.
  */
 import { describe, expect, it } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { SquareGrid } from '@/game/SquareGrid';
-import { desiredTransports, navalDoctrine, type NavalDoctrineInput } from '@/game/engine/AI/NavalDoctrine';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { SquareGrid } from '@shared/game/SquareGrid';
+import { desiredTransports, navalDoctrine, type NavalDoctrineInput } from '@shared/game/engine/AI/NavalDoctrine';
 
 /** A minimal engine over a hand-written map. */
 function makeEngine(rows: string[][]): GameEngine {

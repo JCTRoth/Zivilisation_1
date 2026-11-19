@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
+import GameEngine from '@shared/game/engine/GameEngine';
 
 describe('City Creation Debug', () => {
   it('trace what cities are created', async () => {

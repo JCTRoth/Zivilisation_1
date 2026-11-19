@@ -14,7 +14,7 @@
  * as the reference frame in the UI: the dashed ghost on the preview and the
  * "×N standard" stat both point at it.
  */
-import type { TranslationKey } from '@/i18n/en';
+import type { TranslationKey } from '../i18n/en';
 
 /** Inclusive bounds the dialog lets a player reach (engine accepts ≥10×8). */
 export const MAP_DIM_MIN_WIDTH = 20;

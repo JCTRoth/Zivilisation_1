@@ -15,11 +15,11 @@
  */
 
 import { vi } from 'vitest';
-import { getGovernment } from '@/data/GovernmentData';
-import { NOMAD_CIV_ID } from '@/data/NomadConstants';
-import GameEngine from '@/game/engine/GameEngine';
-import { SquareGrid } from '@/game/SquareGrid';
-import type { City, Unit } from '../../types/game';
+import { getGovernment } from '@shared/data/GovernmentData';
+import { NOMAD_CIV_ID } from '@shared/data/NomadConstants';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { SquareGrid } from '@shared/game/SquareGrid';
+import type { City, Unit } from '@shared/types/game';
 
 // ── Deterministic randomness ───────────────────────────────────────────────
 
@@ -52,6 +52,12 @@ export function forceRandom(value: number): void {
 export interface MakeEngineOptions {
   /** Pins the generated map. Default: a fixed seed so runs are reproducible. */
   seed?: number;
+  /**
+   * Pins ALL gameplay rolls through the engine's own RNG. Without it the
+   * engine reads the ambient (test-mocked) Math.random, which keeps legacy
+   * `forceRandom`-style tests working.
+   */
+  rngSeed?: number;
   mapType?: string;
   numberOfCivilizations?: number;
   startingGold?: number;
@@ -86,6 +92,7 @@ export interface TestWorld {
 export async function makeEngine(options: MakeEngineOptions = {}): Promise<TestWorld> {
   const {
     seed = 20260925,
+    rngSeed,
     mapType = 'CLOSEUP_1V1',
     numberOfCivilizations = 2,
     startingGold = 100,
@@ -121,6 +128,7 @@ export async function makeEngine(options: MakeEngineOptions = {}): Promise<TestW
     devMode: false,
     startingGold,
     mapSeed: seed,
+    ...(rngSeed !== undefined ? { rngSeed } : {}),
     ...(fixedAlliances ? { fixedAlliances: true, teamAssignments } : {}),
     ...(humanPlayerIds !== undefined ? { humanPlayerIds } : {}),
   });

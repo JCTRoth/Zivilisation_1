@@ -8,7 +8,7 @@
  * existed — by which time the AI had already committed to something else.
  */
 import { describe, it, expect } from 'vitest';
-import { AIResearch } from '@/game/engine/AI/AIResearch';
+import { AIResearch } from '@shared/game/engine/AI/AIResearch';
 
 const personality = {
   aggression: 5, expansion: 5, diplomacy: 5, science: 5, military: 5, economy: 5,

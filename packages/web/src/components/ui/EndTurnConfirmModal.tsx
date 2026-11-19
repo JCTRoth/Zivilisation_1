@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { Form } from 'react-bootstrap';
-import { useGameStore } from '@/stores/GameStore';
-import { useTranslation } from '@/i18n/useTranslation';
-import GameModal from '@/components/ui/gamemodals/ModalShell';
-import { GameUtils } from '@/utils/GameUtils';
+import { useGameStore } from '../../stores/GameStore';
+import { useTranslation } from '../../i18n/useTranslation';
+import GameModal from './gamemodals/ModalShell';
+import { GameUtils } from '../../utils/GameUtils';
 import '../../styles/endTurnConfirmModal.css';
 
 interface EndTurnConfirmModalProps {

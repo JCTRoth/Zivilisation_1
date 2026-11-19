@@ -9,7 +9,7 @@ import {
   branchWantsSiege,
   branchBuildsNukes,
   type StrategyBranchInput,
-} from '@/game/engine/AI/AIStrategyBranches';
+} from '@shared/game/engine/AI/AIStrategyBranches';
 
 const base: StrategyBranchInput = {
   atWar: false,

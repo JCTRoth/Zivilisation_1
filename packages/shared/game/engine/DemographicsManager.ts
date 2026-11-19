@@ -6,7 +6,7 @@
  */
 import { BUILDING_TYPES } from '../../data/BuildingConstants';
 import { cityBuildingEffects } from './BuildingEffects';
-import type { Civilization, City } from '../../../types/game';
+import type { Civilization, City } from '../../types/game';
 
 export const numberValue = (v: unknown): number =>
   typeof v === 'number' && Number.isFinite(v) ? v : 0;

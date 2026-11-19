@@ -40,7 +40,7 @@
 //     within air reach of the target; the airframe flies the last leg.
 // ============================================================================
 
-import { UNIT_PROPS } from '@/utils/Constants';
+import { UNIT_PROPS } from '../../../utils/Constants';
 
 // ---------------------------------------------------------------------------
 // Shapes

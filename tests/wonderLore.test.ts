@@ -5,20 +5,20 @@
  * Wikipedia links must point at the player's language.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { WONDERS } from '@/data/WonderData';
+import { WONDERS } from '@shared/data/WonderData';
 import {
   WONDER_WIKI_TITLES,
   getWonderLore,
   localizedWonder,
   wonderWikiUrl,
-} from '@/i18n/wonderLore';
-import { DEFAULT_LANGUAGE, type LanguageId } from '@/i18n/languages';
-import { setLanguage } from '@/i18n';
-import wonderLoreDe from '@/i18n/wonderLore/de';
-import wonderLoreFr from '@/i18n/wonderLore/fr';
-import wonderLoreRu from '@/i18n/wonderLore/ru';
-import wonderLoreEs from '@/i18n/wonderLore/es';
-import wonderLoreJa from '@/i18n/wonderLore/ja';
+} from '@shared/i18n/wonderLore';
+import { DEFAULT_LANGUAGE, type LanguageId } from '@shared/i18n/languages';
+import { setLanguage } from '@shared/i18n/index';
+import wonderLoreDe from '@shared/i18n/wonderLore/de';
+import wonderLoreFr from '@shared/i18n/wonderLore/fr';
+import wonderLoreRu from '@shared/i18n/wonderLore/ru';
+import wonderLoreEs from '@shared/i18n/wonderLore/es';
+import wonderLoreJa from '@shared/i18n/wonderLore/ja';
 
 const SHIPPED: Record<string, Record<string, ReturnType<typeof getWonderLore>>> = {
   de: wonderLoreDe,

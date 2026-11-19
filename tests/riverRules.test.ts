@@ -14,10 +14,10 @@
  * Also covers the "rivers can hold fish at half the ocean rate" rule.
  */
 import { describe, expect, it } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { SquareGrid } from '@/game/SquareGrid';
-import { Pathfinding } from '@/game/engine/Pathfinding';
-import { isRiverTile, isWideRiverTile, isFordableRiverTile, riverWidthsAt, MAX_FORDABLE_RIVER_WIDTH } from '@/game/engine/RiverRules';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { SquareGrid } from '@shared/game/SquareGrid';
+import { Pathfinding } from '@shared/game/engine/Pathfinding';
+import { isRiverTile, isWideRiverTile, isFordableRiverTile, riverWidthsAt, MAX_FORDABLE_RIVER_WIDTH } from '@shared/game/engine/RiverRules';
 import {
   TERRAIN_TYPES,
   TERRAIN_RESOURCES,
@@ -25,8 +25,8 @@ import {
   COASTAL_FISH_CHANCE,
   RIVER_FISH_CHANCE_MULTIPLIER,
   getResourceYields,
-} from '@/data/TerrainConstants';
-import { rollResource } from '@/game/engine/MapGenerator/MapGeneratorHelper';
+} from '@shared/data/TerrainConstants';
+import { rollResource } from '@shared/game/engine/MapGenerator/MapGeneratorHelper';
 
 type Rows = string[][];
 

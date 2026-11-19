@@ -13,10 +13,10 @@
  *     for exactly the governments most likely to be busy fighting a war.
  */
 import { describe, expect, it } from 'vitest';
-import { EconomicManager } from '../src/game/engine/EconomicManager';
-import type { Civilization, City, Unit } from '../types/game';
+import { EconomicManager } from '@shared/game/engine/EconomicManager';
+import type { Civilization, City, Unit } from '@shared/types/game';
 import { makeEngine, useSeededRandom } from './helpers/world';
-import { BARBARIAN_CIV_ID } from '../src/data/VillageConstants';
+import { BARBARIAN_CIV_ID } from '@shared/data/VillageConstants';
 
 function civ(id: number, government: string): Civilization {
   return { id, name: `C${id}`, government, technologies: [], resources: { gold: 0 } } as unknown as Civilization;

@@ -23,8 +23,8 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import GameEngine from '@/game/engine/GameEngine';
-import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { BARBARIAN_CIV_ID } from '@shared/data/VillageConstants';
 import { useSeededRandom } from '../helpers/world';
 
 const TARGET_ROUNDS = 150;

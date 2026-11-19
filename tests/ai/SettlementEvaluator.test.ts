@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { SettlementEvaluator } from '@/game/engine/SettlementEvaluator';
+import { SettlementEvaluator } from '@shared/game/engine/SettlementEvaluator';
 
 describe('SettlementEvaluator', () => {
   // Mock terrain data

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeEngine, type TestWorld } from './helpers/world';
-import type GameEngine from '@/game/engine/GameEngine';
+import type GameEngine from '@shared/game/engine/GameEngine';
 
 /**
  * Friendly stacking — a unit may move onto a tile already held by another unit

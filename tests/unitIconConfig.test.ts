@@ -6,8 +6,8 @@
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { UNIT_PROPERTIES } from '@/data/UnitConstants';
-import { getUnitSvgPath } from '@/data/UnitIconConfig';
+import { UNIT_PROPERTIES } from '@shared/data/UnitConstants';
+import { getUnitSvgPath } from '@shared/data/UnitIconConfig';
 
 describe('unit SVG icon overrides', () => {
   it('resolves every override to a file that exists', () => {
@@ -17,7 +17,7 @@ describe('unit SVG icon overrides', () => {
       if (!svgPath) continue;
       overridden.push(unitType);
       expect(
-        existsSync(join(process.cwd(), 'src', 'assets', 'units', svgPath)),
+        existsSync(join(process.cwd(), 'packages', 'web', 'src', 'assets', 'units', svgPath)),
         `${unitType} → ${svgPath}`,
       ).toBe(true);
     }
@@ -33,7 +33,7 @@ describe('unit SVG icon overrides', () => {
     // A file that exists but is a placeholder or an empty export would load as
     // a 0×0 image and silently fall back to the emoji at runtime.
     for (const file of ['trireme.svg', 'frigate.svg']) {
-      const source = readFileSync(join(process.cwd(), 'src', 'assets', 'units', file), 'utf8');
+      const source = readFileSync(join(process.cwd(), 'packages', 'web', 'src', 'assets', 'units', file), 'utf8');
       expect(source, `${file} should be SVG`).toContain('<svg');
       const w = Number(source.match(/width="([\d.]+)"/)?.[1] ?? 0);
       const h = Number(source.match(/height="([\d.]+)"/)?.[1] ?? 0);

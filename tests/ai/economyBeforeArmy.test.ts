@@ -18,8 +18,8 @@
  * those roads have paid.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { AutoProduction } from '@/game/engine/AutoProduction';
-import { ABSOLUTE_MIN_GOLD } from '@/game/engine/EconomicManager';
+import { AutoProduction } from '@shared/game/engine/AutoProduction';
+import { ABSOLUTE_MIN_GOLD } from '@shared/game/engine/EconomicManager';
 
 const RESERVE = ABSOLUTE_MIN_GOLD;
 

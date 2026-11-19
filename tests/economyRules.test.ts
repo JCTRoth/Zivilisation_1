@@ -17,25 +17,25 @@ import {
   DEBT_REPAYMENT_PER_TURN,
   DEBT_REPAYMENT_PER,
   EconomicManager,
-} from '@/game/engine/EconomicManager';
+} from '@shared/game/engine/EconomicManager';
 import {
   PURCHASE_GOLD_PER_SHIELD,
   CITY_UPKEEP_PER_CITY,
   FREE_CITY_SUPPORT,
   TREATY_ROUTE_TRADE_MULTIPLIER,
-} from '@/data/GameConstants';
+} from '@shared/data/GameConstants';
 import {
   CORRUPTION_REDUCTION_BUILDINGS,
   CORRUPTION_DISTANCE_STEP,
   MAX_CORRUPTION_DISTANCE_MULTIPLIER,
-} from '@/data/CorruptionConstants';
+} from '@shared/data/CorruptionConstants';
 import {
   MAX_TRADE_ROUTES,
   TRADE_ROUTE_DISTANCE_WEIGHT,
   TRADE_ROUTE_POP_DIVISOR,
-} from '@/game/engine/GameEngine';
-import { BUILDING_PROPERTIES } from '@/data/BuildingConstants';
-import { getGovernment } from '@/data/GovernmentData';
+} from '@shared/game/engine/GameEngine';
+import { BUILDING_PROPERTIES } from '@shared/data/BuildingConstants';
+import { getGovernment } from '@shared/data/GovernmentData';
 
 describe('appetite ramp', () => {
   it('is flat below the ramp and rises above it', () => {

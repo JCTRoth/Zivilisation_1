@@ -18,10 +18,13 @@
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./packages/web/src/*"],
+      "@shared/*": ["./packages/shared/*"],
+      "@civ1/shared": ["./packages/shared/index.ts"],
+      "@civ1/shared/*": ["./packages/shared/*"]
     }
   },
-  "include": ["src", "js", "types", "tests", "e2e", "playwright.config.ts"],
+  "include": ["packages", "tests", "e2e", "playwright.config.ts"],
   "types": ["vite/client", "node"],
   "exclude": ["node_modules", "dist"]
 }

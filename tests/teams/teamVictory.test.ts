@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { TeamManager } from '@/game/engine/TeamManager';
-import { VictoryManager } from '@/game/engine/VictoryManager';
-import type { GameResult } from '../../types/game';
+import { TeamManager } from '@shared/game/engine/TeamManager';
+import { VictoryManager } from '@shared/game/engine/VictoryManager';
+import type { GameResult } from '@shared/types/game';
 
 function makeEngine(
   civCount = 3,

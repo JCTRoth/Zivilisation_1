@@ -6,8 +6,8 @@
  * second, take something only when the temperament survives the war it costs.
  */
 import { describe, it, expect } from 'vitest';
-import { scoreEspionage, chooseEspionageAction, type EspionageContext } from '@/game/engine/diplomacy/EspionagePolicy';
-import type { DiplomaticWeights } from '@/game/engine/diplomacy/DiplomaticWeights';
+import { scoreEspionage, chooseEspionageAction, type EspionageContext } from '@shared/game/engine/diplomacy/EspionagePolicy';
+import type { DiplomaticWeights } from '@shared/game/engine/diplomacy/DiplomaticWeights';
 
 const NEUTRAL: DiplomaticWeights = {
   hostility: 5, warmongering: 5, trustSensitivity: 5, greed: 5,

@@ -19,12 +19,12 @@
  * Buildings scoring below SELL_THRESHOLD are returned as sell candidates.
  */
 
-import type { City, Civilization, Unit, MapState } from '../../../../types/game';
+import type { City, Civilization, Unit, MapState } from '../../../types/game';
 import { HAPPINESS_BUILDINGS as COORDINATOR_HAPPINESS_BUILDINGS } from './BuildingCoordinator';
-import { BUILDING_PROPERTIES, BUILDING_TYPES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
+import { BUILDING_PROPERTIES, BUILDING_TYPES, WONDER_PROPERTIES } from '../../../data/BuildingConstants';
+import { TERRAIN_TYPES } from '../../../data/TerrainConstants';
 import type { ArmyGroup } from './AITypes';
-import { UNIT_PROPERTIES } from '@/utils/Constants';
+import { UNIT_PROPERTIES } from '../../../utils/Constants';
 import {
   evaluateBuildingEconomics,
   isSellableForBudget,

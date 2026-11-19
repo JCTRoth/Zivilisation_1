@@ -17,12 +17,12 @@ import {
   scoreCandidates,
   mayDeclareWar,
   type PolicyContext,
-} from '@/game/engine/diplomacy/AIDiplomacyPolicy';
-import { diplomaticWeights } from '@/game/engine/diplomacy/DiplomaticWeights';
-import { createOpinion } from '@/game/engine/diplomacy/DiplomaticOpinion';
-import { DiplomacyManager } from '@/game/engine/DiplomacyManager';
-import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
-import { RECONCILE_GOLD_FLOOR } from '@/data/GameConstants';
+} from '@shared/game/engine/diplomacy/AIDiplomacyPolicy';
+import { diplomaticWeights } from '@shared/game/engine/diplomacy/DiplomaticWeights';
+import { createOpinion } from '@shared/game/engine/diplomacy/DiplomaticOpinion';
+import { DiplomacyManager } from '@shared/game/engine/DiplomacyManager';
+import { TECHNOLOGIES_DATA } from '@shared/data/TechnologyData';
+import { RECONCILE_GOLD_FLOOR } from '@shared/data/GameConstants';
 
 const WARLORD = { aggression: 9, diplomacy: 2, military: 9, expansion: 6, science: 3, economy: 4 };
 

@@ -1,5 +1,5 @@
-import type { Unit, City } from '../../../types/game';
-import GameEngine from '@/game/engine/GameEngine';
+import type { Unit, City } from '@shared/types/game';
+import GameEngine from '@shared/game/engine/GameEngine';
 
 type MapTile = { terrain?: string; type?: string; resource?: string; improvement?: string | Record<string, unknown>; village?: boolean; visible?: boolean; explored?: boolean; col?: number; row?: number };
 

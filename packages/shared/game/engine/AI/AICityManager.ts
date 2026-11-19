@@ -31,8 +31,8 @@
  * cannot desync from the growth pipeline.
  */
 
-import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
-import type { City, CityGovernorMode, Civilization, SpecialistType } from '../../../../types/game';
+import { BARBARIAN_CIV_ID } from '../../../data/VillageConstants';
+import type { City, CityGovernorMode, Civilization, SpecialistType } from '../../../types/game';
 import { resolveAICivStrategy, type StrategyProfile } from './AITypes';
 import type GameEngine from '../GameEngine';
 import type { EconomicManager } from '../EconomicManager';

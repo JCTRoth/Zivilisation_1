@@ -12,11 +12,11 @@
  *   * and AI-vs-AI spectating gets no dialogs at all.
  */
 import { beforeEach, afterEach, describe, expect, it } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
+import GameEngine from '@shared/game/engine/GameEngine';
 import { EngineEventRouter } from '@/utils/EngineEventHandlers';
 import { useGameStore } from '@/stores/GameStore';
-import { STORY_EVENTS } from '@/data/StoryEvents';
-import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
+import { STORY_EVENTS } from '@shared/data/StoryEvents';
+import { BARBARIAN_CIV_ID } from '@shared/data/VillageConstants';
 
 const makeEngine = async () => {
   const engine = new GameEngine(null);

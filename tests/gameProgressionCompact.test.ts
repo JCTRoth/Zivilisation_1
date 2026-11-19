@@ -6,12 +6,12 @@
  *  - serializeCityCompact produces the slim city snapshot.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { filterLogEntries, computeCivDelta, hydrateCiv, gameProgression, currentResearchId, PROGRESSION_SNAPSHOT_INTERVAL } from '../src/utils/GameProgression';
-import { gameLogger } from '../src/utils/GameLogger';
-import { serializeCityCompact } from '../src/utils/CitySnapshots';
-import { RESEARCH_UNLOCK_ROUND } from '@/data/GameConstants';
-import type { ProgressionCivSnapshot, ProgressionCivDelta, ProgressionLogEntry } from '../types/progression';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { filterLogEntries, computeCivDelta, hydrateCiv, gameProgression, currentResearchId, PROGRESSION_SNAPSHOT_INTERVAL } from '@/utils/GameProgression';
+import { gameLogger } from '@/utils/GameLogger';
+import { serializeCityCompact } from '@shared/utils/CitySnapshots';
+import { RESEARCH_UNLOCK_ROUND } from '@shared/data/GameConstants';
+import type { ProgressionCivSnapshot, ProgressionCivDelta, ProgressionLogEntry } from '@shared/types/progression';
 
 function entry(event: string, message = '', detail: Record<string, unknown> = {}): ProgressionLogEntry {
   return { ts: '2026-01-01T00:00:00.000Z', round: 1, player: 0, event, message, detail };

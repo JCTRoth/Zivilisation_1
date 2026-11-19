@@ -10,14 +10,14 @@
  *    governor is applied (i.e. when the city screen closes).
  */
 import { describe, expect, it, vi } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { SquareGrid } from '@/game/SquareGrid';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { SquareGrid } from '@shared/game/SquareGrid';
 import {
   AI_MIN_FOOD_SURPLUS,
   GOVERNOR_PROFILES,
   MAX_ENTERTAINERS_PER_CITY,
-} from '@/game/engine/AI/AICityManager';
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
+} from '@shared/game/engine/AI/AICityManager';
+import { TERRAIN_TYPES } from '@shared/data/TerrainConstants';
 
 type Rows = string[][];
 const G = TERRAIN_TYPES.GRASSLAND;

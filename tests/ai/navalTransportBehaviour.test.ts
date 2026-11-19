@@ -16,7 +16,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { makeEngine } from '../helpers/world';
-import { UNIT_PROPERTIES } from '@/data/UnitConstants';
+import { UNIT_PROPERTIES } from '@shared/data/UnitConstants';
 
 const isTransport = (type: string): boolean => (UNIT_PROPERTIES[type]?.transportCapacity ?? 0) > 0;
 

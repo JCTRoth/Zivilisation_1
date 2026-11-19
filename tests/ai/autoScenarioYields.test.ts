@@ -13,7 +13,7 @@
  * exactly like the browser did before the fix.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
+import GameEngine from '@shared/game/engine/GameEngine';
 import { useSeededRandom } from '../helpers/world';
 
 describe('AI-vs-AI event-loop fairness', () => {

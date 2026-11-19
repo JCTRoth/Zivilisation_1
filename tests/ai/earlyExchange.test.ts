@@ -21,12 +21,12 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   scoreCandidates,
   type PolicyContext,
-} from '@/game/engine/diplomacy/AIDiplomacyPolicy';
-import { diplomaticWeights } from '@/game/engine/diplomacy/DiplomaticWeights';
-import { createOpinion } from '@/game/engine/diplomacy/DiplomaticOpinion';
-import { DiplomacyManager } from '@/game/engine/DiplomacyManager';
-import { AIManager } from '@/game/engine/AI/AIManager';
-import { EARLY_TECH_EXCHANGE_MAX_ROUND } from '@/data/GameConstants';
+} from '@shared/game/engine/diplomacy/AIDiplomacyPolicy';
+import { diplomaticWeights } from '@shared/game/engine/diplomacy/DiplomaticWeights';
+import { createOpinion } from '@shared/game/engine/diplomacy/DiplomaticOpinion';
+import { DiplomacyManager } from '@shared/game/engine/DiplomacyManager';
+import { AIManager } from '@shared/game/engine/AI/AIManager';
+import { EARLY_TECH_EXCHANGE_MAX_ROUND } from '@shared/data/GameConstants';
 
 // ── Policy: the window guarantees the exchange toward a human ──────────────
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
+import GameEngine from '@shared/game/engine/GameEngine';
 
 /**
  * City naming (Civ1): cities are named ONE AFTER ANOTHER from the civilization's

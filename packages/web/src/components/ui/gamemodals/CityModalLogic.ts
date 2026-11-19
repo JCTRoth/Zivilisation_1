@@ -1,10 +1,10 @@
 /// <reference types="vite/client" />
 
 import { ModalUtils } from './ModalUtils';
-import {CityUtils} from "@/utils/CityUtils";
-import { FISHER_BOAT_STORAGE, fisherCatchValue, fisherFoodPerFish } from '@/data/UnitConstants';
-import type { City, Civilization, ProductionItem, TradeRoute, Unit } from '../../../../types/game';
-import GameEngine from '@/game/engine/GameEngine';
+import {CityUtils} from "@shared/utils/CityUtils";
+import { FISHER_BOAT_STORAGE, fisherCatchValue, fisherFoodPerFish } from '@shared/data/UnitConstants';
+import type { City, Civilization, ProductionItem, TradeRoute, Unit } from '@shared/types/game';
+import GameEngine from '@shared/game/engine/GameEngine';
 
 export class CityModalLogic {
   private readonly city: City;

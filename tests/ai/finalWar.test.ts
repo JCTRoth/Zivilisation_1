@@ -11,15 +11,15 @@
  * half that switches the civ over to the navy pipeline.
  */
 import { describe, it, expect } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { SquareGrid } from '@/game/SquareGrid';
-import { DiplomacyManager } from '@/game/engine/DiplomacyManager';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { SquareGrid } from '@shared/game/SquareGrid';
+import { DiplomacyManager } from '@shared/game/engine/DiplomacyManager';
 import {
   chooseFinalWarTarget,
   shouldDeclareFinalWar,
   type FinalWarCandidate,
-} from '@/game/engine/AI/AIFinalWar';
-import type { City, Unit } from '../../types/game';
+} from '@shared/game/engine/AI/AIFinalWar';
+import type { City, Unit } from '@shared/types/game';
 
 const O = 'ocean';
 const G = 'grassland';

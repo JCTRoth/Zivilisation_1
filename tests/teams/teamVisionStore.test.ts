@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useGameStore } from '@/stores/GameStore';
-import type { Unit } from '../../types/game';
+import type { Unit } from '@shared/types/game';
 
 /**
  * The UI fog (`GameStore.updateVisibility`) is what the player actually sees.

@@ -10,9 +10,9 @@
  *  - the first AI city's initial production is a settler.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { AutoProduction } from '@/game/engine/AutoProduction';
-import { getCivProductionProfile } from '@/game/engine/AI/AITypes';
-import GameEngine from '@/game/engine/GameEngine';
+import { AutoProduction } from '@shared/game/engine/AutoProduction';
+import { getCivProductionProfile } from '@shared/game/engine/AI/AITypes';
+import GameEngine from '@shared/game/engine/GameEngine';
 
 type MockProfile = 'military_expansion' | 'science_focus' | 'balanced_growth' | 'defensive_turtle' | 'wonder_rush' | 'early_expansion';
 

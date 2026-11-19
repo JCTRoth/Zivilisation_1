@@ -14,7 +14,7 @@
  * assertion needs a map big enough for the empire to grow and is slow.
  */
 import { describe, it, expect } from 'vitest';
-import type { Unit } from '../../types/game';
+import type { Unit } from '@shared/types/game';
 import { makeEngine } from '../helpers/world';
 
 const SEED = 4242;

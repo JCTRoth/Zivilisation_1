@@ -23,21 +23,21 @@
  * The minimap is rendered separately by MiniMapRenderer.
  */
 
-import { Constants } from '@/utils/Constants';
-import { TILE_SIZE, TERRAIN_TYPES } from '@/data/TerrainData';
-import { TERRAIN_RESOURCES, TERRAIN_PROPERTIES, getResourceYields, RESOURCE_GLYPHS } from '@/data/TerrainConstants';
-import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES, ImprovementDisplayConfig } from '@/data/TileImprovementConstants';
-import { UNIT_PROPERTIES } from '@/data/UnitConstants';
-import { NOMAD_CAMP_MARKS, NOMAD_CIV_ID } from '@/data/NomadConstants';
-import { SPECIALIST_YIELDS } from '@/data/GameConstants';
-import { getUnitIcon } from '@/utils/UnitIconLoader';
-import { TERRAIN_FONT_FAMILY } from '@/utils/TerrainFont';
-import { MathUtils } from '@/utils/MathUtils';
-import { computeTurnMarkers, type TileLookup } from '@/utils/MovementPreview';
-import { UNIT_RANK, UNIT_RANK_INFO, getUnitRank } from '../engine/UnitRankSystem';
-import { AI_TARGET_TTL_MS, type AiTargetMarker } from '@/utils/DevOverlayState';
-import { t } from '@/i18n';
-import type { MapState, CameraState, Unit, City, GameState, Civilization, CombatAnimation, MovementAnimation, PromotionEffect, SpecialistType, TurnMarker, ForgeOfWarPlan, DevOverlayFlags, AiWarPlan } from '../../../types/game';
+import { Constants } from '@shared/utils/Constants';
+import { TILE_SIZE, TERRAIN_TYPES } from '@shared/data/TerrainData';
+import { TERRAIN_RESOURCES, TERRAIN_PROPERTIES, getResourceYields, RESOURCE_GLYPHS } from '@shared/data/TerrainConstants';
+import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES, ImprovementDisplayConfig } from '@shared/data/TileImprovementConstants';
+import { UNIT_PROPERTIES } from '@shared/data/UnitConstants';
+import { NOMAD_CAMP_MARKS, NOMAD_CIV_ID } from '@shared/data/NomadConstants';
+import { SPECIALIST_YIELDS } from '@shared/data/GameConstants';
+import { getUnitIcon } from '../../utils/UnitIconLoader';
+import { TERRAIN_FONT_FAMILY } from '../../utils/TerrainFont';
+import { MathUtils } from '@shared/utils/MathUtils';
+import { computeTurnMarkers, type TileLookup } from '@shared/utils/MovementPreview';
+import { UNIT_RANK, UNIT_RANK_INFO, getUnitRank } from '@shared/game/engine/UnitRankSystem';
+import { AI_TARGET_TTL_MS, type AiTargetMarker } from '../../utils/DevOverlayState';
+import { t } from '@shared/i18n/index';
+import type { MapState, CameraState, Unit, City, GameState, Civilization, CombatAnimation, MovementAnimation, PromotionEffect, SpecialistType, TurnMarker, ForgeOfWarPlan, DevOverlayFlags, AiWarPlan } from '@shared/types/game';
 import { TerrainTextureManager } from './TerrainTextureManager';
 
 /**

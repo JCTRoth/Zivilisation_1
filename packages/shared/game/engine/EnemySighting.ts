@@ -1,6 +1,6 @@
-import { useGameStore } from '../../stores/GameStore';
 import { HUMAN_PLAYER_ID } from '../../utils/PlayerConstants';
-import type { Unit } from '../../../types/game';
+import type { Unit } from '../../types/game';
+import type { GameRuntime } from '../../ports/runtime';
 
 /**
  * Fog-of-war "new sighting" detection.
@@ -11,25 +11,25 @@ import type { Unit } from '../../../types/game';
  *
  * Only *newly* visible enemies count: an enemy that was already on screen
  * (e.g. the path is running past a known enemy) must not cancel the order.
+ *
+ * Visibility comes from the injected runtime port: the browser reads the
+ * Zustand projection, the server/headless runtime reports nothing (so no GoTo
+ * path is ever interrupted on a headless simulation).
  */
 
 /** Ids of every enemy unit currently standing on a tile the human can see. */
-export function getVisibleEnemyUnitIds(): Set<string> {
-  const state = useGameStore.getState();
-  const units = state.units ?? [];
-  const map = state.map;
+export function getVisibleEnemyUnitIds(runtime: GameRuntime): Set<string> {
+  const { units, width, visibility, devMode } = runtime.visibility();
   const visible = new Set<string>();
 
   if (!units.length) return visible;
-  const width = map?.width ?? 0;
-  const devMode = !!state.settings?.devMode;
   if (!width && !devMode) return visible;
 
   for (const unit of units) {
     if (unit.civilizationId === HUMAN_PLAYER_ID) continue;
     if (unit.isDefeated) continue;
     const index = unit.row * width + unit.col;
-    if (devMode || (width > 0 && map?.visibility?.[index])) {
+    if (devMode || (width > 0 && visibility[index])) {
       visible.add(unit.id);
     }
   }
@@ -37,12 +37,12 @@ export function getVisibleEnemyUnitIds(): Set<string> {
 }
 
 /** Enemy units visible now that were not visible in `previous`. */
-export function findNewlySightedEnemies(previous: Set<string>): Unit[] {
-  const state = useGameStore.getState();
+export function findNewlySightedEnemies(previous: Set<string>, runtime: GameRuntime): Unit[] {
+  const { units } = runtime.visibility();
   const newly: Unit[] = [];
-  for (const id of getVisibleEnemyUnitIds()) {
+  for (const id of getVisibleEnemyUnitIds(runtime)) {
     if (previous.has(id)) continue;
-    const unit = state.units?.find((u) => u.id === id);
+    const unit = units.find((u) => u.id === id);
     if (unit) newly.push(unit);
   }
   return newly;

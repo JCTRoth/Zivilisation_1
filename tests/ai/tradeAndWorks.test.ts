@@ -12,11 +12,11 @@
  *    the era's improvement budget still has room.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { CaravanGovernor } from '@/game/engine/AI/CaravanGovernor';
-import { SquareGrid } from '@/game/SquareGrid';
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
-import type { City, Unit } from '../../types/game';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { CaravanGovernor } from '@shared/game/engine/AI/CaravanGovernor';
+import { SquareGrid } from '@shared/game/SquareGrid';
+import { TERRAIN_TYPES } from '@shared/data/TerrainConstants';
+import type { City, Unit } from '@shared/types/game';
 
 const G = TERRAIN_TYPES.GRASSLAND;
 

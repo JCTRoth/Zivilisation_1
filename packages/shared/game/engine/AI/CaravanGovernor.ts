@@ -1,5 +1,5 @@
 // Canonical data shapes live in `types/game`, like every other AI module here.
-import type { City, Unit } from '../../../../types/game';
+import type { City, Unit } from '../../../types/game';
 import type { MapTile } from '../GameEngine';
 import { Pathfinding } from '../Pathfinding';
 import { CaravanMemory } from './CaravanMemory';

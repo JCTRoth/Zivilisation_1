@@ -8,9 +8,9 @@
  *  - Buildings/wonders that were missing tech requirements have them now.
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { UNIT_PROPERTIES } from '@/data/UnitConstants';
-import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { UNIT_PROPERTIES } from '@shared/data/UnitConstants';
+import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '@shared/data/BuildingConstants';
 
 describe('production tech-gating', () => {
   let engine: GameEngine | null = null;

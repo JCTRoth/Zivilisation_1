@@ -14,10 +14,10 @@
  *     are a direct threat to the city and attacks still going on there.
  */
 import { describe, it, expect } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { SquareGrid } from '@/game/SquareGrid';
-import { DiplomacyManager } from '@/game/engine/DiplomacyManager';
-import type { City, Unit } from '../../types/game';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { SquareGrid } from '@shared/game/SquareGrid';
+import { DiplomacyManager } from '@shared/game/engine/DiplomacyManager';
+import type { City, Unit } from '@shared/types/game';
 
 const G = 'grassland';
 const R = 'river';

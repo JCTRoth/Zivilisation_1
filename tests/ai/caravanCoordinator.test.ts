@@ -6,9 +6,9 @@ import { describe, it, expect } from 'vitest';
 import {
   planCaravansForCiv,
   type CaravanCoordinatorWorld,
-} from '@/game/engine/AI/CaravanCoordinator';
-import { MAX_TRADE_ROUTES } from '@/game/engine/GameEngine';
-import { AIManager } from '@/game/engine/AI/AIManager';
+} from '@shared/game/engine/AI/CaravanCoordinator';
+import { MAX_TRADE_ROUTES } from '@shared/game/engine/GameEngine';
+import { AIManager } from '@shared/game/engine/AI/AIManager';
 
 type City = {
   id: string;

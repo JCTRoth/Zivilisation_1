@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { Modal } from 'react-bootstrap';
 import { OverlayTrigger, Tooltip } from 'react-bootstrap';
-import { useGameStore } from '@/stores/GameStore';
-import { useTranslation } from '@/i18n/useTranslation';
-import { tTechName, tWonderName } from '@/i18n/dataNames';
-import { localizedWonder } from '@/i18n/wonderLore';
-import { centerCameraOnTile, getGameViewport } from '@/utils/CameraUtils';
+import { useGameStore } from '../../../stores/GameStore';
+import { useTranslation } from '../../../i18n/useTranslation';
+import { tTechName, tWonderName } from '@shared/i18n/dataNames';
+import { localizedWonder } from '@shared/i18n/wonderLore';
+import { centerCameraOnTile, getGameViewport } from '../../../utils/CameraUtils';
 import {
   WONDERS,
   WONDER_GROUPS,
@@ -16,11 +16,11 @@ import {
   type WonderDefinition,
   type WonderEra,
   type WonderStatus,
-} from '@/data/WonderData';
+} from '@shared/data/WonderData';
 import { WonderCreditFor } from './WonderArtwork';
 import GameModal from './ModalShell';
-import { translateDynamic, type TranslationKey, type TranslationParams } from '@/i18n';
-import '@/styles/wonders.css';
+import { translateDynamic, type TranslationKey, type TranslationParams } from '@shared/i18n/index';
+import '../../../styles/wonders.css';
 
 /**
  * Translate a `wonders.*` key. The keys reach the i18n dictionaries through

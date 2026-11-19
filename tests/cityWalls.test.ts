@@ -1,8 +1,8 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
+import GameEngine from '@shared/game/engine/GameEngine';
 import { MapRenderer } from '@/game/rendering/MapRenderer';
-import { BUILDING_PROPERTIES } from '@/data/BuildingConstants';
-import type { City } from '../types/game';
+import { BUILDING_PROPERTIES } from '@shared/data/BuildingConstants';
+import type { City } from '@shared/types/game';
 
 /**
  * City Walls (Civ1).

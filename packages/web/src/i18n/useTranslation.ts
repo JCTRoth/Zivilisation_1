@@ -16,8 +16,8 @@ import {
   setLanguage,
   subscribeLanguage,
   t,
-} from './index';
-import { DEFAULT_LANGUAGE, LANGUAGES, getLanguageDefinition, type LanguageDefinition, type LanguageId } from './languages';
+} from '@shared/i18n/index';
+import { DEFAULT_LANGUAGE, LANGUAGES, getLanguageDefinition, type LanguageDefinition, type LanguageId } from '@shared/i18n/languages';
 
 export interface UseTranslationResult {
   /** Translate a key in the active language: `t('menu.settings')`. */

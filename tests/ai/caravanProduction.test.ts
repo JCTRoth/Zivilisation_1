@@ -19,9 +19,9 @@
  *     caravans, so the plan has to exist before that question is asked.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { AutoProduction } from '@/game/engine/AutoProduction';
-import type GameEngine from '@/game/engine/GameEngine';
-import { MAX_CARAVANS_PER_CITY, MAX_CARAVAN_TRADE_ROUTES } from '@/data/GameConstants';
+import { AutoProduction } from '@shared/game/engine/AutoProduction';
+import type GameEngine from '@shared/game/engine/GameEngine';
+import { MAX_CARAVANS_PER_CITY, MAX_CARAVAN_TRADE_ROUTES } from '@shared/data/GameConstants';
 
 /**
  * A two-city civ with the trade tech and empty route slots — everything a

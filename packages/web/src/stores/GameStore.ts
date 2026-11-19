@@ -1,21 +1,21 @@
 /// <reference types="vite/client" />
 
 import { create } from 'zustand';
-import { Constants } from '../utils/Constants';
-import { SquareGrid } from '../game/SquareGrid';
-import { UNIT_TYPES } from '../data/GameData';
-import { UNIT_PROPERTIES } from '../data/UnitConstants';
+import { Constants } from '@shared/utils/Constants';
+import { SquareGrid } from '@shared/game/SquareGrid';
+import { UNIT_TYPES } from '@shared/data/GameData';
+import { UNIT_PROPERTIES } from '@shared/data/UnitConstants';
 import {
   clampGameSpeedStep,
   fasterGameSpeedStep,
   slowerGameSpeedStep,
-} from '../data/GameConstants';
+} from '@shared/data/GameConstants';
 import { beginCameraGlide } from '../game/rendering/CameraGlideGate';
 import { MIN_ZOOM, MAX_ZOOM, clampZoom, centerCameraOnTile, getGameViewport, nudgeCameraToKeepPointInView } from '../utils/CameraUtils';
 import { BLACK_COVERAGE_REFOCUS_THRESHOLD, computeViewportBlackCoverage } from '../utils/ViewportBlackCoverage';
-import { TILE_SIZE } from '../data/TerrainData';
-import { getLanguage, setLanguage } from '../i18n';
-import type { GameStoreState, GameState, MapState, CameraState, UIState, GameResult, City } from '../../types/game';
+import { TILE_SIZE } from '@shared/data/TerrainData';
+import { getLanguage, setLanguage } from '@shared/i18n/index';
+import type { GameStoreState, GameState, MapState, CameraState, UIState, GameResult, City } from '@shared/types/game';
 
 /**
  * Edge-follow switch cooldown: while a unit is being followed, the camera is

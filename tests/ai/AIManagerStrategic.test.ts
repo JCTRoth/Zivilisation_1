@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { AIManager } from '@/game/engine/AI/AIManager';
-import type { EnemyLocation } from '@/game/engine/EnemySearcher';
+import { AIManager } from '@shared/game/engine/AI/AIManager';
+import type { EnemyLocation } from '@shared/game/engine/EnemySearcher';
 
 const createMockEngine = () => {
   const storage = {

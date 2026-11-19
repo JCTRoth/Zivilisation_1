@@ -40,8 +40,8 @@
  * score a marginal value of zero, which is the honest answer.
  */
 
-import { BUILDING_PROPERTIES } from '@/data/BuildingConstants';
-import type { City, Civilization } from '../../../../types/game';
+import { BUILDING_PROPERTIES } from '../../../data/BuildingConstants';
+import type { City, Civilization } from '../../../types/game';
 import { BEAKER_GOLD_EQUIVALENT, MIN_DISORDER_CITY_WORTH } from './BuildingEconomics';
 
 /**

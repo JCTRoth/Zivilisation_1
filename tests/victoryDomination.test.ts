@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { VictoryManager } from '@/game/engine/VictoryManager';
-import type { Civilization, GameActions } from '@/../types/game';
+import { VictoryManager } from '@shared/game/engine/VictoryManager';
+import type { Civilization, GameActions } from '@shared/types/game';
 
 /**
  * VICTORY — ONLY WON WHEN ALL ENEMY UNITS ARE DESTROYED

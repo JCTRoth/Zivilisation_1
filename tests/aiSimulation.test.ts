@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { EnemySearcher } from '@/game/engine/EnemySearcher';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { EnemySearcher } from '@shared/game/engine/EnemySearcher';
 
 /**
  * Headless AI simulation test.

@@ -16,14 +16,14 @@
  *    disaster never razes a city and never touches a unit.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import type { City, Unit } from '../types/game';
-import type GameEngine from '@/game/engine/GameEngine';
+import type { City, Unit } from '@shared/types/game';
+import type GameEngine from '@shared/game/engine/GameEngine';
 import {
   DISASTER_CHANCE_PER_CITY_TURN,
   DISASTER_CHECK_ORDER,
   DISASTER_POPULATION_SHARE,
   PIRATE_GOLD_FLOOR,
-} from '@/game/engine/DisasterManager';
+} from '@shared/game/engine/DisasterManager';
 import { checkInvariants, makeEngine, makeGridEngine } from './helpers/world';
 
 // ── Fixtures ───────────────────────────────────────────────────────────────

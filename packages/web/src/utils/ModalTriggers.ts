@@ -5,7 +5,7 @@
  * be unit-tested without a DOM. App keeps the side effects (notification, ref
  * guards, opening the dialog); these functions only answer the question.
  */
-import { AUTO_END_TURN_OFFER_TURN } from '@/data/GameConstants';
+import { AUTO_END_TURN_OFFER_TURN } from '@shared/data/GameConstants';
 
 /** Keep an App-owned end-turn prompt behind dialogs managed by the game store. */
 export function shouldShowEndTurnConfirmation(

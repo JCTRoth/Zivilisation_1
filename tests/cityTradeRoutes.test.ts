@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { CityUtils } from '@/utils/CityUtils';
+import { CityUtils } from '@shared/utils/CityUtils';
 import { CityModalLogic } from '@/components/ui/gamemodals/CityModalLogic';
-import type { City, Civilization, TradeRoute } from '../types/game';
+import type { City, Civilization, TradeRoute } from '@shared/types/game';
 
 /**
  * The city menu shows the city's permanent trade routes and the per-turn trade

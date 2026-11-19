@@ -16,10 +16,10 @@
  *     that is answered puts the ally in the war beside its partner.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { DiplomacyManager } from '@/game/engine/DiplomacyManager';
-import { evaluateProposal } from '@/game/engine/diplomacy/ProposalScoring';
-import { scoreCandidates } from '@/game/engine/diplomacy/AIDiplomacyPolicy';
-import { goldPayerFor } from '@/game/engine/DiplomacyTypes';
+import { DiplomacyManager } from '@shared/game/engine/DiplomacyManager';
+import { evaluateProposal } from '@shared/game/engine/diplomacy/ProposalScoring';
+import { scoreCandidates } from '@shared/game/engine/diplomacy/AIDiplomacyPolicy';
+import { goldPayerFor } from '@shared/game/engine/DiplomacyTypes';
 
 function createMockGameEngine(overrides: Record<string, unknown> = {}): any {
   return {

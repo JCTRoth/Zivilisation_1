@@ -16,8 +16,8 @@ import {
   tradeMargin,
   wouldProposeExchange,
   type TechTradeContext,
-} from '@/game/engine/diplomacy/TechTradeEvaluator';
-import type { DiplomaticWeights } from '@/game/engine/diplomacy/DiplomaticWeights';
+} from '@shared/game/engine/diplomacy/TechTradeEvaluator';
+import type { DiplomaticWeights } from '@shared/game/engine/diplomacy/DiplomaticWeights';
 
 const NEUTRAL: DiplomaticWeights = {
   hostility: 5, warmongering: 5, trustSensitivity: 5, greed: 5,

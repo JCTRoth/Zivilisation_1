@@ -2,11 +2,11 @@
  * Production Manager - Handles city production, purchasing, and queuing
  */
 
-import { UNIT_PROPERTIES } from '@/data/UnitConstants';
-import { PURCHASE_GOLD_PER_SHIELD } from '@/data/GameConstants';
-import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
-import { getWonder, isWonderId } from '@/data/WonderData';
-import type { City, Civilization, Unit } from '../../../types/game';
+import { UNIT_PROPERTIES } from '../../data/UnitConstants';
+import { PURCHASE_GOLD_PER_SHIELD } from '../../data/GameConstants';
+import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '../../data/BuildingConstants';
+import { getWonder, isWonderId } from '../../data/WonderData';
+import type { City, Civilization, Unit } from '../../types/game';
 import GameEngine from './GameEngine';
 import { debugLog } from '../../utils/DevLog';
 

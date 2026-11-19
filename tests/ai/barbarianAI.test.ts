@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BarbarianManager } from '@/game/engine/BarbarianManager';
+import { BarbarianManager } from '@shared/game/engine/BarbarianManager';
 
 /**
  * Barbarian AI regression tests. Barbarians start as the phantom civ (−1):

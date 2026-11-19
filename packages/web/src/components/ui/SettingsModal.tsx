@@ -1,7 +1,7 @@
 import { Form } from "react-bootstrap";
-import { useGameStore } from "@/stores/GameStore";
-import { useTranslation } from "@/i18n/useTranslation";
-import type { LanguageId } from "@/i18n/languages";
+import { useGameStore } from "../../stores/GameStore";
+import { useTranslation } from "../../i18n/useTranslation";
+import type { LanguageId } from "@shared/i18n/languages";
 import GameModal from "./gamemodals/ModalShell";
 import LanguageSwitcher from "./LanguageSwitcher";
 import "../../styles/settingsModal.css";

@@ -12,8 +12,8 @@
  * lift which passenger.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { UNIT_PROPS } from '@/utils/Constants';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { UNIT_PROPS } from '@shared/utils/Constants';
 
 describe('a carrier carries aircraft, a transport carries troops', () => {
   let engine: GameEngine;

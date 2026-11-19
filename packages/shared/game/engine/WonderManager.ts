@@ -13,7 +13,7 @@
  */
 
 import type GameEngine from './GameEngine';
-import type { City, Civilization } from '../../../types/game';
+import type { City, Civilization } from '../../types/game';
 import {
   getWonder,
   isWonderId,
@@ -23,7 +23,7 @@ import {
   wondersInCity,
   WONDERS,
   type WonderDefinition,
-} from '@/data/WonderData';
+} from '../../data/WonderData';
 
 export class WonderManager {
   constructor(private readonly gameEngine: GameEngine) {}

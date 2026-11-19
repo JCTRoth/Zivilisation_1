@@ -11,8 +11,8 @@
  * units-per-game from 9.7 to 22.3 and cities-per-game from 7.8 to 9.5.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { AutoProduction } from '@/game/engine/AutoProduction';
-import type { City, Unit } from '../../types/game';
+import { AutoProduction } from '@shared/game/engine/AutoProduction';
+import type { City, Unit } from '@shared/types/game';
 
 /** Minimal engine: one AI civ, one city of the given size, no units. */
 function makeEngine(population: number, opts: { isAI?: boolean; withSettler?: boolean; otherCities?: number; withScouts?: number } = {}) {

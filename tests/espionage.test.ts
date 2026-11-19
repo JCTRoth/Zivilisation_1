@@ -12,9 +12,9 @@
  * The detection rolls are seeded, so every branch here is deterministic.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { DiplomacyManager } from '@/game/engine/DiplomacyManager';
-import { scoreCandidates } from '@/game/engine/diplomacy/AIDiplomacyPolicy';
-import type { City } from '../types/game';
+import { DiplomacyManager } from '@shared/game/engine/DiplomacyManager';
+import { scoreCandidates } from '@shared/game/engine/diplomacy/AIDiplomacyPolicy';
+import type { City } from '@shared/types/game';
 
 function createMockGameEngine(overrides: Record<string, unknown> = {}): any {
   return {

@@ -21,8 +21,8 @@
  *   4. the AI path is unchanged (settlers first, scaled by city count).
  */
 import { describe, it, expect, vi } from 'vitest';
-import { AutoProduction } from '@/game/engine/AutoProduction';
-import type { Civilization, Unit } from '../../types/game';
+import { AutoProduction } from '@shared/game/engine/AutoProduction';
+import type { Civilization, Unit } from '@shared/types/game';
 
 /** A single-city world with one garrisoned city and nothing else happening. */
 const humanWorld = (opts: {

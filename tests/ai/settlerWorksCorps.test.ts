@@ -8,10 +8,10 @@
  * on the centre floor. The count now comes from `AIManager.countOutstandingWorks`.
  */
 import { describe, it, expect } from 'vitest';
-import { SettlerGovernor } from '@/game/engine/AI/SettlerGovernor';
-import GameEngine from '@/game/engine/GameEngine';
-import { SquareGrid } from '@/game/SquareGrid';
-import type { City, Unit } from '../../types/game';
+import { SettlerGovernor } from '@shared/game/engine/AI/SettlerGovernor';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { SquareGrid } from '@shared/game/SquareGrid';
+import type { City, Unit } from '@shared/types/game';
 
 const city = (over: Partial<City> = {}): City => ({
   id: 'c1', name: 'Town', civilizationId: 0, col: 5, row: 5, population: 6,

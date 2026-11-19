@@ -3,8 +3,8 @@
  * Used by the Citizens tab, the side panel and the map tooltip.
  */
 
-import type { CityGovernorMode } from '../../types/game';
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
+import type { CityGovernorMode } from '@shared/types/game';
+import { TERRAIN_TYPES } from '@shared/data/TerrainConstants';
 
 export interface GovernorOption {
   mode: CityGovernorMode;

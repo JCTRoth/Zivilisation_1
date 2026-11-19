@@ -1,6 +1,6 @@
-import GameEngine from '@/game/engine/GameEngine';
-import { HUMAN_PLAYER_ID } from '@/utils/PlayerConstants';
-import type { Command, CommandContext, CommandRejection, CommandResult } from '../../types/commands';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { HUMAN_PLAYER_ID } from '@shared/utils/PlayerConstants';
+import type { Command, CommandContext, CommandRejection, CommandResult } from '@shared/types/commands';
 
 /**
  * A game session: the transport the UI talks to instead of the engine itself.

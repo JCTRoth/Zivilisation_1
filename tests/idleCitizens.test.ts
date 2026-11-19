@@ -10,9 +10,9 @@
  * choice to make.
  */
 import { describe, it, expect } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { SquareGrid } from '@/game/SquareGrid';
-import type { City } from '../types/game';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { SquareGrid } from '@shared/game/SquareGrid';
+import type { City } from '@shared/types/game';
 
 const G = 'grassland';
 

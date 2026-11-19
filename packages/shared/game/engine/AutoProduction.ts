@@ -4,12 +4,12 @@
  * intelligent building/wonder production decisions.
  */
 
-import { UNIT_PROPS, BUILDING_PROPS, MAX_CARAVAN_TRADE_ROUTES, MAX_CARAVANS_PER_CITY } from '@/utils/Constants';
-import { PURCHASE_GOLD_PER_SHIELD, CARAVAN_THREAT_RADIUS, EARLY_TECH_EXCHANGE_MAX_ROUND } from '@/data/GameConstants';
-import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '@/data/BuildingConstants';
-import { WONDERS, wonderGroupMembers } from '@/data/WonderData';
-import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
-import { NOMAD_TRADE_ROUTE_SLOT_BONUS } from '@/data/NomadConstants';
+import { UNIT_PROPS, BUILDING_PROPS, MAX_CARAVAN_TRADE_ROUTES, MAX_CARAVANS_PER_CITY } from '../../utils/Constants';
+import { PURCHASE_GOLD_PER_SHIELD, CARAVAN_THREAT_RADIUS, EARLY_TECH_EXCHANGE_MAX_ROUND } from '../../data/GameConstants';
+import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '../../data/BuildingConstants';
+import { WONDERS, wonderGroupMembers } from '../../data/WonderData';
+import { BARBARIAN_CIV_ID } from '../../data/VillageConstants';
+import { NOMAD_TRADE_ROUTE_SLOT_BONUS } from '../../data/NomadConstants';
 import {
   assessCityThreat,
   calculateDangerThreshold,
@@ -29,7 +29,7 @@ import {
 } from './AI/AirDoctrine';
 import { Pathfinding } from './Pathfinding';
 import type { MapTile } from './GameEngine';
-import { WATER_TERRAIN_TYPES } from '@/data/TerrainConstants';
+import { WATER_TERRAIN_TYPES } from '../../data/TerrainConstants';
 
 /** OCEAN/SEA:riv-незалежний test at a coordinate (terrain-key based). */
 function waterAt(engine: { getTileAt?: (c: number, r: number) => unknown }, col: number, row: number): boolean {
@@ -101,7 +101,7 @@ type NavalDoctrineVerdict = NavalDoctrineInput & NavalDoctrineResult & {
   ownTransports: number;
   ownWarships: number;
 };
-import type { City, Civilization, Unit } from '../../../types/game';
+import type { City, Civilization, Unit } from '../../types/game';
 import GameEngine from './GameEngine';
 import { debugLog } from '../../utils/DevLog';
 
@@ -1937,7 +1937,7 @@ export class AutoProduction {
 
     const personality = civ.personality ?? { aggression: 5, diplomacy: 5, military: 5 };
     const chance = personality.diplomacy >= 7 ? 0.30 : personality.diplomacy >= 5 ? 0.15 : 0.05;
-    return Math.random() < chance;
+    return (this.gameEngine.rng ?? Math.random)() < chance;
   }
 
   /**

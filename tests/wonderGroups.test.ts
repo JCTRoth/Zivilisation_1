@@ -14,15 +14,15 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { world as wrapWorld, type TestWorld } from './helpers/world';
-import GameEngine from '@/game/engine/GameEngine';
-import { AIBuildingStrategy } from '@/game/engine/AI/AIBuildingStrategy';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { AIBuildingStrategy } from '@shared/game/engine/AI/AIBuildingStrategy';
 import {
   WONDER_GROUPS,
   computeWonderStatuses,
   wonderGroupId,
   wonderGroupMembers,
-} from '@/data/WonderData';
-import type { City, Civilization } from '../types/game';
+} from '@shared/data/WonderData';
+import type { City, Civilization } from '@shared/types/game';
 
 describe('wonder group data', () => {
   it('declares the space-station group with ISS, Tiangong and Mir', () => {

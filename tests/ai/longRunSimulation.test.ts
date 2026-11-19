@@ -15,9 +15,9 @@
  *  - nobody is stuck: no unit is skipped over and over without moving
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
-import { RESEARCH_UNLOCK_ROUND } from '@/data/GameConstants';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { BARBARIAN_CIV_ID } from '@shared/data/VillageConstants';
+import { RESEARCH_UNLOCK_ROUND } from '@shared/data/GameConstants';
 import { checkInvariants, useSeededRandom } from '../helpers/world';
 
 const TARGET_ROUNDS = 120;

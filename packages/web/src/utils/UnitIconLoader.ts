@@ -1,8 +1,8 @@
 // Unit Icon Loader - Manages loading and caching of unit SVG and emoji icons
 // Uses Noto Color Emoji font for consistent emoji rendering
 
-import { UNIT_PROPERTIES } from '@/data/UnitConstants';
-import { getUnitSvgPath } from '@/data/UnitIconConfig';
+import { UNIT_PROPERTIES } from '@shared/data/UnitConstants';
+import { getUnitSvgPath } from '@shared/data/UnitIconConfig';
 
 const iconCache = new Map<string, HTMLImageElement | string>(); // HTMLImageElement for SVG, string for emoji
 const loadingPromises = new Map<string, Promise<HTMLImageElement | string>>();

@@ -1,4 +1,4 @@
-import type { TranslationKey } from '@/i18n';
+import type { TranslationKey } from '@shared/i18n/index';
 
 /**
  * The three epic tells of a TEAM victory. The result screen picks one per

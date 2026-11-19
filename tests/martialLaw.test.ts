@@ -14,7 +14,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { makeEngine, makeGridEngine } from './helpers/world';
-import type { City, Civilization, Unit } from '../types/game';
+import type { City, Civilization, Unit } from '@shared/types/game';
 
 const G = 'grassland';
 

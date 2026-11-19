@@ -17,7 +17,7 @@
  * melt into the card's `#0b0f14` stage.
  */
 
-import type { TranslationKey } from '@/i18n';
+import type { TranslationKey } from '../i18n/index';
 
 /** One full-screen story moment. */
 export interface StoryDef {

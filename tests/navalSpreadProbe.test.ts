@@ -2,8 +2,8 @@
  * Probe: naval map behaviour — cities founded, hulls built, caravans built.
  */
 import { describe, it, afterEach, vi } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { BARBARIAN_CIV_ID } from '@shared/data/VillageConstants';
 import { useSeededRandom } from './helpers/world';
 
 describe('probe: naval map', () => {

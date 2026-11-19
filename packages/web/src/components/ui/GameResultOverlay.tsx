@@ -1,16 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import GameModal from '@/components/ui/gamemodals/ModalShell';
-import { useGameStore } from '@/stores/GameStore';
-import { GameUtils } from '@/utils/GameUtils';
-import { WONDER_PROPERTIES } from '@/data/BuildingConstants';
-import { useTranslation } from '@/i18n/useTranslation';
+import GameModal from './gamemodals/ModalShell';
+import { useGameStore } from '../../stores/GameStore';
+import { GameUtils } from '../../utils/GameUtils';
+import { WONDER_PROPERTIES } from '@shared/data/BuildingConstants';
+import { useTranslation } from '../../i18n/useTranslation';
 // The `result.*` keys ship as fragments (.i18n-frags/result.*.txt) and are
 // merged into the dictionaries separately — the key casts below are type-only
 // (no runtime effect) until that merge lands.
-import type { TranslationKey } from '@/i18n';
-import type { GameResult } from '../../../types/game';
-import { teamVictoryLedeKey } from '@/utils/resultNarrative';
-import '@/styles/gameResultOverlay.css';
+import type { TranslationKey } from '@shared/i18n/index';
+import type { GameResult } from '@shared/types/game';
+import { teamVictoryLedeKey } from '../../utils/resultNarrative';
+import '../../styles/gameResultOverlay.css';
 
 type GameResultOverlayProps = {
   result: GameResult | null;

@@ -4,11 +4,11 @@
  * late-game turns end in a mushroom cloud.
  */
 import { describe, it, expect } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { SquareGrid } from '@/game/SquareGrid';
-import { DiplomacyManager } from '@/game/engine/DiplomacyManager';
-import { AIResearch } from '@/game/engine/AI/AIResearch';
-import type { City, Unit } from '../../types/game';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { SquareGrid } from '@shared/game/SquareGrid';
+import { DiplomacyManager } from '@shared/game/engine/DiplomacyManager';
+import { AIResearch } from '@shared/game/engine/AI/AIResearch';
+import type { City, Unit } from '@shared/types/game';
 
 const G = 'grassland';
 const O = 'ocean';
@@ -288,7 +288,7 @@ describe('endgame research', () => {  const personality = { aggression: 7, expan
 
 describe('total-war gold spending', () => {
   it('rushes attackers on the anvil, not just defenders', async () => {
-    const { default: GameEngine } = await import('@/game/engine/GameEngine');
+    const { default: GameEngine } = await import('@shared/game/engine/GameEngine');
     const engine = new GameEngine(null);
     (engine as unknown as { sleep: () => Promise<void> }).sleep = () => Promise.resolve();
     await engine.initialize({

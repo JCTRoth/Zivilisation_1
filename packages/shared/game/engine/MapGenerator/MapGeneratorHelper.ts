@@ -8,7 +8,7 @@
  * what is handed to them.
  */
 
-import { TERRAIN_TYPES, TERRAIN_RESOURCES, RESOURCE_SPAWN_CHANCE, DEFAULT_RESOURCE_SPAWN_CHANCE, COASTAL_FISH_BONUS_CHANCE } from '@/data/TerrainConstants';
+import { TERRAIN_TYPES, TERRAIN_RESOURCES, RESOURCE_SPAWN_CHANCE, DEFAULT_RESOURCE_SPAWN_CHANCE, COASTAL_FISH_BONUS_CHANCE } from '../../../data/TerrainConstants';
 
 // ── Shared types ────────────────────────────────────────────────────────
 

@@ -16,7 +16,7 @@ import {
   AI_TURN_TIMEOUT_MAX_MS,
   AI_TURN_TIMEOUT_MS,
   AI_TURN_TIMEOUT_REFERENCE_TILES,
-} from '@/data/GameConstants';
+} from '@shared/data/GameConstants';
 import { shouldOfferAutoEndTurn } from '@/utils/ModalTriggers';
 
 const AUTO = ['AI_VS_AI', 'AI_VS_AI_SMALL', 'AI_VS_AI_NAVAL'];

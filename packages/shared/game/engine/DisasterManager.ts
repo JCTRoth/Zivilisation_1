@@ -49,7 +49,7 @@
 import { BUILDING_TYPES } from '../../data/BuildingConstants';
 import { TERRAIN_TYPES } from '../../data/TerrainConstants';
 import { isWonderId } from '../../data/WonderData';
-import type { City, Civilization } from '../../../types/game';
+import type { City, Civilization } from '../../types/game';
 import type GameEngine from './GameEngine';
 import { isPalaceBuilding, storedBuildingId } from './BuildingEffects';
 
@@ -146,8 +146,14 @@ export class DisasterManager {
     // A private stream: production never touches the global Math.random, so
     // seeded AI tests (which pin Math.random) are not perturbed by disasters
     // running during turn processing. Tests drive outcomes by replacing
-    // `this.random`.
-    let a = (Date.now() ^ 0x9e3779b9) >>> 0;
+    // `this.random`. When the lobby pins a seed the engine reseeds this stream
+    // in initialize(), so disasters replay identically on a server too.
+    this.reseed(gameEngine.gameSettings?.rngSeed ?? Date.now());
+  }
+
+  /** Pin the private stream from the lobby seed (called by engine.initialize). */
+  reseed(seed: number): void {
+    let a = (seed ^ 0x9e3779b9) >>> 0;
     this.random = () => {
       a = (a + 0x6d2b79f5) >>> 0;
       let t = a;

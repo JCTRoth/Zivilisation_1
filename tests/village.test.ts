@@ -3,7 +3,7 @@
  * five equal-weight outcomes.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
+import GameEngine from '@shared/game/engine/GameEngine';
 import {
   BARBARIAN_CIV_ID,
   AI_VILLAGE_EARLY_GAME_FACTOR,
@@ -11,8 +11,8 @@ import {
   calculateVillageTakeChance,
   villageDecisionRoll,
   villageEarlyGameFactor,
-} from '@/data/VillageConstants';
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
+} from '@shared/data/VillageConstants';
+import { TERRAIN_TYPES } from '@shared/data/TerrainConstants';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyTile = any;

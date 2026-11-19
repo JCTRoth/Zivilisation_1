@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { RESEARCH_UNLOCK_ROUND } from '@/data/GameConstants';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { RESEARCH_UNLOCK_ROUND } from '@shared/data/GameConstants';
 import { EngineEventRouter } from '@/utils/EngineEventHandlers';
 import { useGameStore } from '@/stores/GameStore';
 

@@ -54,7 +54,7 @@ import {
   type PolicyContext,
 } from './diplomacy/AIDiplomacyPolicy';
 import { wouldProposeExchange, type TechTradeContext } from './diplomacy/TechTradeEvaluator';
-import type { Unit, City } from '../../../types/game';
+import type { Unit, City } from '../../types/game';
 import GameEngine from './GameEngine';
 import { debugLog } from '../../utils/DevLog';
 import { TECHNOLOGIES_DATA } from '../../data/TechnologyData';
@@ -1864,7 +1864,7 @@ export class DiplomacyManager {
       );
     }
 
-    const techId = pool[Math.floor(Math.random() * pool.length)];
+    const techId = pool[Math.floor((this.gameEngine.rng ?? Math.random)() * pool.length)];
     // The victim finds out anyway: a stolen secret is discovered eventually,
     // and Civ I makes that discovery immediate.
     const warDeclared = this.blowCover(diplomatCivId, targetCivId, 'technology_stolen', `stole ${techId}`);
@@ -3047,7 +3047,7 @@ export class DiplomacyManager {
   ): DiplomacyProposal | null {
     // Only counter sometimes — hostile civs rarely counter
     const counterChance = attitude === 'friendly' ? 60 : attitude === 'neutral' ? 40 : attitude === 'annoyed' ? 20 : 5;
-    if (Math.random() * 100 >= counterChance) return null;
+    if ((this.gameEngine.rng ?? Math.random)() * 100 >= counterChance) return null;
 
     switch (originalAction) {
       case 'propose_alliance':

@@ -14,14 +14,14 @@
  */
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { makeEngine, type TestWorld } from './helpers/world';
-import { UNIT_TYPES } from '@/data/UnitConstants';
-import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
+import { UNIT_TYPES } from '@shared/data/UnitConstants';
+import { BARBARIAN_CIV_ID } from '@shared/data/VillageConstants';
 import {
   NOMAD_CIV_ID,
   NOMAD_MONEY_REQUEST_AMOUNT,
   NOMAD_ROUTE_INCOME_BASE,
   NOMAD_SPAWN_UNITS,
-} from '@/data/NomadConstants';
+} from '@shared/data/NomadConstants';
 
 type Engine = TestWorld['engine'];
 

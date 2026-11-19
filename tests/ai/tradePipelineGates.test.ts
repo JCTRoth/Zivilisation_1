@@ -14,14 +14,14 @@
  *                  every tile in every radius.
  */
 import { describe, it, expect } from 'vitest';
-import { UNIT_PROPS } from '@/utils/Constants';
-import { CombatSystem } from '@/game/engine/CombatSystem';
-import { caravanRelevanceForCiv } from '@/game/engine/AI/CaravanEconomics';
-import { SettlerGovernor } from '@/game/engine/AI/SettlerGovernor';
-import type { City, Unit } from '../../types/game';
-import GameEngine from '@/game/engine/GameEngine';
-import { AutoProduction } from '@/game/engine/AutoProduction';
-import { SquareGrid } from '@/game/SquareGrid';
+import { UNIT_PROPS } from '@shared/utils/Constants';
+import { CombatSystem } from '@shared/game/engine/CombatSystem';
+import { caravanRelevanceForCiv } from '@shared/game/engine/AI/CaravanEconomics';
+import { SettlerGovernor } from '@shared/game/engine/AI/SettlerGovernor';
+import type { City, Unit } from '@shared/types/game';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { AutoProduction } from '@shared/game/engine/AutoProduction';
+import { SquareGrid } from '@shared/game/SquareGrid';
 
 // ── G1: research ───────────────────────────────────────────────────────────
 

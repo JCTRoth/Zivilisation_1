@@ -13,15 +13,15 @@
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { makeEngine } from './helpers/world';
-import { UNIT_TYPES } from '@/data/UnitConstants';
+import { UNIT_TYPES } from '@shared/data/UnitConstants';
 import {
   NOMAD_CAMP_FOOD_COST,
   NOMAD_CIV_ID,
   NOMAD_REFUSAL_PRICE_PENALTY,
   NOMAD_SETTLEMENT_FOOD_COST,
   NOMAD_TRIGGER_ROUND,
-} from '@/data/NomadConstants';
-import { MAX_TRADE_ROUTES } from '@/game/engine/GameEngine';
+} from '@shared/data/NomadConstants';
+import { MAX_TRADE_ROUTES } from '@shared/game/engine/GameEngine';
 
 type Engine = Awaited<ReturnType<typeof makeEngine>>['engine'];
 

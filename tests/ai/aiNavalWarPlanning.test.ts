@@ -9,7 +9,7 @@
  * happens; the invasion mission does the ferrying.
  */
 import { describe, it, expect } from 'vitest';
-import { planBulkAttack, type KnownTarget } from '@/game/engine/AI/AIAggression';
+import { planBulkAttack, type KnownTarget } from '@shared/game/engine/AI/AIAggression';
 
 const W = 9;
 /** A bare engine: enough for planBulkAttack's distance and city lookups. */

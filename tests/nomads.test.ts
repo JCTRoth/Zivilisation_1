@@ -22,7 +22,7 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import { makeEngine } from './helpers/world';
-import { UNIT_TYPES } from '@/data/UnitConstants';
+import { UNIT_TYPES } from '@shared/data/UnitConstants';
 import {
   NOMAD_AI_HIRE_MIN_ROUND_GAP,
   NOMAD_CIV_ID,
@@ -30,7 +30,7 @@ import {
   NOMAD_SPAWN_MAX_DISTANCE,
   NOMAD_SPAWN_MIN_DISTANCE,
   NOMAD_TRIGGER_ROUND,
-} from '@/data/NomadConstants';
+} from '@shared/data/NomadConstants';
 
 type Engine = Awaited<ReturnType<typeof makeEngine>>['engine'];
 

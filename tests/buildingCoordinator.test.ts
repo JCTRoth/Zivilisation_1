@@ -18,9 +18,9 @@ import {
   HAPPINESS_BUILDINGS_PER_CITY,
   usefulCityCopies,
   usefulCivCopies,
-} from '@/game/engine/AI/BuildingCoordinator';
+} from '@shared/game/engine/AI/BuildingCoordinator';
 import { makeEngine, useSeededRandom } from './helpers/world';
-import type { City, Civilization } from '../types/game';
+import type { City, Civilization } from '@shared/types/game';
 
 async function world() {
   // Seeded: `seed` alone only fixes map generation, not `Math.random`, which the

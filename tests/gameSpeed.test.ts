@@ -24,7 +24,7 @@ import {
   isAutoScenario,
   isSlowerThanFullSpeed,
   slowerGameSpeedStep,
-} from '@/data/GameConstants';
+} from '@shared/data/GameConstants';
 import { useGameStore } from '@/stores/GameStore';
 
 describe('game speed ladder', () => {

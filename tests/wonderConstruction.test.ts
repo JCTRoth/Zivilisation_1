@@ -15,9 +15,9 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { world as wrapWorld, type TestWorld } from './helpers/world';
-import GameEngine from '@/game/engine/GameEngine';
-import { PURCHASE_GOLD_PER_SHIELD } from '@/data/GameConstants';
-import type { City, Civilization } from '../types/game';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { PURCHASE_GOLD_PER_SHIELD } from '@shared/data/GameConstants';
+import type { City, Civilization } from '@shared/types/game';
 
 interface EmittedEvent {
   type: string;

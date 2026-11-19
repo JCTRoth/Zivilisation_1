@@ -12,9 +12,9 @@
  * square, which no ship can ever path onto.
  */
 import { describe, it, expect } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { SquareGrid } from '@/game/SquareGrid';
-import type { City, Unit } from '../../types/game';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { SquareGrid } from '@shared/game/SquareGrid';
+import type { City, Unit } from '@shared/types/game';
 
 const O = 'ocean';
 const G = 'grassland';

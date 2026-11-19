@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { RESEARCH_UNLOCK_ROUND } from '@/data/GameConstants';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { RESEARCH_UNLOCK_ROUND } from '@shared/data/GameConstants';
 
 /**
  * Verify that changing the civ's Science Rate actually changes per-turn

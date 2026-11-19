@@ -1,4 +1,4 @@
-import type { Unit } from '../../../types/game';
+import type { Unit } from '../../types/game';
 import { debugLog } from '../../utils/DevLog';
 
 /**

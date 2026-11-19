@@ -15,7 +15,7 @@
  */
 
 import type { ImpactEvent } from '../DiplomacyTypes';
-import type { Civilization } from '../../../../types/game';
+import type { Civilization } from '../../../types/game';
 
 /** All weights are 1..10, matching the existing personality scale. */
 export interface DiplomaticWeights {

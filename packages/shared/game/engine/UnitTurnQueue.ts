@@ -14,7 +14,7 @@
  * - For AI players: when queue is empty, turn ends automatically
  */
 
-import type { Unit } from '../../../types/game';
+import type { Unit } from '../../types/game';
 
 
 import GameEngine from './GameEngine';

@@ -10,7 +10,7 @@
  */
 
 import { TERRAIN_PROPERTIES } from '../../../data/TerrainConstants';
-import type { City } from '../../../../types/game';
+import type { City } from '../../../types/game';
 import type GameEngine from '../GameEngine';
 import { getUnitRank, rankStrengthMultiplier } from '../UnitRankSystem';
 

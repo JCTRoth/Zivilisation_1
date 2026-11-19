@@ -1,9 +1,9 @@
 import type { EnemyLocation } from '../EnemySearcher';
-import type { City, Unit } from '../../../../types/game';
+import type { City, Unit } from '../../../types/game';
 import type { PlayerTurnStorage } from '../GameEngine';
 import type GameEngine from '../GameEngine';
 import { AIUtility } from './AIUtility';
-import { NOMAD_CIV_ID } from '@/data/NomadConstants';
+import { NOMAD_CIV_ID } from '../../../data/NomadConstants';
 
 const DIFFICULTY_THRESHOLD_MODIFIERS: Record<string, number> = {
   CHIEFTAIN: 1.4,

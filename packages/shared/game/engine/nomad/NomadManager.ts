@@ -43,16 +43,16 @@
  *     (clan-adjusted), the promised terms are what the BUTTON said.
  */
 import type GameEngine from '../GameEngine';
-import type { AudienceChoice, Civilization, City, Unit } from '../../../../types/game';
-import { UNIT_PROPS } from '@/utils/Constants';
+import type { AudienceChoice, Civilization, City, Unit } from '../../../types/game';
+import { UNIT_PROPS } from '../../../utils/Constants';
 import {
   NOMAD_MIRRORED_UNITS,
   NOMAD_MOUNTED_UNITS,
   UNIT_TYPES,
   nomadFootType,
   nomadMountedType,
-} from '@/data/UnitConstants';
-import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
+} from '../../../data/UnitConstants';
+import { TECHNOLOGIES_DATA } from '../../../data/TechnologyData';
 import { bribeUnitCost } from '../DiplomacyManager';
 import { stripPalaceBuildings } from '../BuildingEffects';
 import { decideAiAttack } from '../AI/AttackOdds';
@@ -131,7 +131,7 @@ import {
   NOMAD_TRIGGER_ROUND,
   type NomadClan,
   type NomadPersonality,
-} from '@/data/NomadConstants';
+} from '../../../data/NomadConstants';
 
 /** What a resolved parley did — the UI turns this into a localized toast. */
 export interface NomadOutcome {
@@ -748,7 +748,7 @@ export class NomadManager {
     const ai = this.gameEngine.civilizations?.[aiId];
     const meeting = this.meetingUnitIds(aiId, camp);
     const diplomacy = ai?.personality?.diplomacy ?? 5;
-    const mood = Math.random();
+    const mood = (this.gameEngine.rng ?? Math.random)();
 
     const tech = this.gameEngine.pickFreeTech(aiId);
     const price = tech ? this.techPriceFor(tech) : 0;
@@ -822,7 +822,7 @@ export class NomadManager {
     // The brain reviews first: the stance it announces is the stance this
     // round's plan executes (a stance change is announced once, on change).
     const situation = this.situationOf(round);
-    const stanceChange = this.ai.review(situation);
+    const stanceChange = this.ai.review(situation, this.gameEngine.rng);
     if (stanceChange) {
       this.gameEngine.onStateChange?.('NOMAD_STRATEGY', { stance: stanceChange });
     }
@@ -1497,7 +1497,7 @@ export class NomadManager {
               && !this.gameEngine.getCityAt?.(n.col, n.row)
               && (this.gameEngine.canUnitMoveTo?.(unit.id, n.col, n.row) ?? false),
           );
-          const step = neighbors[Math.floor(Math.random() * neighbors.length)];
+          const step = neighbors[Math.floor((this.gameEngine.rng ?? Math.random)() * neighbors.length)];
           if (!step) break;
           if (!this.gameEngine.moveUnit(unit.id, step.col, step.row).success) break;
         }
@@ -2249,7 +2249,7 @@ export class NomadManager {
    */
   private spawnVisit(round: number, targetCivId: number): boolean {
     if (!this.clan) {
-      this.clan = NOMAD_CLANS[Math.floor(Math.random() * NOMAD_CLANS.length)];
+      this.clan = NOMAD_CLANS[Math.floor((this.gameEngine.rng ?? Math.random)() * NOMAD_CLANS.length)];
     }
     return this.raiseCampAt(targetCivId, round);
   }
@@ -2464,7 +2464,7 @@ export class NomadManager {
       // fields is a closed hand, and the tribe counts those.
       const settleTile = this.findSettlementTile(humanId);
       if (settleTile) {
-        this.settleRolled = Math.random() < clan.settleChance;
+        this.settleRolled = (this.gameEngine.rng ?? Math.random)() < clan.settleChance;
         if (this.settleRolled) {
           const cityName =
             (this.gameEngine.cities ?? []).find((c) => c.id === settleTile.cityId)?.name ?? '';
@@ -2611,7 +2611,7 @@ export class NomadManager {
         0.5,
         NOMAD_AI_HIRE_BASE_CHANCE + diplomacy * NOMAD_AI_HIRE_DIPLOMACY_BONUS,
       );
-      if (Math.random() < chance) {
+      if ((this.gameEngine.rng ?? Math.random)() < chance) {
         civ.resources.gold = (civ.resources.gold ?? 0) - cost;
         // The buyer pays the TRIBE — the chest swells when a group sells.
         this.treasury += cost;
@@ -2877,7 +2877,7 @@ export class NomadManager {
       .map((c) => c.id)
       .filter((id) => id !== fromCivId && this.gameEngine.civilizations?.[id]?.isAlive !== false);
     for (let i = route.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor((this.gameEngine.rng ?? Math.random)() * (i + 1));
       [route[i], route[j]] = [route[j], route[i]];
     }
     // A ride to YOUR court is a story event, never a coincidence. The tribe
@@ -3152,7 +3152,7 @@ export class NomadManager {
         if (lateral.length === 0) break;
         const milling = this.keepTogether(lateral, pack);
         if (milling.length === 0) break; // defensive: a non-empty list stays non-empty
-        const step = milling[Math.floor(Math.random() * milling.length)];
+        const step = milling[Math.floor((this.gameEngine.rng ?? Math.random)() * milling.length)];
         if (!this.gameEngine.moveUnit(unit.id, step.col, step.row).success) break;
         continue;
       }
@@ -3197,13 +3197,13 @@ export class NomadManager {
       return this.nextStepToward(unit, target); // boxed in — the march knows the way out
     }
     // Close steps carry the walk; same-distance steps only drift it.
-    const drift = lateral.length > 0 && Math.random() < NOMAD_WANDER_DRIFT_CHANCE;
+    const drift = lateral.length > 0 && (this.gameEngine.rng ?? Math.random)() < NOMAD_WANDER_DRIFT_CHANCE;
     const options = this.keepTogether(
       drift ? lateral : closer.length > 0 ? closer : lateral,
       pack,
     );
     if (options.length === 0) return null; // defensive: a non-empty list stays non-empty
-    return options[Math.floor(Math.random() * options.length)];
+    return options[Math.floor((this.gameEngine.rng ?? Math.random)() * options.length)];
   }
 
   /** The court's front door FROM A POINT: nearest city, else nearest unit. */

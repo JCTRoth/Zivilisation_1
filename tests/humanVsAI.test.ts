@@ -1,5 +1,5 @@
 import { describe, expect, it, afterEach, beforeEach } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
+import GameEngine from '@shared/game/engine/GameEngine';
 
 /**
  * HUMAN VS AI TEST - 50 ROUNDS

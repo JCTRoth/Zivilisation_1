@@ -8,7 +8,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { makeEngine } from './helpers/world';
-import { UNIT_PROPS } from '@/utils/Constants';
+import { UNIT_PROPS } from '@shared/utils/Constants';
 
 /** Exactly the types in GameSetupModal's MAP_TYPE_CATEGORIES, in order. */
 const OFFERED_MAP_TYPES = [

@@ -16,8 +16,8 @@ import {
   resolveNationForTag,
   resolveNationForTags,
   FALLBACK_NATION,
-} from '@/data/CivilizationByLanguage';
-import { CIVILIZATIONS } from '@/data/GameData';
+} from '@shared/data/CivilizationByLanguage';
+import { CIVILIZATIONS } from '@shared/data/GameData';
 
 const NAMES = new Set(CIVILIZATIONS.map((c) => c.name));
 

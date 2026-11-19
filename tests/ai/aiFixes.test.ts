@@ -10,11 +10,11 @@
  *     requiredTechnology, so the AI built them with ancient tech only.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { AutoProduction } from '@/game/engine/AutoProduction';
-import { canBuildBuilding, resolveAICivStrategy } from '@/game/engine/AI/AITypes';
-import { BUILDING_PROPERTIES, BUILDING_TYPES } from '@/data/BuildingConstants';
-import { RESEARCH_UNLOCK_ROUND } from '@/data/GameConstants';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { AutoProduction } from '@shared/game/engine/AutoProduction';
+import { canBuildBuilding, resolveAICivStrategy } from '@shared/game/engine/AI/AITypes';
+import { BUILDING_PROPERTIES, BUILDING_TYPES } from '@shared/data/BuildingConstants';
+import { RESEARCH_UNLOCK_ROUND } from '@shared/data/GameConstants';
 
 // ─────────────────────────────────────────────────────────────────────────
 // 1. Research freeze

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { EARLY_TECH_EXCHANGE_MAX_ROUND } from '@/data/GameConstants';
-import type { Unit } from '../../types/game';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { EARLY_TECH_EXCHANGE_MAX_ROUND } from '@shared/data/GameConstants';
+import type { Unit } from '@shared/types/game';
 
 /**
  * AI diplomat unit tests (Civ I: diplomats physically move to an enemy

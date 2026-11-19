@@ -1,5 +1,5 @@
 // Canonical data shapes live in `types/game`.
-import type { City, Unit } from '../../../../types/game';
+import type { City, Unit } from '../../../types/game';
 
 /** Status of a candidate colony site, remembered across turns. */
 export type SiteStatus = 'open' | 'colonized' | 'blocked' | 'poor' | 'contested';

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { WATER_TERRAIN_TYPES } from '@/data/TerrainConstants';
-import { UNIT_PROPS } from '@/utils/Constants';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { WATER_TERRAIN_TYPES } from '@shared/data/TerrainConstants';
+import { UNIT_PROPS } from '@shared/utils/Constants';
 
 /** Whether a unit type belongs in the water rather than on it. */
 const isNaval = (type: string): boolean =>

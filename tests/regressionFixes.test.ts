@@ -15,9 +15,9 @@
  *     private `destroyCargoOf`; no test killed a ferry in real combat.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
+import GameEngine from '@shared/game/engine/GameEngine';
 import { productionFailureText } from '@/utils/ProductionUtils';
-import { RESEARCH_UNLOCK_ROUND } from '@/data/GameConstants';
+import { RESEARCH_UNLOCK_ROUND } from '@shared/data/GameConstants';
 import { forceRandom, makeEngine, makeGridEngine, useSeededRandom, world } from './helpers/world';
 
 const G = 'grassland';

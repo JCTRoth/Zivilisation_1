@@ -7,8 +7,8 @@
  * and UI — bucket the score through the same exported bands.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { DiplomacyManager } from '@/game/engine/DiplomacyManager';
-import { attitudeFromScore, ATTITUDE_BANDS } from '@/game/engine/DiplomacyTypes';
+import { DiplomacyManager } from '@shared/game/engine/DiplomacyManager';
+import { attitudeFromScore, ATTITUDE_BANDS } from '@shared/game/engine/DiplomacyTypes';
 
 function createMockGameEngine(overrides: Record<string, any> = {}): any {
   return {

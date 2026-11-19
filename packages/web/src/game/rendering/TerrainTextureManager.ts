@@ -12,7 +12,7 @@
  *    front. Each type has a controlled footprint and a modest upward overhang.
  */
 
-import { SPECIAL_RESOURCES } from '@/data/TerrainConstants';
+import { SPECIAL_RESOURCES } from '@shared/data/TerrainConstants';
 
 const TERRAIN_TEXTURE_FILES: Record<string, string> = {
   OCEAN:     '/assets/tiles/terrain_ocean.png',

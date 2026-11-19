@@ -10,10 +10,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { useGameStore } from '@/stores/GameStore';
 import { EngineEventRouter } from '@/utils/EngineEventHandlers';
-import { computeWonderStatuses } from '@/data/WonderData';
-import GameEngine from '@/game/engine/GameEngine';
+import { computeWonderStatuses } from '@shared/data/WonderData';
+import GameEngine from '@shared/game/engine/GameEngine';
 import { world as wrapWorld, type TestWorld } from './helpers/world';
-import type { WonderDialogEntry } from '../types/game';
+import type { WonderDialogEntry } from '@shared/types/game';
 
 const store = () => useGameStore.getState();
 

@@ -31,7 +31,7 @@
  */
 
 import type { SfxCue } from './Sfx';
-import { UNIT_TYPES } from '../data/UnitConstants';
+import { UNIT_TYPES } from '@shared/data/UnitConstants';
 
 /** Cooldown family of a cue — the anti-spam window it plays under. */
 export type SoundCategory = 'selection' | 'unit' | 'attack' | 'event' | 'ui';

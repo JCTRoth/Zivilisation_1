@@ -2,7 +2,7 @@
  * CaravanMemory — persistent route-partner memory for caravans.
  */
 import { describe, it, expect } from 'vitest';
-import { CaravanMemory } from '@/game/engine/AI/CaravanMemory';
+import { CaravanMemory } from '@shared/game/engine/AI/CaravanMemory';
 
 describe('CaravanMemory partnership tracking', () => {
   it('records an attempt and starts with zero deliveries', () => {

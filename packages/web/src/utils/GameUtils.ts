@@ -7,7 +7,7 @@
  * - Move: Each unit has available moves (movesRemaining) they can use during their owner's turn.
  */
 
-import { Constants } from './Constants';
+import { Constants } from '@shared/utils/Constants';
 
 export const GameUtils = {
     /**

@@ -14,9 +14,9 @@
  * troops can take.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { AIManager } from '@/game/engine/AI/AIManager';
-import type { Unit } from '../../types/game';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { AIManager } from '@shared/game/engine/AI/AIManager';
+import type { Unit } from '@shared/types/game';
 
 const call = <T>(manager: unknown, method: string, ...args: unknown[]): T =>
   (manager as Record<string, (...a: unknown[]) => T>)[method](...args);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateTeamAssignments } from '@/game/engine/TeamManager';
+import { validateTeamAssignments } from '@shared/game/engine/TeamManager';
 import { makeTeamEngine, teamSettings } from './teamHelpers';
 
 describe('validateTeamAssignments', () => {

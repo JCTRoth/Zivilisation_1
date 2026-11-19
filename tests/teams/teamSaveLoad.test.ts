@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
+import GameEngine from '@shared/game/engine/GameEngine';
 
 // Minimal localStorage for the node test environment (same pattern as
 // tests/saveLoad.test.ts).

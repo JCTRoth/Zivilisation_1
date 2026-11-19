@@ -1,5 +1,5 @@
 import React from 'react';
-import { t } from '@/i18n';
+import { t } from '@shared/i18n/index';
 
 interface ErrorBoundaryState {
   hasError: boolean;

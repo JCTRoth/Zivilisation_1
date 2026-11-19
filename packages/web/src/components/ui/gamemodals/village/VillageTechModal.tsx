@@ -1,6 +1,6 @@
 import GameModal from '../ModalShell';
-import { useTranslation } from '@/i18n/useTranslation';
-import type { VillageResult } from '../../../../../types/game';
+import { useTranslation } from '../../../../i18n/useTranslation';
+import type { VillageResult } from '@shared/types/game';
 
 interface VillageTechModalProps {
   result: VillageResult;

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
+import GameEngine from '@shared/game/engine/GameEngine';
 
 /**
  * A city with nothing in production but something it could still build must

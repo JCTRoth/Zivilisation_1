@@ -1,6 +1,6 @@
-import { TERRAIN_PROPS } from '@/utils/Constants';
-import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
-import { NOMAD_CIV_ID } from '@/data/NomadConstants';
+import { TERRAIN_PROPS } from '../../../utils/Constants';
+import { BARBARIAN_CIV_ID } from '../../../data/VillageConstants';
+import { NOMAD_CIV_ID } from '../../../data/NomadConstants';
 import type { SquareCoordinate } from '../../SquareGrid';
 import type GameEngine from '../GameEngine';
 
@@ -258,7 +258,8 @@ export class AIUtility {
     getNeighbors: (col: number, row: number) => SquareCoordinate[],
     getTileAt: (col: number, row: number) => TileData | null | undefined,
     isPassable?: (col: number, row: number) => boolean,
-    isExplored?: (col: number, row: number) => boolean
+    isExplored?: (col: number, row: number) => boolean,
+    random: () => number = Math.random,
   ): SquareCoordinate | null {
     const neighbors = getNeighbors(unitCol, unitRow);
     // Civ1 exploration randomness: shuffle the scan order so the direction a
@@ -266,7 +267,7 @@ export class AIUtility {
     // (the old code always tried the same neighbor first, so every unit drifted
     // the same way). The first unexplored, passable neighbor now varies.
     for (let i = neighbors.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor(random() * (i + 1));
       [neighbors[i], neighbors[j]] = [neighbors[j], neighbors[i]];
     }
     for (const tilePos of neighbors) {
@@ -301,6 +302,7 @@ export class AIUtility {
     candidates: T[],
     bearing: { dx: number; dy: number } | null,
     bandSize = 8,
+    random: () => number = Math.random,
   ): T | null {
     if (!candidates || candidates.length === 0) return null;
     candidates.sort((a, b) => a.dist - b.dist);
@@ -318,12 +320,12 @@ export class AIUtility {
       }
       const distWeight = 1 / (1 + c.dist);
       // Random jitter keeps every pick uncertain even among equal-distance tiles.
-      return distWeight * (0.3 + 0.7 * align) + Math.random();
+      return distWeight * (0.3 + 0.7 * align) + random();
     });
 
     let total = 0;
     for (const w of weights) total += w;
-    let r = Math.random() * total;
+    let r = random() * total;
     for (let i = 0; i < band.length; i++) {
       r -= weights[i];
       if (r <= 0) return band[i];

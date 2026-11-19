@@ -14,13 +14,13 @@
  *    next growth step.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { SquareGrid } from '@/game/SquareGrid';
-import { AutoProduction } from '@/game/engine/AutoProduction';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { SquareGrid } from '@shared/game/SquareGrid';
+import { AutoProduction } from '@shared/game/engine/AutoProduction';
 import { CityModalLogic } from '@/components/ui/gamemodals/CityModalLogic';
-import { UNIT_PROPERTIES, FISHER_BOAT_STORAGE, fisherFoodPerFish, fisherCatchValue } from '@/data/UnitConstants';
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
-import type { City, ProductionItem, SpecialistType, TradeRoute, Unit } from '../types/game';
+import { UNIT_PROPERTIES, FISHER_BOAT_STORAGE, fisherFoodPerFish, fisherCatchValue } from '@shared/data/UnitConstants';
+import { TERRAIN_TYPES } from '@shared/data/TerrainConstants';
+import type { City, ProductionItem, SpecialistType, TradeRoute, Unit } from '@shared/types/game';
 
 const G = TERRAIN_TYPES.GRASSLAND;
 const O = TERRAIN_TYPES.OCEAN;

@@ -6,9 +6,9 @@
  * tree, and writes the tech_exchanged impact both ways.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { DiplomacyManager } from '@/game/engine/DiplomacyManager';
-import { scoreCandidates } from '@/game/engine/diplomacy/AIDiplomacyPolicy';
-import { evaluateProposal } from '@/game/engine/diplomacy/ProposalScoring';
+import { DiplomacyManager } from '@shared/game/engine/DiplomacyManager';
+import { scoreCandidates } from '@shared/game/engine/diplomacy/AIDiplomacyPolicy';
+import { evaluateProposal } from '@shared/game/engine/diplomacy/ProposalScoring';
 
 function createMockGameEngine(overrides: Record<string, unknown> = {}): any {
   return {

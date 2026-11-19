@@ -12,9 +12,9 @@
  * that JSON introduces.
  */
 import { describe, expect, it, afterEach, vi } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
+import GameEngine from '@shared/game/engine/GameEngine';
 import { makeEngine, world } from './helpers/world';
-import { RESEARCH_UNLOCK_ROUND } from '@/data/GameConstants';
+import { RESEARCH_UNLOCK_ROUND } from '@shared/data/GameConstants';
 
 const memory = new Map<string, string>();
 (globalThis as unknown as { localStorage: Storage }).localStorage = {

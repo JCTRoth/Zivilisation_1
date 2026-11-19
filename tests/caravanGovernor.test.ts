@@ -12,18 +12,18 @@
  *  7. Civ1 delivery eligibility (home city, war, route capacity, knowledge).
  */
 import { describe, expect, it } from 'vitest';
-import type { City, Unit } from '../types/game';
-import type { MapTile } from '@/game/engine/GameEngine';
-import { CaravanGovernor, type CaravanWorld } from '@/game/engine/AI/CaravanGovernor';
-import { CaravanMemory } from '@/game/engine/AI/CaravanMemory';
-import { Pathfinding } from '@/game/engine/Pathfinding';
+import type { City, Unit } from '@shared/types/game';
+import type { MapTile } from '@shared/game/engine/GameEngine';
+import { CaravanGovernor, type CaravanWorld } from '@shared/game/engine/AI/CaravanGovernor';
+import { CaravanMemory } from '@shared/game/engine/AI/CaravanMemory';
+import { Pathfinding } from '@shared/game/engine/Pathfinding';
 import {
   CARAVAN_BLOCK_PATIENCE,
   CARAVAN_DISBAND_PATIENCE,
   CARAVAN_MAX_TRANSIT_TURNS,
   MAX_CARAVANS_PER_CITY,
   MAX_CARAVAN_TRADE_ROUTES,
-} from '@/data/GameConstants';
+} from '@shared/data/GameConstants';
 
 // ---------------------------------------------------------------------------
 // Fake world

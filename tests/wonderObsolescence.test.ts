@@ -9,9 +9,9 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { world as wrapWorld, type TestWorld } from './helpers/world';
-import GameEngine from '@/game/engine/GameEngine';
-import { WONDER_PROPERTIES } from '@/data/BuildingConstants';
-import type { City } from '../types/game';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { WONDER_PROPERTIES } from '@shared/data/BuildingConstants';
+import type { City } from '@shared/types/game';
 
 describe('wonder obsolescence', () => {
   let engine: GameEngine;

@@ -1,5 +1,5 @@
 import { useGameStore } from '../stores/GameStore';
-import { HUMAN_PLAYER_ID } from './PlayerConstants';
+import { HUMAN_PLAYER_ID } from '@shared/utils/PlayerConstants';
 
 /**
  * Return HUMAN_PLAYER_ID if either side belongs to the human player,

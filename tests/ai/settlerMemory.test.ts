@@ -7,10 +7,10 @@
  * pin that the memory layer now stops that.
  */
 import { describe, it, expect } from 'vitest';
-import { SettlerMemory, evaluateColonySite } from '@/game/engine/AI/SettlerMemory';
-import { SettlerGovernor } from '@/game/engine/AI/SettlerGovernor';
-import GameEngine from '@/game/engine/GameEngine';
-import type { City, Unit } from '../../types/game';
+import { SettlerMemory, evaluateColonySite } from '@shared/game/engine/AI/SettlerMemory';
+import { SettlerGovernor } from '@shared/game/engine/AI/SettlerGovernor';
+import GameEngine from '@shared/game/engine/GameEngine';
+import type { City, Unit } from '@shared/types/game';
 
 const city = (over: Partial<City> = {}): City => ({
   id: 'c1', name: 'Town', civilizationId: 0, col: 5, row: 5, population: 6,

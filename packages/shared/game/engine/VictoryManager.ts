@@ -1,6 +1,6 @@
 import type GameEngine from './GameEngine';
-import type { Civilization, GameActions } from '../../../types/game';
-import { GameResult, type VictoryReason } from '../../../types/game';
+import type { Civilization, GameActions } from '../../types/game';
+import { GameResult, type VictoryReason } from '../../types/game';
 import { BUILDING_PROPERTIES, WONDER_PROPERTIES } from '../../data/BuildingConstants';
 
 /**

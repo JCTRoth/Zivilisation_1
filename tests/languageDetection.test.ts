@@ -8,8 +8,8 @@ import { describe, it, expect } from 'vitest';
 import {
   resolveBrowserLanguage,
   detectBrowserLanguage,
-} from '@/i18n/languageDetection';
-import { LANGUAGES } from '@/i18n/languages';
+} from '@shared/i18n/languageDetection';
+import { LANGUAGES } from '@shared/i18n/languages';
 
 describe('resolveBrowserLanguage — shipped languages are taken as they are', () => {
   it('maps every shipped language to itself', () => {

@@ -14,9 +14,9 @@
  *     kept building soldiers instead of income.
  */
 import { describe, it, expect } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { AIBuildingStrategy } from '@/game/engine/AI/AIBuildingStrategy';
-import type { BuildingPlan, Personality } from '@/game/engine/AI/AITypes';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { AIBuildingStrategy } from '@shared/game/engine/AI/AIBuildingStrategy';
+import type { BuildingPlan, Personality } from '@shared/game/engine/AI/AITypes';
 
 const ECON_TECHS = ['pottery', 'masonry', 'currency', 'banking', 'writing'];
 

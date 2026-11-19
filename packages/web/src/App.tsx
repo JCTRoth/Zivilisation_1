@@ -1,13 +1,14 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useGameStore } from "./stores/GameStore";
-import { defaultNationIndexForBrowser } from "@/data/CivilizationByLanguage";
-import { AUTO_END_TURN_OFFER_FLAG, isAutoScenario, isSpectatorGame } from "@/data/GameConstants";
+import { defaultNationIndexForBrowser } from "@shared/data/CivilizationByLanguage";
+import { AUTO_END_TURN_OFFER_FLAG, isAutoScenario, isSpectatorGame } from "@shared/data/GameConstants";
 import {
   shouldOfferAutoEndTurn,
   shouldPromptForResearch,
   shouldShowEndTurnConfirmation,
-} from "@/utils/ModalTriggers";
-import GameEngine from "@/game/engine/GameEngine";
+} from "./utils/ModalTriggers";
+import GameEngine from "@shared/game/engine/GameEngine";
+import { webRuntime } from "./gameRuntime";
 import GameCanvas from "./components/game/GameCanvas";
 import SettingsModal from "./components/ui/SettingsModal";
 import GameSetupModal from "./components/ui/GameSetupModal";
@@ -27,18 +28,18 @@ import GameMenuSheet, {
 import ConfirmDialog from "./components/ui/ConfirmDialog";
 import { useGameEngine } from "./hooks/UseGameEngine";
 import SidePanel from "./components/ui/SidePanel";
-import { GameUtils } from "@/utils/GameUtils";
-import { DomUtils } from "@/utils/DomUtils";
-import { enrichMapForExport } from "@/utils/MapExportUtils";
-import { sendCommand } from "@/utils/session";
-import { preloadAllUnitIcons } from "@/utils/UnitIconLoader";
-import { centerCameraOnTile, getGameViewport, clampZoom } from "@/utils/CameraUtils";
-import { preloadMusic, setMusicState } from "@/utils/Music";
-import { useTranslation } from "@/i18n/useTranslation";
-import { gameLogger } from "@/utils/GameLogger";
-import { gameProgression } from "@/utils/GameProgression";
-import type { TerrainTileRenderInfo } from "@/game/rendering/MapRenderer";
-import { debugLog } from '@/utils/DevLog';
+import { GameUtils } from "./utils/GameUtils";
+import { DomUtils } from "./utils/DomUtils";
+import { enrichMapForExport } from "./utils/MapExportUtils";
+import { sendCommand } from "./session";
+import { preloadAllUnitIcons } from "./utils/UnitIconLoader";
+import { centerCameraOnTile, getGameViewport, clampZoom } from "./utils/CameraUtils";
+import { preloadMusic, setMusicState } from "./utils/Music";
+import { useTranslation } from "./i18n/useTranslation";
+import { gameLogger } from "./utils/GameLogger";
+import { gameProgression } from "./utils/GameProgression";
+import type { TerrainTileRenderInfo } from "./game/rendering/MapRenderer";
+import { debugLog } from '@shared/utils/DevLog';
 
 declare global {
   interface Window {
@@ -204,7 +205,7 @@ function App() {
           actions.updateSettings({ devMode: true });
         }
 
-        const engine = new GameEngine(actions);
+        const engine = new GameEngine(actions, webRuntime);
         await engine.initialize(gameSettings);
 
         // The Forge of War defaults to the barbarian horde's plan, but most
@@ -341,7 +342,9 @@ function App() {
         difficulty: (params.get("difficulty") ?? "PRINCE").toUpperCase(),
         devMode: params.get("dev") !== "0" && params.get("dev") !== "false",
         startingGold: num("gold", 50),
-        ...(params.has("seed") ? { mapSeed: num("seed", 0) } : {}),
+        ...(params.has("seed")
+          ? { mapSeed: num("seed", 0), rngSeed: num("seed", 0) }
+          : {}),
       };
       window.history.replaceState(null, "", window.location.pathname);
     }

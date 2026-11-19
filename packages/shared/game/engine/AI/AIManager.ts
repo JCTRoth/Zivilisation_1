@@ -10,17 +10,17 @@ import { decideAiAttack, type AiAttackDecision } from './AttackOdds';
 import { EnemySearcher } from '../EnemySearcher';
 import { ABSOLUTE_MIN_GOLD, CITY_RADIUS, UNIT_MAINTENANCE } from '../EconomicManager';
 import { bribeUnitCost } from '../DiplomacyManager';
-import { UNIT_PROPS, TERRAIN_PROPS, IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES, BUILDING_PROPERTIES } from '@/utils/Constants';
+import { UNIT_PROPS, TERRAIN_PROPS, IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES, BUILDING_PROPERTIES } from '../../../utils/Constants';
 import {
   BARBARIAN_CIV_ID,
   AI_VILLAGE_ENEMY_CITY_OVERRIDE_RADIUS,
   calculateVillageTakeChance,
   villageDecisionRoll,
   villageEarlyGameFactor,
-} from '@/data/VillageConstants';
-import { EARLY_TECH_EXCHANGE_MAX_ROUND, isAutoScenario, SMALL_ISLAND_MAX_TILES } from '@/data/GameConstants';
-import { NOMAD_CIV_ID } from '@/data/NomadConstants';
-import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
+} from '../../../data/VillageConstants';
+import { EARLY_TECH_EXCHANGE_MAX_ROUND, isAutoScenario, SMALL_ISLAND_MAX_TILES } from '../../../data/GameConstants';
+import { NOMAD_CIV_ID } from '../../../data/NomadConstants';
+import { TECHNOLOGIES_DATA } from '../../../data/TechnologyData';
 import { caravanRelevanceForCiv } from './CaravanEconomics';
 import { planCaravansForCiv, type CaravanCoordinatorWorld } from './CaravanCoordinator';
 import { CaravanGovernor } from './CaravanGovernor';
@@ -56,7 +56,7 @@ import type {
   BuildingFundingPlan,
   FundingDemand,
 } from './AICoordinator';
-import { notify } from '@/utils/NotificationUtils';
+
 import {
   createDefaultAIState,
   resolveAICivStrategy,
@@ -105,10 +105,10 @@ import {
 import { chooseAction, scoreCandidates } from '../diplomacy/AIDiplomacyPolicy';
 import { chooseEspionageAction, type EspionageContext } from '../diplomacy/EspionagePolicy';
 import { wouldProposeExchange } from '../diplomacy/TechTradeEvaluator';
-import type { Unit, City, Civilization, AiWarPlan } from '../../../../types/game';
+import type { Unit, City, Civilization, AiWarPlan } from '../../../types/game';
 import GameEngine, { NUCLEAR_BLAST_RADIUS, type PlayerTurnStorage, type MapTile } from '../GameEngine';
 import { getShuffledAdjacentTiles } from '../MovementHelper';
-import { awaitPendingAnimations } from '../../rendering/GlideAnimation';
+
 import { debugLog } from '../../../utils/DevLog';
 
 // How much better (in settlement-score points) the best location must be for a
@@ -677,7 +677,7 @@ export class AIManager {
           }
 
           // Notify the player
-          notify('warning', `Enemy ${enemy.type} spotted near your ${sleeping.type}!`);
+          this.gameEngine.runtime.notify('warning', `Enemy ${enemy.type} spotted near your ${sleeping.type}!`);
 
           return true;
         }
@@ -1233,7 +1233,7 @@ export class AIManager {
       // with this one, so the player can actually see what the AI is doing.
       // A no-op when animations are disabled and bounded so it can never stall
       // (or time out) the AI turn.
-      await awaitPendingAnimations();
+      await this.gameEngine.runtime.awaitPendingAnimations();
 
       // Check if any sleeping/fortified human units spotted enemies.
       // If so, pause the AI turn to alert the player.
@@ -1324,7 +1324,7 @@ export class AIManager {
         }
 
         // Get all 8 adjacent tiles in a randomized order
-        const adjacentTiles = getShuffledAdjacentTiles(unit.col, unit.row);
+        const adjacentTiles = getShuffledAdjacentTiles(unit.col, unit.row, this.gameEngine.rng);
         let brokeLoop = false;
 
         for (const tile of adjacentTiles) {
@@ -1455,7 +1455,7 @@ export class AIManager {
               this.gameEngine.log('ai', `Nuclear threat — ${fromCiv?.name ?? unit.civilizationId} demands ${demand} gold from ${targetCiv.name}; payment accepted`, {
                 civilizationId: unit.civilizationId, action: 'nuclear_threat', unitId: unit.id, goldAmount: demand,
               });
-              if (Math.random() < 0.8) {
+              if ((this.gameEngine.rng ?? Math.random)() < 0.8) {
                 // The payment bought the strike off.
                 this.gameEngine.skipUnit(unit.id);
                 break;
@@ -6271,14 +6271,16 @@ export class AIManager {
       //  - tiles claimed by a teammate's explorer are skipped on the first
       //    pass (team coordination, see above).
       nearbyFilter(true),
-      unexploredFilter
+      unexploredFilter,
+      this.gameEngine.rng
     ) ?? (yieldedToTeammate ? AIUtility.findNearbyUnexplored(
       unit.col,
       unit.row,
       (col, row) => this.gameEngine.squareGrid!.getNeighbors(col, row),
       (col, row) => this.gameEngine.getTileAt(col, row) as { type: string; explored?: boolean; resource?: string | null; fortress?: boolean; river?: boolean; passable?: boolean } | null | undefined,
       nearbyFilter(false),
-      unexploredFilter
+      unexploredFilter,
+      this.gameEngine.rng
     ) : null);
     if (unexplored) {
       debugLog(`[AI] Chose unexplored tile at (${unexplored.col},${unexplored.row})`);
@@ -8670,7 +8672,7 @@ export class AIManager {
       // unit's random exploration bearing — different units push out in
       // different, random directions instead of all streaming to one edge.
       const bearing = this.getExplorationBearing(unit);
-      const pick = AIUtility.pickRandomExplorationTarget(unit, candidates, bearing);
+      const pick = AIUtility.pickRandomExplorationTarget(unit, candidates, bearing, 8, this.gameEngine.rng);
       if (pick) {
         unit._probeTarget = { col: pick.col, row: pick.row };
         unit._exploreTarget = { col: pick.col, row: pick.row };
@@ -8683,7 +8685,7 @@ export class AIManager {
   /** Roll a random 8-direction exploration bearing (never the zero vector). */
   private rollExplorationBearing(): { dx: number; dy: number } {
     const dirs = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]];
-    const d = dirs[Math.floor(Math.random() * dirs.length)];
+    const d = dirs[Math.floor((this.gameEngine.rng ?? Math.random)() * dirs.length)];
     return { dx: d[0], dy: d[1] };
   }
 
@@ -8798,7 +8800,7 @@ export class AIManager {
     }
     if (candidates.length > 0) {
       const bearing = this.getExplorationBearing(unit);
-      const pick = AIUtility.pickRandomExplorationTarget(unit, candidates, bearing);
+      const pick = AIUtility.pickRandomExplorationTarget(unit, candidates, bearing, 8, this.gameEngine.rng);
       if (pick) {
         (unit as Unit)._exploreTarget = { col: pick.col, row: pick.row };
         return { col: pick.col, row: pick.row };
@@ -8927,7 +8929,7 @@ export class AIManager {
         // scout's random exploration bearing — scouts fan out in different,
         // random directions instead of all drifting the same way.
         const bearing = this.getExplorationBearing(unit);
-        const pick = AIUtility.pickRandomExplorationTarget(unit, pool, bearing);
+        const pick = AIUtility.pickRandomExplorationTarget(unit, pool, bearing, 8, this.gameEngine.rng);
         if (pick) {
           unit._exploreTarget = { col: pick.col, row: pick.row };
           debugLog(`[AI-SCOUT] Found unexplored tile at (${pick.col},${pick.row}) in zone (of ${pool.length})`);
@@ -10351,7 +10353,7 @@ export class AIManager {
       isAtWar: gameState.isAtWar,
       currentYear: gameState.currentYear,
       recentlyLostCity,
-    });
+    }, this.gameEngine.rng);
   }
 
   /** Flatten stored enemy intelligence into the known-target list for bulk planning. */

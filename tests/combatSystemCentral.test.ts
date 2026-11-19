@@ -8,9 +8,9 @@
  * victorious attacker never advances into the defender's tile.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { CombatSystem } from '@/game/engine/CombatSystem';
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { CombatSystem } from '@shared/game/engine/CombatSystem';
+import { TERRAIN_TYPES } from '@shared/data/TerrainConstants';
 
 const unit = (overrides: Record<string, unknown> = {}) => ({
   id: 'u',

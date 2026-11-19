@@ -13,7 +13,7 @@
  *  - `effects` is a typed list consumed by the WonderEffects engine.
  */
 
-import type { City } from '../../types/game';
+import type { City } from '../types/game';
 
 // ---------------------------------------------------------------------------
 // Types

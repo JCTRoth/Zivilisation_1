@@ -6,11 +6,11 @@
  * landing-site scoring picked, not the first beach found.
  */
 import { describe, it, expect } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { SquareGrid } from '@/game/SquareGrid';
-import { FERRY_CAPACITY } from '@/data/UnitConstants';
-import { UNIT_PROPS } from '@/utils/Constants';
-import type { City, Unit } from '../../types/game';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { SquareGrid } from '@shared/game/SquareGrid';
+import { FERRY_CAPACITY } from '@shared/data/UnitConstants';
+import { UNIT_PROPS } from '@shared/utils/Constants';
+import type { City, Unit } from '@shared/types/game';
 
 const O = 'ocean';
 const G = 'grassland';

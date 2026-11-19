@@ -1,25 +1,25 @@
 import React, { useMemo, useState } from 'react';
 import { Tab, Table, Tabs } from 'react-bootstrap';
-import { useGameStore } from '@/stores/GameStore';
+import { useGameStore } from '../../../stores/GameStore';
 import {
   computeDemographics,
   ordinal,
   realPopulation,
   numberValue,
   type DemographicRow,
-} from '@/game/engine/DemographicsManager';
+} from '@shared/game/engine/DemographicsManager';
 import { ModalUtils } from './ModalUtils';
-import { CityUtils } from '@/utils/CityUtils';
-import { UNIT_PROPS, BUILDING_PROPS } from '@/utils/Constants';
-import { WONDER_PROPERTIES } from '@/data/BuildingConstants';
-import { GameUtils } from '@/utils/GameUtils';
-import { useTranslation } from '@/i18n/useTranslation';
-import { tBuildingName, tUnitName, tWonderName } from '@/i18n/dataNames';
-import type { TranslationKey } from '@/i18n';
-import { teamColor, teamName } from '@/data/TeamConstants';
+import { CityUtils } from '@shared/utils/CityUtils';
+import { UNIT_PROPS, BUILDING_PROPS } from '@shared/utils/Constants';
+import { WONDER_PROPERTIES } from '@shared/data/BuildingConstants';
+import { GameUtils } from '../../../utils/GameUtils';
+import { useTranslation } from '../../../i18n/useTranslation';
+import { tBuildingName, tUnitName, tWonderName } from '@shared/i18n/dataNames';
+import type { TranslationKey } from '@shared/i18n/index';
+import { teamColor, teamName } from '@shared/data/TeamConstants';
 import GameModal from './ModalShell';
-import type GameEngine from '@/game/engine/GameEngine';
-import type { City, ProductionItem } from '../../../../types/game';
+import type GameEngine from '@shared/game/engine/GameEngine';
+import type { City, ProductionItem } from '@shared/types/game';
 import '../../../styles/statisticsModal.css';
 
 interface StatisticsModalProps {

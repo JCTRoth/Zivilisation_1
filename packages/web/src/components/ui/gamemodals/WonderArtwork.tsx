@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useTranslation } from '@/i18n/useTranslation';
-import { wonderWikiUrl } from '@/i18n/wonderLore';
-import { WONDER_ARTWORK_CREDITS, type WonderArtworkCredit, type WonderDefinition } from '@/data/WonderData';
+import { useTranslation } from '../../../i18n/useTranslation';
+import { wonderWikiUrl } from '@shared/i18n/wonderLore';
+import { WONDER_ARTWORK_CREDITS, type WonderArtworkCredit, type WonderDefinition } from '@shared/data/WonderData';
 
 interface WonderArtworkProps {
   wonder: WonderDefinition;

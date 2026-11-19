@@ -20,10 +20,10 @@ import { describe, it, expect } from 'vitest';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { useSeededRandom } from '../helpers/world';
-import GameEngine from '@/game/engine/GameEngine';
-import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
-import { UNIT_PROPS } from '@/utils/Constants';
-import type { Unit, City } from '../../types/game';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { BARBARIAN_CIV_ID } from '@shared/data/VillageConstants';
+import { UNIT_PROPS } from '@shared/utils/Constants';
+import type { Unit, City } from '@shared/types/game';
 
 // Defaults are deliberately small: this is in `npm test` as a regression
 // guard, and a benchmark nobody runs because it is slow is worth nothing.

@@ -4,8 +4,8 @@
  * survive a save + load into a fresh engine.
  */
 import { describe, expect, it } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { NOMAD_CIV_ID } from '@/data/NomadConstants';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { NOMAD_CIV_ID } from '@shared/data/NomadConstants';
 
 // Minimal localStorage for the node test environment.
 const memory = new Map<string, string>();

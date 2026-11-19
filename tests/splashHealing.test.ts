@@ -9,11 +9,11 @@
  *    15% of all battle damage taken.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { SquareGrid } from '@/game/SquareGrid';
-import { CombatSystem } from '@/game/engine/CombatSystem';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { SquareGrid } from '@shared/game/SquareGrid';
+import { CombatSystem } from '@shared/game/engine/CombatSystem';
 import { MapRenderer } from '@/game/rendering/MapRenderer';
-import type { City, Unit } from '../types/game';
+import type { City, Unit } from '@shared/types/game';
 
 const G = 'grassland';
 

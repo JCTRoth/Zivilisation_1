@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { webRuntime } from '@/gameRuntime';
 
 /**
  * Human vs. Human Hotseat — full game-loop test.
@@ -20,7 +21,7 @@ describe('Hotseat game loop', () => {
     handoffEvents.length = 0;
     turnStarts.length = 0;
 
-    engine = new GameEngine(null);
+    engine = new GameEngine(null, webRuntime);
     (engine as unknown as { sleep: () => Promise<void> }).sleep = () => Promise.resolve();
 
     // Capture handoff events and turn starts.
@@ -155,7 +156,7 @@ describe('Hotseat game loop', () => {
 
   it('AI turns in hotseat do not trigger handoff', async () => {
     // Create a game with 1 human + 1 AI to verify handoff only fires for humans.
-    const aiEngine = new GameEngine(null);
+    const aiEngine = new GameEngine(null, webRuntime);
     (aiEngine as unknown as { sleep: () => Promise<void> }).sleep = () => Promise.resolve();
 
     const aiHandoffs: Array<Record<string, unknown>> = [];

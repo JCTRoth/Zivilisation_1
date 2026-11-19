@@ -8,7 +8,7 @@
  * an accident.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { DiplomacyManager } from '@/game/engine/DiplomacyManager';
+import { DiplomacyManager } from '@shared/game/engine/DiplomacyManager';
 import {
   chooseAction,
   maxConcurrentWars,
@@ -21,9 +21,9 @@ import {
   exhaustionDelta,
   EXHAUSTION_MAX,
   type PolicyContext,
-} from '@/game/engine/diplomacy/AIDiplomacyPolicy';
-import { diplomaticWeights } from '@/game/engine/diplomacy/DiplomaticWeights';
-import { createOpinion } from '@/game/engine/diplomacy/DiplomaticOpinion';
+} from '@shared/game/engine/diplomacy/AIDiplomacyPolicy';
+import { diplomaticWeights } from '@shared/game/engine/diplomacy/DiplomaticWeights';
+import { createOpinion } from '@shared/game/engine/diplomacy/DiplomaticOpinion';
 
 const WARLORD = { aggression: 9, diplomacy: 2, military: 9, expansion: 6, science: 3, economy: 4 };
 const TURTLE = { aggression: 2, diplomacy: 6, military: 7, expansion: 4, science: 6, economy: 6 };

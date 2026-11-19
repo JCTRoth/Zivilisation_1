@@ -1,12 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { Button, Tab, Tabs } from 'react-bootstrap';
-import { UNIT_PROPS, BUILDING_PROPS, MAX_CARAVANS_PER_CITY } from '../../../utils/Constants';
-import { PURCHASE_GOLD_PER_SHIELD } from '@/data/GameConstants';
-import type { ProductionItem } from '../../../../types/game';
-import { useGameStore } from '@/stores/GameStore';
-import { useTranslation } from '@/i18n/useTranslation';
-import { tBuildingName, tTechName, tUnitName, tWonderName } from '@/i18n/dataNames';
-import { GameUtils } from '@/utils/GameUtils';
+import { UNIT_PROPS, BUILDING_PROPS, MAX_CARAVANS_PER_CITY } from '@shared/utils/Constants';
+import { PURCHASE_GOLD_PER_SHIELD } from '@shared/data/GameConstants';
+import type { ProductionItem } from '@shared/types/game';
+import { useGameStore } from '../../../stores/GameStore';
+import { useTranslation } from '../../../i18n/useTranslation';
+import { tBuildingName, tTechName, tUnitName, tWonderName } from '@shared/i18n/dataNames';
+import { GameUtils } from '../../../utils/GameUtils';
 import {
   WONDERS,
   WONDER_GROUPS,
@@ -17,14 +17,14 @@ import {
   isWonderObsolete,
   wonderGroupMembers,
   type WonderStatus,
-} from '@/data/WonderData';
+} from '@shared/data/WonderData';
 import { WonderArtwork } from './WonderArtwork';
-import { localizedWonder } from '@/i18n/wonderLore';
-import { productionFailureText } from '@/utils/ProductionUtils';
+import { localizedWonder } from '@shared/i18n/wonderLore';
+import { productionFailureText } from '../../../utils/ProductionUtils';
 import GameModal from './ModalShell';
-import { translateDynamic, type TranslationKey, type TranslationParams } from '@/i18n';
-import '@/styles/cityModal.css';
-import '@/styles/wonders.css';
+import { translateDynamic, type TranslationKey, type TranslationParams } from '@shared/i18n/index';
+import '../../../styles/cityModal.css';
+import '../../../styles/wonders.css';
 
 /**
  * Translate a `prod.*` key. The keys reach the i18n dictionaries through the

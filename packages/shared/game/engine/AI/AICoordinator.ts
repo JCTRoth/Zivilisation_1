@@ -6,7 +6,7 @@
  * outmatched units.
  */
 
-import type { Unit, City } from '../../../../types/game';
+import type { Unit, City } from '../../../types/game';
 import type { ArmyGroup } from './AITypes';
 import type { BuildingEconomics } from './BuildingEconomics';
 import { debugLog } from '../../../utils/DevLog';
@@ -243,7 +243,9 @@ export class AICoordinator {
         if (!rallyPoint) continue; // nowhere to gather — do not form the group
 
         groups.push({
-          id: `army_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          // Deterministic: round + the first unit's stable id. A unit belongs
+          // to at most one group per round, so this cannot collide.
+          id: `army_r${options.roundNumber ?? 0}_${groupUnits[0]?.id ?? groups.length}`,
           unitIds: groupUnits.map(u => u.id),
           targetLocation: { col: target.col, row: target.row },
           rallyPoint,

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
+import GameEngine from '@shared/game/engine/GameEngine';
 
 /**
  * Civ1 "Minimum 1 Move" rule regression tests.

@@ -10,9 +10,9 @@
  * a mock that agrees with whatever the code does today.
  */
 import { describe, it, expect } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { AIManager } from '@/game/engine/AI/AIManager';
-import type { NavalPatrolMemory } from '@/game/engine/AI/NavalPatrolMemory';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { AIManager } from '@shared/game/engine/AI/AIManager';
+import type { NavalPatrolMemory } from '@shared/game/engine/AI/NavalPatrolMemory';
 
 /** A memory is only ever reachable through the manager's per-civ map. */
 function memoryFor(manager: unknown, civId: number): NavalPatrolMemory {

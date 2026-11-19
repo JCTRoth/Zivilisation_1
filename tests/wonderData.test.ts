@@ -21,9 +21,9 @@ import {
   findWonderBuilders,
   findWonderOwner,
   isWonderObsolete,
-} from '@/data/WonderData';
-import { WONDER_PROPERTIES } from '@/data/BuildingConstants';
-import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
+} from '@shared/data/WonderData';
+import { WONDER_PROPERTIES } from '@shared/data/BuildingConstants';
+import { TECHNOLOGIES_DATA } from '@shared/data/TechnologyData';
 
 const TECH_IDS = new Set(TECHNOLOGIES_DATA.map((t) => t.id));
 

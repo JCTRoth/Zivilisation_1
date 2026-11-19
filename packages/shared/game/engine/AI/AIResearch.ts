@@ -8,14 +8,14 @@
  * - Identifying goal technologies per strategy
  */
 
-import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
+import { TECHNOLOGIES_DATA } from '../../../data/TechnologyData';
 import {
   type StrategyProfile,
   type Personality,
   type TechCategory,
   TECH_CATEGORIES,
 } from './AITypes';
-import type { Civilization } from '../../../../types/game';
+import type { Civilization } from '../../../types/game';
 
 // ---------------------------------------------------------------------------
 // Types

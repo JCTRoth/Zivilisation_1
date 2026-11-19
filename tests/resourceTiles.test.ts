@@ -21,7 +21,7 @@ import {
   RESOURCE_TILE_FILES,
   TerrainTextureManager,
 } from '@/game/rendering/TerrainTextureManager';
-import type { MapState } from '../types/game';
+import type { MapState } from '@shared/types/game';
 
 /** Files the Image stub can decode; anything else errors like a real 404. */
 const AVAILABLE = new Set([

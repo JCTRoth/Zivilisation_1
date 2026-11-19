@@ -7,7 +7,7 @@
  * "observations only, never state" rule.
  */
 import { describe, it, expect } from 'vitest';
-import { NavalPatrolMemory } from '@/game/engine/AI/NavalPatrolMemory';
+import { NavalPatrolMemory } from '@shared/game/engine/AI/NavalPatrolMemory';
 
 describe('swept water — the fix for hulls milling in one corner', () => {
   it('treats never-patrolled water as the best patrol target', () => {

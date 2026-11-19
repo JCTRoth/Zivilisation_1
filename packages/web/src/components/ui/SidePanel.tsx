@@ -1,26 +1,26 @@
 import React, { useMemo, useCallback } from 'react';
-import { useGameStore } from '@/stores/GameStore';
-import { CIVILIZATIONS } from '@/data/GameData';
-import { TILE_SIZE } from '@/data/TerrainData';
-import { getResourceYields, TERRAIN_PROPERTIES } from '@/data/TerrainConstants';
-import { SPECIALIST_YIELDS } from '@/data/GameConstants';
-import { governorOption } from '@/utils/CityGovernorUtils';
-import { unitRankBadge } from '@/utils/UnitStatus';
+import { useGameStore } from '../../stores/GameStore';
+import { CIVILIZATIONS } from '@shared/data/GameData';
+import { TILE_SIZE } from '@shared/data/TerrainData';
+import { getResourceYields, TERRAIN_PROPERTIES } from '@shared/data/TerrainConstants';
+import { SPECIALIST_YIELDS } from '@shared/data/GameConstants';
+import { governorOption } from '../../utils/CityGovernorUtils';
+import { unitRankBadge } from '../../utils/UnitStatus';
 import {
   UNIT_RANK_INFO,
   UNIT_RANK_MAX,
   getUnitRank,
   type UnitRank,
-} from '@/game/engine/UnitRankSystem';
+} from '@shared/game/engine/UnitRankSystem';
 import MiniMap from './MiniMap';
 import '../../styles/sidePanel.css';
 import '../../styles/unitRank.css';
-import type { City, Civilization, SpecialistType, Unit } from '../../../types/game';
-import GameEngine from '@/game/engine/GameEngine';
-import { teamColor, teamName } from '@/data/TeamConstants';
-import { useTranslation } from '@/i18n/useTranslation';
-import { tSpecialistName, tUnitName } from '@/i18n/dataNames';
-import type { TranslationParams } from '@/i18n';
+import type { City, Civilization, SpecialistType, Unit } from '@shared/types/game';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { teamColor, teamName } from '@shared/data/TeamConstants';
+import { useTranslation } from '../../i18n/useTranslation';
+import { tSpecialistName, tUnitName } from '@shared/i18n/dataNames';
+import type { TranslationParams } from '@shared/i18n/index';
 
 const SPECIALIST_TYPES = Object.keys(SPECIALIST_YIELDS) as SpecialistType[];
 

@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useGameStore } from '@/stores/GameStore';
-import { TILE_SIZE } from '@/data/TerrainData';
-import { MiniMapRenderer } from '@/game/rendering/MiniMapRenderer';
-import GameEngine from '@/game/engine/GameEngine';
+import { useGameStore } from '../../stores/GameStore';
+import { TILE_SIZE } from '@shared/data/TerrainData';
+import { MiniMapRenderer } from '../../game/rendering/MiniMapRenderer';
+import GameEngine from '@shared/game/engine/GameEngine';
 import '../../styles/miniMap.css';
 
 // Declare window properties

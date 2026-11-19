@@ -13,9 +13,9 @@
  * therefore the exposure — survives every turn.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
+import { BARBARIAN_CIV_ID } from '@shared/data/VillageConstants';
 import { makeEngine, useSeededRandom } from '../helpers/world';
-import type { Unit } from '@/../types/game';
+import type { Unit } from '@shared/types/game';
 
 const SEED = 4242;
 

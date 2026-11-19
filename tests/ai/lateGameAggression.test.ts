@@ -19,7 +19,7 @@ import {
   AGGRESSION_TRIGGER_THRESHOLD,
   computeAggression,
   lateGameAggression,
-} from '@/game/engine/AI/AIAggression';
+} from '@shared/game/engine/AI/AIAggression';
 import {
   chooseAction,
   lateGameWarPush,
@@ -28,9 +28,9 @@ import {
   scoreCandidates,
   warTargetMargin,
   type PolicyContext,
-} from '@/game/engine/diplomacy/AIDiplomacyPolicy';
-import { diplomaticWeights } from '@/game/engine/diplomacy/DiplomaticWeights';
-import { createOpinion } from '@/game/engine/diplomacy/DiplomaticOpinion';
+} from '@shared/game/engine/diplomacy/AIDiplomacyPolicy';
+import { diplomaticWeights } from '@shared/game/engine/diplomacy/DiplomaticWeights';
+import { createOpinion } from '@shared/game/engine/diplomacy/DiplomaticOpinion';
 
 const WARLORD = { aggression: 9, diplomacy: 2, military: 9, expansion: 6, science: 3, economy: 4 };
 

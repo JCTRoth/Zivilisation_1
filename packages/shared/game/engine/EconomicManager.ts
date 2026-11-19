@@ -24,7 +24,7 @@ import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES } from '../../data/TileImprov
 import { NOMAD_CAMP_FOOD_COST, NOMAD_SETTLEMENT_DRAIN_RADIUS, NOMAD_SETTLEMENT_FOOD_COST } from '../../data/NomadConstants';
 import { SPECIALIST_YIELDS, CITY_UPKEEP_PER_CITY, FREE_CITY_SUPPORT, TREATY_ROUTE_TRADE_MULTIPLIER } from '../../data/GameConstants';
 import { cityBuildingEffects } from './BuildingEffects';
-import type { City, Civilization, Unit } from '../../../types/game';
+import type { City, Civilization, Unit } from '../../types/game';
 import GameEngine from './GameEngine';
 
 interface EconomyTile {
@@ -2243,7 +2243,7 @@ export class EconomicManager {
       // 2. Meltdown chance: small random chance per turn per plant
       // Base chance: 1% per turn, increased by city disorder
       const meltdownChance = this.calculateMeltdownChance(city);
-      if (Math.random() < meltdownChance) {
+      if ((this.gameEngine.rng ?? Math.random)() < meltdownChance) {
         this.triggerNuclearMeltdown(city);
       }
     }

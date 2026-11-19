@@ -15,8 +15,8 @@
  * routes from 12 caravans** on seed 7.
  */
 import { describe, it, expect } from 'vitest';
-import { AutoProduction } from '@/game/engine/AutoProduction';
-import type { City, Civilization, Unit } from '../../types/game';
+import { AutoProduction } from '@shared/game/engine/AutoProduction';
+import type { City, Civilization, Unit } from '@shared/types/game';
 
 /**
  * A two-city AI civ with route capacity free and `trade` researched — the

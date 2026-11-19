@@ -1,6 +1,6 @@
 // Research path helpers — the ordered chain of techs from the tree roots to a
 // target tech (via prerequisites). Used by the tech tree and research selection.
-import type { Technology } from '../../types/game';
+import type { Technology } from '@shared/types/game';
 
 /**
  * Return an ordered path [root, …, targetId] following prerequisite edges.

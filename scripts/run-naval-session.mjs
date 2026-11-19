@@ -22,9 +22,9 @@ const CIVS = Number(process.argv[4] ?? 4);
 
 const spec = `
 import { describe, it, expect } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
+import GameEngine from '@shared/game/engine/GameEngine';
 import { gameProgression } from '@/utils/GameProgression';
-import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
+import { BARBARIAN_CIV_ID } from '@shared/data/VillageConstants';
 
 describe('naval session', () => {
   it('runs to ${ROUNDS} rounds on the archipelago', async () => {

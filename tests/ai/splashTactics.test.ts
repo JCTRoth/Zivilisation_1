@@ -7,10 +7,10 @@
  *    ground, but pile onto cities and fortresses as before.
  */
 import { describe, it, expect } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { SquareGrid } from '@/game/SquareGrid';
-import { scoreStackTarget, stackStepRisk, STACK_RISK_LIMIT } from '@/game/engine/AI/AITactics';
-import type { City, Unit } from '../../types/game';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { SquareGrid } from '@shared/game/SquareGrid';
+import { scoreStackTarget, stackStepRisk, STACK_RISK_LIMIT } from '@shared/game/engine/AI/AITactics';
+import type { City, Unit } from '@shared/types/game';
 
 const G = 'grassland';
 

@@ -21,7 +21,7 @@ import {
   pickFleetMixHull,
   type AvailableShip,
   type NavalDoctrineInput,
-} from '@/game/engine/AI/NavalDoctrine';
+} from '@shared/game/engine/AI/NavalDoctrine';
 
 /** A mid-game warship: expensive to buy and to keep. */
 const BATTLESHIP: AvailableShip = {

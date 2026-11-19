@@ -18,10 +18,10 @@ import {
   rememberBuildingSale,
   BUILDING_REBUY_COOLDOWN_ROUNDS,
   type CityBuildingReport,
-} from '@/game/engine/AI/BuildingAnalyzer';
-import type { ArmyGroup } from '@/game/engine/AI/AITypes';
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
-import type { City, Civilization, MapState, Unit } from '../types/game';
+} from '@shared/game/engine/AI/BuildingAnalyzer';
+import type { ArmyGroup } from '@shared/game/engine/AI/AITypes';
+import { TERRAIN_TYPES } from '@shared/data/TerrainConstants';
+import type { City, Civilization, MapState, Unit } from '@shared/types/game';
 
 const G = TERRAIN_TYPES.GRASSLAND;
 const O = TERRAIN_TYPES.OCEAN;

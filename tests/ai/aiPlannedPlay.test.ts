@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { AIManager } from '@/game/engine/AI/AIManager';
-import { AutoProduction } from '@/game/engine/AutoProduction';
+import { AIManager } from '@shared/game/engine/AI/AIManager';
+import { AutoProduction } from '@shared/game/engine/AutoProduction';
 
 /**
  * Regression tests for the "no planned play" blockers found in the 160-round

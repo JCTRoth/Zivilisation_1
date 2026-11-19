@@ -1,14 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { UNIT_PROPERTIES } from '@/data/UnitConstants';
-import { formatCombatStat, unitRankBadge, unitStatus } from '@/utils/UnitStatus';
-import { useGameStore } from '@/stores/GameStore';
-import { GameUtils } from '@/utils/GameUtils';
-import { useTranslation } from '@/i18n/useTranslation';
-import GameModal from '@/components/ui/gamemodals/ModalShell';
-import { UnitIcon } from '@/components/ui/UnitIcon';
-import '@/styles/unitRank.css';
-import '@/styles/unitStackModal.css';
-import type { City, Unit } from '../../../types/game';
+import { UNIT_PROPERTIES } from '@shared/data/UnitConstants';
+import { formatCombatStat, unitRankBadge, unitStatus } from '../../utils/UnitStatus';
+import { useGameStore } from '../../stores/GameStore';
+import { GameUtils } from '../../utils/GameUtils';
+import { useTranslation } from '../../i18n/useTranslation';
+import GameModal from '../ui/gamemodals/ModalShell';
+import { UnitIcon } from '../ui/UnitIcon';
+import '../../styles/unitRank.css';
+import '../../styles/unitStackModal.css';
+import type { City, Unit } from '@shared/types/game';
 
 /**
  * Unit stack modal — shown when the player clicks a city or a field holding

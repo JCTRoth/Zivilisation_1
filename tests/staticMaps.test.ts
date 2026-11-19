@@ -7,9 +7,9 @@
  * characters and the game translates them via `FREECIV_TERRAIN_LEGEND`.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import MapGenerator from '@/game/engine/MapGenerator/MapGenerator';
-import type { GenTile } from '@/game/engine/MapGenerator/MapGeneratorHelper';
-import { TERRAIN_RESOURCES, TERRAIN_TYPES } from '@/data/TerrainConstants';
+import MapGenerator from '@shared/game/engine/MapGenerator/MapGenerator';
+import type { GenTile } from '@shared/game/engine/MapGenerator/MapGeneratorHelper';
+import { TERRAIN_RESOURCES, TERRAIN_TYPES } from '@shared/data/TerrainConstants';
 import {
   FREECIV_TERRAIN_LEGEND,
   STATIC_MAPS,
@@ -18,7 +18,7 @@ import {
   hasSpecialResource,
   terrainIdForChar,
   validateStaticMap,
-} from '@/data/maps';
+} from '@shared/data/maps/index';
 
 const EARTH_WIDTH = 180;
 const EARTH_HEIGHT = 90;

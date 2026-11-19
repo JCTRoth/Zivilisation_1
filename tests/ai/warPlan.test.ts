@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AIManager } from '@/game/engine/AI/AIManager';
+import { AIManager } from '@shared/game/engine/AI/AIManager';
 
 /**
  * `AIManager.getWarPlan` is the read-only bridge the dev-mode "Forge of War"

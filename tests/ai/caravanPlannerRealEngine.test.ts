@@ -14,8 +14,8 @@
  * was reported at all.
  */
 import { describe, it, expect } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { MAX_TRADE_ROUTES } from '@/game/engine/GameEngine';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { MAX_TRADE_ROUTES } from '@shared/game/engine/GameEngine';
 
 describe('the caravan planner on a real engine', () => {
   const buildWorld = async () => {

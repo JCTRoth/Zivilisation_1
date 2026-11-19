@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { useSeededRandom } from './helpers/world';
-import GameEngine from '@/game/engine/GameEngine';
-import { MIN_CITY_CENTER_DISTANCE } from '@/game/engine/SettlementEvaluator';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { MIN_CITY_CENTER_DISTANCE } from '@shared/game/engine/SettlementEvaluator';
 
 /**
  * Auto End Turn + city founding behavior.

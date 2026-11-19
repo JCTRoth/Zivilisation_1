@@ -1,4 +1,4 @@
-import type { Technology, Civilization } from '../../../types/game';
+import type { Technology, Civilization } from '../../types/game';
 import GameEngine from './GameEngine';
 
 /**

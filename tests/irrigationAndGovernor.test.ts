@@ -12,9 +12,9 @@
  *    uses, which is what makes a Commerce city stay a Commerce city.
  */
 import { describe, expect, it } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { IMPROVEMENT_TYPES } from '@/data/TileImprovementConstants';
-import type { City } from '../types/game';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { IMPROVEMENT_TYPES } from '@shared/data/TileImprovementConstants';
+import type { City } from '@shared/types/game';
 import { makeGridEngine } from './helpers/world';
 
 const G = 'grassland';

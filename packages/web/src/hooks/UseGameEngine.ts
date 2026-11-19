@@ -1,10 +1,10 @@
 import { useEffect } from 'react';
 import { useGameStore } from '../stores/GameStore';
-import GameEngine from '../game/engine/GameEngine';
+import GameEngine from '@shared/game/engine/GameEngine';
 import { EngineEventRouter } from '../utils/EngineEventHandlers';
 import { gameLogger } from '../utils/GameLogger';
 import { gameProgression } from '../utils/GameProgression';
-import { createLocalSession, setActiveSession } from '../utils/session';
+import { createLocalSession, setActiveSession } from '../session';
 
 /**
  * Custom hook to integrate GameEngine with Zustand state

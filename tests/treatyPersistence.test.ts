@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { scoreCandidates } from '@/game/engine/diplomacy/AIDiplomacyPolicy';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { scoreCandidates } from '@shared/game/engine/diplomacy/AIDiplomacyPolicy';
 
 /**
  * A treaty between two nations STAYS in place until one side breaks it.

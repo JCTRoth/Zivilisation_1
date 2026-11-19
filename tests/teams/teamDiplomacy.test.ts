@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { makeTeamEngine } from './teamHelpers';
-import { scoreCandidates, type PolicyContext } from '@/game/engine/diplomacy/AIDiplomacyPolicy';
-import { diplomatActionsFor } from '@/game/engine/diplomacy/DiplomatAbilities';
-import { diplomaticWeights } from '@/game/engine/diplomacy/DiplomaticWeights';
-import { createOpinion } from '@/game/engine/diplomacy/DiplomaticOpinion';
+import { scoreCandidates, type PolicyContext } from '@shared/game/engine/diplomacy/AIDiplomacyPolicy';
+import { diplomatActionsFor } from '@shared/game/engine/diplomacy/DiplomatAbilities';
+import { diplomaticWeights } from '@shared/game/engine/diplomacy/DiplomaticWeights';
+import { createOpinion } from '@shared/game/engine/diplomacy/DiplomaticOpinion';
 
 describe('fixed alliances in diplomacy', () => {
   it('forces every teammate pair into a locked alliance with an embassy', () => {

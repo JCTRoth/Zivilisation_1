@@ -12,12 +12,12 @@
  *  - end-to-end: a group unit targets the enemy city and captures it.
  */
 import { describe, expect, it, vi } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { SquareGrid } from '@/game/SquareGrid';
-import { AICoordinator } from '@/game/engine/AI/AICoordinator';
-import type { ArmyGroup } from '@/game/engine/AI/AITypes';
-import type { Unit } from '../../types/game';
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { SquareGrid } from '@shared/game/SquareGrid';
+import { AICoordinator } from '@shared/game/engine/AI/AICoordinator';
+import type { ArmyGroup } from '@shared/game/engine/AI/AITypes';
+import type { Unit } from '@shared/types/game';
+import { TERRAIN_TYPES } from '@shared/data/TerrainConstants';
 
 const distanceFn = (c1: number, r1: number, c2: number, r2: number): number =>
   Math.max(Math.abs(c1 - c2), Math.abs(r1 - r2));

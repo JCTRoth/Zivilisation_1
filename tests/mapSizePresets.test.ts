@@ -23,7 +23,7 @@ import {
   sizeFactorLabel,
   tilesPerCiv,
   tilesVsStandard,
-} from '@/data/MapSizePresets';
+} from '@shared/data/MapSizePresets';
 
 describe('preset ladder', () => {
   it('ships every preset inside the clamp bounds', () => {

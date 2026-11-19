@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { computeMovementPreview } from '@/utils/MovementPreview';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { computeMovementPreview } from '@shared/utils/MovementPreview';
 
 /**
  * Regression tests for GoTo pathing:

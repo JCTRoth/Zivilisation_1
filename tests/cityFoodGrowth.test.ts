@@ -6,9 +6,9 @@
  * report from the City Modal.
  */
 import { describe, expect, it } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { SquareGrid } from '@/game/SquareGrid';
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { SquareGrid } from '@shared/game/SquareGrid';
+import { TERRAIN_TYPES } from '@shared/data/TerrainConstants';
 
 function makeEngine() {
   const size = 7;

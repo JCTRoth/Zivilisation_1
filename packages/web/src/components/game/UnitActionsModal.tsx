@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useTranslation } from '@/i18n/useTranslation';
-import { tUnitName } from '@/i18n/dataNames';
-import type { TranslationKey } from '@/i18n';
-import { playSfx } from '@/utils/Sfx';
-import type { DiplomatAction, DiplomatTarget } from '@/game/engine/DiplomacyTypes';
+import { useTranslation } from '../../i18n/useTranslation';
+import { tUnitName } from '@shared/i18n/dataNames';
+import type { TranslationKey } from '@shared/i18n/index';
+import { playSfx } from '../../utils/Sfx';
+import type { DiplomatAction, DiplomatTarget } from '@shared/game/engine/DiplomacyTypes';
 import { UnitActionsModalProps } from './UnitActionsModalProps';
 import '../../styles/unitActionsModal.css';
 

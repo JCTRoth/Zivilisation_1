@@ -13,9 +13,10 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import type GameEngineType from '@/game/engine/GameEngine';
-import { SquareGrid } from '@/game/SquareGrid';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { webRuntime } from '@/gameRuntime';
+import type GameEngineType from '@shared/game/engine/GameEngine';
+import { SquareGrid } from '@shared/game/SquareGrid';
 import { useGameStore } from '@/stores/GameStore';
 
 /** Two AI civs on a small map — the AI-vs-AI shape. */
@@ -23,7 +24,7 @@ function makeAIVsAIEngine(): GameEngineType {
   const width = 12;
   const height = 12;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const engine = new GameEngine(null) as any;
+  const engine = new GameEngine(null, webRuntime) as any;
   engine.units = [];
   engine.cities = [];
   engine.onStateChange = null;

@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
-import { useTranslation } from '@/i18n/useTranslation';
-import type { LanguageId } from '@/i18n/languages';
+import { useTranslation } from '../../i18n/useTranslation';
+import type { LanguageId } from '@shared/i18n/languages';
 import '../../styles/languageSwitcher.css';
 
 interface LanguageSwitcherProps {

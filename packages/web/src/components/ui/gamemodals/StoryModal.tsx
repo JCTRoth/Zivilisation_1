@@ -1,8 +1,8 @@
 import React from 'react';
 import GameModal from './ModalShell';
-import { useTranslation } from '@/i18n/useTranslation';
-import { STORY_EVENTS, type StoryId } from '@/data/StoryEvents';
-import type { StoryNotice } from '../../../../types/game';
+import { useTranslation } from '../../../i18n/useTranslation';
+import { STORY_EVENTS, type StoryId } from '@shared/data/StoryEvents';
+import type { StoryNotice } from '@shared/types/game';
 import '../../../styles/storyModal.css';
 
 interface StoryModalProps {

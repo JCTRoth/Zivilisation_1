@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { useGameStore } from '@/stores/GameStore';
-import { useTranslation } from '@/i18n/useTranslation';
-import type { TranslationKey } from '@/i18n';
-import type { DevOverlayFlags } from '../../../types/game';
+import { useGameStore } from '../../stores/GameStore';
+import { useTranslation } from '../../i18n/useTranslation';
+import type { TranslationKey } from '@shared/i18n/index';
+import type { DevOverlayFlags } from '@shared/types/game';
 import '../../styles/devOverlayPanel.css';
 
 interface DevOverlayOption {

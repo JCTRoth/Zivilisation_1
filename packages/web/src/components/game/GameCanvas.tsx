@@ -5,10 +5,10 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { useGameStore } from "@/stores/GameStore";
-import { sendCommand, isCommandRejection } from "@/utils/session";
+import { useGameStore } from "../../stores/GameStore";
+import { sendCommand, isCommandRejection } from "../../session";
 import { useShallow } from "zustand/react/shallow";
-import { TILE_SIZE } from "@/data/TerrainData";
+import { TILE_SIZE } from "@shared/data/TerrainData";
 import {
   MapRenderer,
   TerrainRenderGrid,
@@ -16,13 +16,13 @@ import {
   UnitPathStep,
   getCitySpecialistButtons,
   getUnitDisplayTile,
-} from "@/game/rendering/MapRenderer";
-import MoveAnimator from "@/game/rendering/MoveAnimator";
-import { MathUtils } from "@/utils/MathUtils";
-import { centerCameraOnTile, clampZoom } from "@/utils/CameraUtils";
-import { finishCameraGlide } from "@/game/rendering/CameraGlideGate";
-import { MiniMapRenderer } from "@/game/rendering/MiniMapRenderer";
-import { TerrainTextureManager } from "@/game/rendering/TerrainTextureManager";
+} from "../../game/rendering/MapRenderer";
+import MoveAnimator from "../../game/rendering/MoveAnimator";
+import { MathUtils } from "@shared/utils/MathUtils";
+import { centerCameraOnTile, clampZoom } from "../../utils/CameraUtils";
+import { finishCameraGlide } from "../../game/rendering/CameraGlideGate";
+import { MiniMapRenderer } from "../../game/rendering/MiniMapRenderer";
+import { TerrainTextureManager } from "../../game/rendering/TerrainTextureManager";
 import type {
   City,
   GameState,
@@ -30,35 +30,35 @@ import type {
   MovementReachable,
   TurnMarker,
   Unit,
-} from "../../../types/game";
-import GameEngine from "@/game/engine/GameEngine";
+} from "@shared/types/game";
+import GameEngine from "@shared/game/engine/GameEngine";
 import "../../styles/civ1GameCanvas.css";
 import UnitActionsModal from "./UnitActionsModal";
 import UnitStackModal from "./UnitStackModal";
 import EspionageReportModal, {
   type EspionageStage,
-} from "@/components/ui/gamemodals/EspionageReportModal";
-import { Pathfinding } from "@/game/engine/Pathfinding";
+} from "../ui/gamemodals/EspionageReportModal";
+import { Pathfinding } from "@shared/game/engine/Pathfinding";
 import {
   computeMovementPreview,
   type TileLookup,
-} from "@/utils/MovementPreview";
-import { KeyboardHandler } from "@/game/engine/KeyboardHandler";
-import { useTranslation } from "@/i18n/useTranslation";
-import type { TranslationKey } from '@/i18n';
+} from "@shared/utils/MovementPreview";
+import { KeyboardHandler } from "@shared/game/engine/KeyboardHandler";
+import { useTranslation } from "../../i18n/useTranslation";
+import type { TranslationKey } from '@shared/i18n/index';
 import {
   ESPIONAGE_DIPLOMAT_ACTIONS,
   type DiplomatAction,
-} from "@/game/engine/DiplomacyTypes";
-import { tTechName } from '@/i18n/dataNames';
-import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
-import { unlockAudio } from '@/utils/Sfx';
-import { playUnitSelection } from '@/utils/SoundEngine';
-import { UNIT_TYPES } from '@/data/UnitConstants';
-import { debugLog } from '@/utils/DevLog';
-import { getAiTargetMarkers } from '@/utils/DevOverlayState';
-import { computeDevPlayerVision } from '@/utils/DevPlayerVision';
-import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
+} from "@shared/game/engine/DiplomacyTypes";
+import { tTechName } from '@shared/i18n/dataNames';
+import { TECHNOLOGIES_DATA } from '@shared/data/TechnologyData';
+import { unlockAudio } from '../../utils/Sfx';
+import { playUnitSelection } from '../../utils/SoundEngine';
+import { UNIT_TYPES } from '@shared/data/UnitConstants';
+import { debugLog } from '@shared/utils/DevLog';
+import { getAiTargetMarkers } from '../../utils/DevOverlayState';
+import { computeDevPlayerVision } from '../../utils/DevPlayerVision';
+import { BARBARIAN_CIV_ID } from '@shared/data/VillageConstants';
 
 /**
  * Frame rate of the single render loop that drives the map. Animations are

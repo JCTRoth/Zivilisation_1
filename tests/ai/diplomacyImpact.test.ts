@@ -8,10 +8,10 @@
  * from a different relationship state, and at a different scale.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { DiplomacyManager } from '@/game/engine/DiplomacyManager';
-import { computeImpact, magnitudeOf, stateMultiplier, warEventFor } from '@/game/engine/diplomacy/DiplomaticImpacts';
-import { diplomaticWeights, personalityMultiplier } from '@/game/engine/diplomacy/DiplomaticWeights';
-import { createOpinion, normalizeOpinion, REASON_HISTORY } from '@/game/engine/diplomacy/DiplomaticOpinion';
+import { DiplomacyManager } from '@shared/game/engine/DiplomacyManager';
+import { computeImpact, magnitudeOf, stateMultiplier, warEventFor } from '@shared/game/engine/diplomacy/DiplomaticImpacts';
+import { diplomaticWeights, personalityMultiplier } from '@shared/game/engine/diplomacy/DiplomaticWeights';
+import { createOpinion, normalizeOpinion, REASON_HISTORY } from '@shared/game/engine/diplomacy/DiplomaticOpinion';
 
 /** A civ with a chosen personality, so weights are controllable. */
 function civ(id: number, name: string, personality: Record<string, number>, extra: Record<string, unknown> = {}): any {

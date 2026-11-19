@@ -15,8 +15,8 @@ import {
   AI_ATTACK_MIN_WIN_CHANCE,
   decideAiAttack,
   estimateEngagementWinChance,
-} from '@/game/engine/AI/AttackOdds';
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
+} from '@shared/game/engine/AI/AttackOdds';
+import { TERRAIN_TYPES } from '@shared/data/TerrainConstants';
 
 const unit = (overrides: Record<string, unknown> = {}) => ({
   id: 'u',

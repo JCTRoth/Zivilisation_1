@@ -20,11 +20,11 @@
  */
 import { describe, expect, it } from 'vitest';
 import { makeEngine, useSeededRandom, type TestWorld } from '../helpers/world';
-import { AIUtility } from '@/game/engine/AI/AIUtility';
-import { collectCityThreatSamples } from '@/game/engine/AI/AIStrategy';
-import { NOMAD_CIV_ID } from '@/data/NomadConstants';
-import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
-import type { Unit } from '../../types/game';
+import { AIUtility } from '@shared/game/engine/AI/AIUtility';
+import { collectCityThreatSamples } from '@shared/game/engine/AI/AIStrategy';
+import { NOMAD_CIV_ID } from '@shared/data/NomadConstants';
+import { BARBARIAN_CIV_ID } from '@shared/data/VillageConstants';
+import type { Unit } from '@shared/types/game';
 
 type Engine = TestWorld['engine'];
 

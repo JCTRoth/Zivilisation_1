@@ -7,8 +7,8 @@
  * teammates when per-player storage is unavailable. This is read-only and does
  * not change AI decision-making.
  */
-import { UNIT_TYPES } from '@/data/GameData';
-import type { City, Civilization, Unit } from '../../types/game';
+import { UNIT_TYPES } from '@shared/data/GameData';
+import type { City, Civilization, Unit } from '@shared/types/game';
 
 /** Visibility snapshot of one player at one moment. */
 export interface DevPlayerVision {

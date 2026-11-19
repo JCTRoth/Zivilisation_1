@@ -8,9 +8,9 @@
  * for free.
  */
 import { describe, expect, it } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { citizenFoodDemand } from '@/game/engine/EconomicManager';
-import type { City, Unit } from '../types/game';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { citizenFoodDemand } from '@shared/game/engine/EconomicManager';
+import type { City, Unit } from '@shared/types/game';
 import { makeGridEngine, world } from './helpers/world';
 
 const G = 'grassland';

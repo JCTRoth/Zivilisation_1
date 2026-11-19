@@ -1,0 +1,14 @@
+{
+  "name": "@civ1/shared",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Headless game engine, rules, data and types. Imported by both the server and the web client.",
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./*": "./*"
+  },
+  "sideEffects": false
+}

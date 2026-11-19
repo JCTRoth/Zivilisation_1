@@ -12,14 +12,14 @@
  */
 
 import type GameEngine from './GameEngine';
-import type { City, Civilization } from '../../../types/game';
+import type { City, Civilization } from '../../types/game';
 import {
   getWonder,
   isWonderObsolete,
   wondersInCity,
   type WonderDefinition,
   type WonderEffect,
-} from '@/data/WonderData';
+} from '../../data/WonderData';
 
 // ---------------------------------------------------------------------------
 // Pure helpers (no engine needed — safe for the zustand store)

@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useGameStore } from '@/stores/GameStore';
-import { findNewlySightedEnemies, getVisibleEnemyUnitIds } from '@/game/engine/EnemySighting';
-import type { Unit } from '../types/game';
+import { findNewlySightedEnemies, getVisibleEnemyUnitIds } from '@shared/game/engine/EnemySighting';
+import type { Unit } from '@shared/types/game';
+import { webRuntime } from '@/gameRuntime';
 
 /**
  * Fog-of-war "new sighting" detection, used to stop a GoTo path when a step
@@ -57,7 +58,7 @@ describe('enemy sighting detection', () => {
       visibleTiles: [tileIndex(10, 10)],
     });
 
-    const visible = getVisibleEnemyUnitIds();
+    const visible = getVisibleEnemyUnitIds(webRuntime);
     expect([...visible]).toEqual(['enemy-visible']);
   });
 
@@ -66,7 +67,7 @@ describe('enemy sighting detection', () => {
       units: [unit('own', 0, 5, 5), unit('enemy-here', 1, 11, 11)],
       visibleTiles: [tileIndex(5, 5)],
     });
-    const before = getVisibleEnemyUnitIds();
+    const before = getVisibleEnemyUnitIds(webRuntime);
     expect(before.size).toBe(0);
 
     // The unit moved: its tile is now in view.
@@ -75,7 +76,7 @@ describe('enemy sighting detection', () => {
       visibleTiles: [tileIndex(10, 10), tileIndex(11, 11)],
     });
 
-    const newly = findNewlySightedEnemies(before);
+    const newly = findNewlySightedEnemies(before, webRuntime);
     expect(newly.map((u) => u.id)).toEqual(['enemy-here']);
   });
 
@@ -84,7 +85,7 @@ describe('enemy sighting detection', () => {
       units: [unit('own', 0, 10, 10), unit('enemy-known', 1, 11, 11)],
       visibleTiles: [tileIndex(10, 10), tileIndex(11, 11)],
     });
-    const before = getVisibleEnemyUnitIds();
+    const before = getVisibleEnemyUnitIds(webRuntime);
     expect(before.size).toBe(1);
 
     // The unit moved, but the enemy stays in view.
@@ -93,7 +94,7 @@ describe('enemy sighting detection', () => {
       visibleTiles: [tileIndex(12, 12), tileIndex(11, 11)],
     });
 
-    expect(findNewlySightedEnemies(before)).toEqual([]);
+    expect(findNewlySightedEnemies(before, webRuntime)).toEqual([]);
   });
 
   it('ignores defeated enemies and never reports fogged ones', () => {
@@ -103,6 +104,6 @@ describe('enemy sighting detection', () => {
       visibleTiles: [tileIndex(10, 10), tileIndex(11, 11)],
     });
 
-    expect([...getVisibleEnemyUnitIds()]).toEqual([]);
+    expect([...getVisibleEnemyUnitIds(webRuntime)]).toEqual([]);
   });
 });

@@ -4,7 +4,7 @@
  * (TURN_START / TURN_END) via `detail.cities` for the active player.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { gameLogger } from '../src/utils/GameLogger';
+import { gameLogger } from '@/utils/GameLogger';
 
 describe('GameLogger full city JSON inclusion', () => {
   beforeEach(() => {

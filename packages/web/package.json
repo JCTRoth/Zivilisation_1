@@ -1,0 +1,10 @@
+{
+  "name": "@civ1/web",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "React/Vite client: components, rendering, stores and the client transport session.",
+  "dependencies": {
+    "@civ1/shared": "*"
+  }
+}

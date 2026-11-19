@@ -13,7 +13,7 @@
  *   9. Passability validation
  */
 
-import { TERRAIN_TYPES, WATER_TERRAIN_TYPES } from '@/data/TerrainConstants';
+import { TERRAIN_TYPES, WATER_TERRAIN_TYPES } from '../../../data/TerrainConstants';
 import {
   type GenTile, type InternalTile, type MapGeneratorSettings,
   type MapGroup, type Point,
@@ -35,7 +35,7 @@ import {
   hasSpecialResource,
   terrainIdForChar,
   type StaticMapDefinition,
-} from '@/data/maps';
+} from '../../../data/maps/index';
 
 /**
  * A connected water body smaller than this (4x6 = 24 tiles) is classified as

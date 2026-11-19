@@ -19,9 +19,9 @@
  * stayed flagged asleep and got skipped again.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { UnitActionManager } from '@/game/engine/UnitActionManager';
-import { RESEARCH_UNLOCK_ROUND, AUTO_END_TURN_OFFER_TURN, AUTO_END_TURN_OFFER_FLAG } from '@/data/GameConstants';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { UnitActionManager } from '@shared/game/engine/UnitActionManager';
+import { RESEARCH_UNLOCK_ROUND, AUTO_END_TURN_OFFER_TURN, AUTO_END_TURN_OFFER_FLAG } from '@shared/data/GameConstants';
 
 type AnyUnit = Record<string, unknown>;
 

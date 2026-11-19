@@ -7,11 +7,11 @@
  *    collect the hut instead of leaving it for the barbarians).
  */
 import { describe, expect, it, vi } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { SquareGrid } from '@/game/SquareGrid';
-import { AutoProduction } from '@/game/engine/AutoProduction';
-import { AI_MIN_FOOD_SURPLUS } from '@/game/engine/AI/AICityManager';
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { SquareGrid } from '@shared/game/SquareGrid';
+import { AutoProduction } from '@shared/game/engine/AutoProduction';
+import { AI_MIN_FOOD_SURPLUS } from '@shared/game/engine/AI/AICityManager';
+import { TERRAIN_TYPES } from '@shared/data/TerrainConstants';
 import {
   calculateVillageTakeChance,
   villageDecisionRoll,
@@ -20,7 +20,7 @@ import {
   AI_VILLAGE_SAFE_DISTANCE,
   AI_VILLAGE_CITY_SCALE,
   AI_VILLAGE_EARLY_GAME_ROUNDS,
-} from '@/data/VillageConstants';
+} from '@shared/data/VillageConstants';
 
 type Rows = string[][];
 const G = TERRAIN_TYPES.GRASSLAND;

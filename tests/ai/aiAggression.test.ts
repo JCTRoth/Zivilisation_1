@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { AIResearch } from '@/game/engine/AI/AIResearch';
-import { AIEconomicManager } from '@/game/engine/AI/AIEconomicManager';
-import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
-import { RESEARCH_UNLOCK_ROUND } from '@/data/GameConstants';
-import type { City, Civilization, Unit } from '../../types/game';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { AIResearch } from '@shared/game/engine/AI/AIResearch';
+import { AIEconomicManager } from '@shared/game/engine/AI/AIEconomicManager';
+import { BARBARIAN_CIV_ID } from '@shared/data/VillageConstants';
+import { RESEARCH_UNLOCK_ROUND } from '@shared/data/GameConstants';
+import type { City, Civilization, Unit } from '@shared/types/game';
 
 /**
  * AI-vs-AI aggression & research regression tests.

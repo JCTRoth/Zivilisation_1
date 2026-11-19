@@ -1,5 +1,5 @@
 import { useGameStore } from '../../stores/GameStore';
-import type { Unit } from '../../../types/game';
+import type { Unit } from '@shared/types/game';
 import {
   BASE_GLIDE_DURATION_MS,
   registerGlide,

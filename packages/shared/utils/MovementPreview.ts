@@ -1,6 +1,6 @@
-import { Pathfinding } from '@/game/engine/Pathfinding';
-import type { MapTile } from '@/game/engine/GameEngine';
-import type { TurnMarker, Unit } from '../../types/game';
+import { Pathfinding } from '../game/engine/Pathfinding';
+import type { MapTile } from '../game/engine/GameEngine';
+import type { TurnMarker, Unit } from '../types/game';
 
 /** Tile accessor shared by the movement-preview helpers. */
 export type TileLookup = (col: number, row: number) => MapTile | null;

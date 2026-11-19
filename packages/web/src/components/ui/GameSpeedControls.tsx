@@ -15,9 +15,9 @@
  */
 
 import { Button, Form } from 'react-bootstrap';
-import { useGameStore } from '@/stores/GameStore';
-import { useTranslation } from '@/i18n/useTranslation';
-import { canGoFaster, canGoSlower, gameSpeedLabel, GAME_SPEED_STEP_COUNT } from '@/data/GameConstants';
+import { useGameStore } from '../../stores/GameStore';
+import { useTranslation } from '../../i18n/useTranslation';
+import { canGoFaster, canGoSlower, gameSpeedLabel, GAME_SPEED_STEP_COUNT } from '@shared/data/GameConstants';
 import '../../styles/gameSpeedControls.css';
 
 interface GameSpeedControlsProps {

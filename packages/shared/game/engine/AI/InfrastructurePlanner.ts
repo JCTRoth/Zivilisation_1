@@ -33,8 +33,8 @@ import {
   IMPROVEMENT_PROPERTIES,
   IMPROVEMENT_REQUIREMENTS,
   IMPROVEMENT_TYPES,
-} from '@/data/TileImprovementConstants';
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
+} from '../../../data/TileImprovementConstants';
+import { TERRAIN_TYPES } from '../../../data/TerrainConstants';
 
 /**
  * Tile types no settler can work. (Public works are paid in worker-turns, and

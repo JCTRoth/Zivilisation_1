@@ -20,8 +20,8 @@
  */
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { makeEngine, type TestWorld } from './helpers/world';
-import { UNIT_TYPES } from '@/data/UnitConstants';
-import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
+import { UNIT_TYPES } from '@shared/data/UnitConstants';
+import { BARBARIAN_CIV_ID } from '@shared/data/VillageConstants';
 import {
   NOMAD_CARAVAN_MIN_JOURNEY,
   NOMAD_CIV_ID,
@@ -30,7 +30,7 @@ import {
   NOMAD_ROUTE_INCOME_BASE,
   NOMAD_START_GOLD,
   NOMAD_TRADE_ROUTE_LIMIT,
-} from '@/data/NomadConstants';
+} from '@shared/data/NomadConstants';
 
 type Engine = TestWorld['engine'];
 

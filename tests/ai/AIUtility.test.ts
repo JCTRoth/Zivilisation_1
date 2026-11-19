@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { AIUtility, TerrainAnalysis, MoveOption } from '@/game/engine/AI/AIUtility';
-import type { SquareCoordinate } from '@/game/SquareGrid';
+import { AIUtility, TerrainAnalysis, MoveOption } from '@shared/game/engine/AI/AIUtility';
+import type { SquareCoordinate } from '@shared/game/SquareGrid';
 
 describe('AIUtility', () => {
   // Mock terrain data

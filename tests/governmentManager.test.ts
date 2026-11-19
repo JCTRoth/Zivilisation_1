@@ -4,8 +4,8 @@
  * the AI's best-government pick, and capital designation / relocation / loss.
  */
 import { describe, it, expect } from 'vitest';
-import { GovernmentManager, ANARCHY_TURNS } from '../src/game/engine/GovernmentManager';
-import { Civilization } from '../types/game';
+import { GovernmentManager, ANARCHY_TURNS } from '@shared/game/engine/GovernmentManager';
+import { Civilization } from '@shared/types/game';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function makeEngine(overrides: any = {}): any {

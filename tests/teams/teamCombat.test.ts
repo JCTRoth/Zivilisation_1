@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { SquareGrid } from '@/game/SquareGrid';
-import type { City, Unit } from '../../types/game';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { SquareGrid } from '@shared/game/SquareGrid';
+import type { City, Unit } from '@shared/types/game';
 import { teamSettings } from './teamHelpers';
 
 function teamEngine(assignments = [0, 0, 1]): GameEngine {

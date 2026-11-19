@@ -8,5 +8,10 @@ export default defineConfig({
     environment: 'node',
     exclude: ['**/node_modules/**', '**/dist/**', 'e2e/**'],
   },
-  resolve: { alias: { '@': path.resolve(__dirname, './src') } },
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './packages/web/src'),
+      '@shared': path.resolve(__dirname, './packages/shared'),
+    },
+  },
 })

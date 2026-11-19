@@ -15,11 +15,11 @@ import { describe, it, expect } from 'vitest';
 import {
   resolveBrowserLanguage,
   resolveBrowserLanguageForTag,
-} from '@/i18n/languageDetection';
+} from '@shared/i18n/languageDetection';
 import {
   resolveNationForTags,
   resolveNationForTag,
-} from '@/data/CivilizationByLanguage';
+} from '@shared/data/CivilizationByLanguage';
 
 /**
  * Index of the first entry in the list a per-tag resolver answers for, or -1

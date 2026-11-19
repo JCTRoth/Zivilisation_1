@@ -7,8 +7,8 @@
  * UNIT_PROMOTED event.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { CombatSystem } from '@/game/engine/CombatSystem';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { CombatSystem } from '@shared/game/engine/CombatSystem';
 import {
   COMBAT_XP,
   UNIT_RANK,
@@ -23,8 +23,8 @@ import {
   rankForExperience,
   rankStrengthMultiplier,
   startingRankForCity,
-} from '@/game/engine/UnitRankSystem';
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
+} from '@shared/game/engine/UnitRankSystem';
+import { TERRAIN_TYPES } from '@shared/data/TerrainConstants';
 
 const unit = (overrides: Record<string, unknown> = {}) => ({
   id: 'u',

@@ -26,19 +26,17 @@ import { CombatSystem } from './CombatSystem';
 import { createDefaultAIState, resolveAICivStrategy } from './AI/AITypes';
 import { fishingRelevanceForCiv } from './FisherEconomics';
 import { serializeCities } from '../../utils/CitySnapshots';
-import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
-import { NOMAD_CIV_ID } from '@/data/NomadConstants';
-import { CARAVAN_CITY_MOVE_BONUS, CARAVAN_CITY_MOVE_RADIUS } from '@/data/GameConstants';
-import { isWonderId, wonderGroupMembers } from '@/data/WonderData';
-import { UNIT_UPGRADE_PATHS } from '@/data/UnitConstants';
+import { BARBARIAN_CIV_ID } from '../../data/VillageConstants';
+import { NOMAD_CIV_ID } from '../../data/NomadConstants';
+import { CARAVAN_CITY_MOVE_BONUS, CARAVAN_CITY_MOVE_RADIUS } from '../../data/GameConstants';
+import { isWonderId, wonderGroupMembers } from '../../data/WonderData';
+import { UNIT_UPGRADE_PATHS } from '../../data/UnitConstants';
 import { startingRankForCity, isCombatUnitClass } from './UnitRankSystem';
 import { cityBuildingEffects, hasBuildingEffect, isPalaceBuilding } from './BuildingEffects';
 import { citizenFoodDemand, AQUEDUCT_HOUSING_CAP, type ProcessTurnResult } from './EconomicManager';
-import type { City, Civilization, Technology, Unit } from '../../../types/game';
-import { useGameStore } from '../../stores/GameStore';
+import type { City, Civilization, Technology, Unit } from '../../types/game';
 import GameEngine from './GameEngine';
-import { awaitPendingAnimations } from '../rendering/GlideAnimation';
-import { aiTurnTimeoutMs, gameSpeedTimeoutFactor } from '@/data/GameConstants';
+import { aiTurnTimeoutMs, gameSpeedTimeoutFactor } from '../../data/GameConstants';
 import { debugLog } from '../../utils/DevLog';
 
 export class TurnManager {
@@ -717,7 +715,7 @@ export class TurnManager {
     // The game resumes when the player clicks Ready (via `resumeFromHandoff`).
     const gameMode = this.gameEngine.gameSettings?.gameMode;
     const humanIds = this.gameEngine.gameSettings?.humanPlayerIds ?? [0];
-    const skipHandoff = useGameStore.getState().settings?.skipHotseatHandoff ?? false;
+    const skipHandoff = this.gameEngine.runtime.skipHotseatHandoff();
     if (gameMode === 'hotseat' && humanIds.includes(nextPlayer) && !skipHandoff) {
       const civ = this.gameEngine.civilizations?.[nextPlayer];
       this.gameEngine.setPaused(true);
@@ -1131,7 +1129,7 @@ export class TurnManager {
         : 0;
     const producedMaxMoves = (unitProps.movement || 1) + navalMoveBonus;
     const unit = {
-      id: 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      id: this.gameEngine.nextId('u'),
       type: unitType,
       civilizationId: city.civilizationId,
       col: city.col,
@@ -1726,7 +1724,7 @@ export class TurnManager {
             debugLog(`[TurnManager] ✅ Unit ${unit.id} moved to (${next.col}, ${next.row}), ${path.length} steps remaining in path`);
             // Pace automated AI movement so visible enemy moves animate instead
             // of teleporting. No-op (and instant) when animations are disabled.
-            await awaitPendingAnimations();
+            await this.gameEngine.runtime.awaitPendingAnimations();
           } else {
             debugLog(`[TurnManager] ❌ Path step failed for unit ${unit.id}, reason=${result?.reason}`);
             // Only clear path if blocked, not if just out of moves

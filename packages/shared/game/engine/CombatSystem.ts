@@ -31,9 +31,9 @@
  *     lifetime total of 15% of all battle damage they ever took.
  */
 
-import { TERRAIN_PROPS, UNIT_PROPS } from '@/utils/Constants';
-import { MathUtils } from '@/utils/MathUtils';
-import { IMPROVEMENT_PROPERTIES } from '@/data/TileImprovementConstants';
+import { TERRAIN_PROPS, UNIT_PROPS } from '../../utils/Constants';
+import { MathUtils } from '../../utils/MathUtils';
+import { IMPROVEMENT_PROPERTIES } from '../../data/TileImprovementConstants';
 import { getUnitRank, rankStrengthMultiplier } from './UnitRankSystem';
 import { cityBuildingEffects } from './BuildingEffects';
 

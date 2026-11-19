@@ -15,9 +15,9 @@
  *   * the focus bonus makes the team's primary win a member's bulk scoring.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { TeamCoordinator } from '@/game/engine/AI/TeamCoordinator';
-import { TeamManager } from '@/game/engine/TeamManager';
-import { planBulkAttack, TEAM_FOCUS_BONUS, type KnownTarget } from '@/game/engine/AI/AIAggression';
+import { TeamCoordinator } from '@shared/game/engine/AI/TeamCoordinator';
+import { TeamManager } from '@shared/game/engine/TeamManager';
+import { planBulkAttack, TEAM_FOCUS_BONUS, type KnownTarget } from '@shared/game/engine/AI/AIAggression';
 import { teamSettings } from './teamHelpers';
 
 const WIDTH = 20;

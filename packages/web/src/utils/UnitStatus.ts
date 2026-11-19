@@ -1,10 +1,10 @@
-import type { Unit } from '../../types/game';
+import type { Unit } from '@shared/types/game';
 import {
   UNIT_RANK,
   UNIT_RANK_INFO,
   experienceToNextRank,
   getUnitRank,
-} from '@/game/engine/UnitRankSystem';
+} from '@shared/game/engine/UnitRankSystem';
 
 /**
  * Short status badge for a unit (label + bootstrap variant), shared by the

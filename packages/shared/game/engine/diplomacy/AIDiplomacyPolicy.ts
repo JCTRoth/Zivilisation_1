@@ -18,7 +18,7 @@
 
 import type { DiplomaticStatus, TreatyType } from '../DiplomacyTypes';
 import type { DiplomaticWeights } from './DiplomaticWeights';
-import { EARLY_TECH_EXCHANGE_MAX_ROUND, RECONCILE_GOLD_FLOOR } from '@/data/GameConstants';
+import { EARLY_TECH_EXCHANGE_MAX_ROUND, RECONCILE_GOLD_FLOOR } from '../../../data/GameConstants';
 import type { Opinion } from '../DiplomacyTypes';
 import { seededNoise } from './ProposalScoring';
 import { pickFavourableSwap, type TechTradeContext } from './TechTradeEvaluator';

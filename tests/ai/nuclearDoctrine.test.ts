@@ -11,7 +11,7 @@ import {
   desiredNuclearArsenal,
   canAffordNuclear,
   NUCLEAR_CITY_VALUE,
-} from '@/game/engine/AI/NuclearDoctrine';
+} from '@shared/game/engine/AI/NuclearDoctrine';
 
 describe('nuclear target scoring', () => {
   it('ranks a populous capital above an ordinary city', () => {

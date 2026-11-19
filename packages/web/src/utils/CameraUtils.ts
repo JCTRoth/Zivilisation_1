@@ -1,4 +1,4 @@
-import { TILE_SIZE } from '@/data/TerrainData';
+import { TILE_SIZE } from '@shared/data/TerrainData';
 
 /**
  * Zoom limits for the whole game.

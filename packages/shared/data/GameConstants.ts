@@ -1,6 +1,6 @@
 // Game Constants - Core game settings and configuration
 
-import { translateDynamic } from '../i18n';
+import { translateDynamic } from '../i18n/index';
 
 export const MAX_CARAVAN_TRADE_ROUTES = 3;
 
@@ -396,7 +396,7 @@ export const GAME_CONSTANTS: GameConstants = {
 // specialists, trading raw tile yields (Food/Shields/Trade) for a fixed
 // city-specific yield (Luxury / Gold / Science).
 
-import type { SpecialistType } from '../../types/game';
+import type { SpecialistType } from '../types/game';
 
 export interface SpecialistProperties {
   name: string;

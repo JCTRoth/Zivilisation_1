@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
-import { useGameStore } from '@/stores/GameStore';
-import { useTranslation } from '@/i18n/useTranslation';
-import type { TranslationKey } from '@/i18n';
-import { tGovernmentName } from '@/i18n/dataNames';
-import { gameLogger } from '@/utils/GameLogger';
-import { getGovernment, GOVERNMENTS } from '@/data/GovernmentData';
-import { ANARCHY_TURNS } from '@/game/engine/GovernmentManager';
-import { GameUtils } from '@/utils/GameUtils';
-import GameEngine from '@/game/engine/GameEngine';
+import { useGameStore } from '../../../stores/GameStore';
+import { useTranslation } from '../../../i18n/useTranslation';
+import type { TranslationKey } from '@shared/i18n/index';
+import { tGovernmentName } from '@shared/i18n/dataNames';
+import { gameLogger } from '../../../utils/GameLogger';
+import { getGovernment, GOVERNMENTS } from '@shared/data/GovernmentData';
+import { ANARCHY_TURNS } from '@shared/game/engine/GovernmentManager';
+import { GameUtils } from '../../../utils/GameUtils';
+import GameEngine from '@shared/game/engine/GameEngine';
 import GameModal from './ModalShell';
 import '../../../styles/governmentModal.css';
 

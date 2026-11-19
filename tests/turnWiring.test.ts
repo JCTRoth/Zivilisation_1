@@ -9,9 +9,9 @@
  * through a real turn instead of calling the private methods.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { RESEARCH_UNLOCK_ROUND } from '@/data/GameConstants';
-import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { RESEARCH_UNLOCK_ROUND } from '@shared/data/GameConstants';
+import { BARBARIAN_CIV_ID } from '@shared/data/VillageConstants';
 import { makeGridEngine, useSeededRandom, world } from './helpers/world';
 
 const G = 'grassland';

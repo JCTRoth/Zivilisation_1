@@ -1,6 +1,6 @@
 import React from 'react';
-import { useTranslation } from '@/i18n/useTranslation';
-import type { TranslationKey } from '@/i18n';
+import { useTranslation } from '../../i18n/useTranslation';
+import type { TranslationKey } from '@shared/i18n/index';
 
 export type GameMenuName = 'GAME' | 'WORLD' | 'INFO';
 

@@ -1,4 +1,4 @@
-import { TILE_SIZE } from '@/data/TerrainData';
+import { TILE_SIZE } from '@shared/data/TerrainData';
 
 /**
  * How much of the screen may be unexplored black before the GoTo camera rule

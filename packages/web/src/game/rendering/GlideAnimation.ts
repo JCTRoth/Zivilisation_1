@@ -1,5 +1,7 @@
 import { useGameStore } from '../../stores/GameStore';
-import type { GlideRequest } from '../../../types/game';
+import type { GlideRequest } from '@shared/types/game';
+import { BASE_GLIDE_DURATION_MS } from '@shared/ports/runtime';
+export { BASE_GLIDE_DURATION_MS };
 
 /**
  * Base glide duration (ms) for a single tile step.
@@ -8,7 +10,7 @@ import type { GlideRequest } from '../../../types/game';
  * execution, which also drives multi-turn automated movement) so every unit
  * move animates identically.
  */
-export const BASE_GLIDE_DURATION_MS = 250;
+
 
 /**
  * Resolve an animation duration from a base value and the current settings.

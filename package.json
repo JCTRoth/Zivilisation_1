@@ -1,9 +1,12 @@
 {
-  "name": "civ1browser-react",
+  "name": "civ1browser",
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Civilization 1 clone built with React, Vite, Jotai, and Bootstrap",
+  "description": "Civilization 1 clone — headless engine in packages/shared, authoritative server in packages/server, React client in packages/web",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "vite build",

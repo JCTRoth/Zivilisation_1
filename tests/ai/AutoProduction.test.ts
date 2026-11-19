@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { AutoProduction } from '@/game/engine/AutoProduction';
+import { AutoProduction } from '@shared/game/engine/AutoProduction';
 
 const createMockEngine = () => {
   const city = {

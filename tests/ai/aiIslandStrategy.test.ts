@@ -7,11 +7,11 @@
  *  - the AutoProduction priorities (escape ship, harbor, colony ferry).
  */
 import { describe, expect, it } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { SquareGrid } from '@/game/SquareGrid';
-import type { Unit } from '../../types/game';
-import { AutoProduction } from '@/game/engine/AutoProduction';
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { SquareGrid } from '@shared/game/SquareGrid';
+import type { Unit } from '@shared/types/game';
+import { AutoProduction } from '@shared/game/engine/AutoProduction';
+import { TERRAIN_TYPES } from '@shared/data/TerrainConstants';
 
 const G = TERRAIN_TYPES.GRASSLAND;
 const O = TERRAIN_TYPES.OCEAN;

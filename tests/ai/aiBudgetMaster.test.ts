@@ -19,7 +19,7 @@
  *     touch a single unit.
  */
 import { describe, it, expect } from 'vitest';
-import { AutoProduction } from '@/game/engine/AutoProduction';
+import { AutoProduction } from '@shared/game/engine/AutoProduction';
 import { makeEngine } from '../helpers/world';
 
 const SEED = 9091;

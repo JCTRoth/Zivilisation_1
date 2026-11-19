@@ -7,12 +7,12 @@
  *    repeated `move_failed` loops stop.
  */
 import { describe, expect, it } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { SquareGrid } from '@/game/SquareGrid';
-import { AIBuildingStrategy } from '@/game/engine/AI/AIBuildingStrategy';
-import { AutoProduction } from '@/game/engine/AutoProduction';
-import { computeAggression, planBulkAttack } from '@/game/engine/AI/AIAggression';
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { SquareGrid } from '@shared/game/SquareGrid';
+import { AIBuildingStrategy } from '@shared/game/engine/AI/AIBuildingStrategy';
+import { AutoProduction } from '@shared/game/engine/AutoProduction';
+import { computeAggression, planBulkAttack } from '@shared/game/engine/AI/AIAggression';
+import { TERRAIN_TYPES } from '@shared/data/TerrainConstants';
 
 const G = TERRAIN_TYPES.GRASSLAND;
 

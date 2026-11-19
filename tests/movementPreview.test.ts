@@ -7,8 +7,8 @@
  * and the "Minimum 1 Move" exception for a fresh unit).
  */
 import { describe, it, expect } from 'vitest';
-import type { MapTile } from '@/game/engine/GameEngine';
-import { computeMovementPreview, computeTurnMarkers, type TileLookup } from '@/utils/MovementPreview';
+import type { MapTile } from '@shared/game/engine/GameEngine';
+import { computeMovementPreview, computeTurnMarkers, type TileLookup } from '@shared/utils/MovementPreview';
 
 /** Build a minimal MapTile for a grid keyed by "col,row". */
 function makeTile(col: number, row: number, type: string, extra: Partial<MapTile> = {}): MapTile {

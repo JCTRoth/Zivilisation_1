@@ -23,8 +23,8 @@
 import { describe, expect, it, beforeAll } from 'vitest';
 import { vi } from 'vitest';
 import { makeEngine, useSeededRandom } from './helpers/world';
-import { usefulCityCopies, HAPPINESS_BUILDINGS, HAPPINESS_BUILDINGS_PER_CITY } from '@/game/engine/AI/BuildingCoordinator';
-import type { City, Civilization } from '../types/game';
+import { usefulCityCopies, HAPPINESS_BUILDINGS, HAPPINESS_BUILDINGS_PER_CITY } from '@shared/game/engine/AI/BuildingCoordinator';
+import type { City, Civilization } from '@shared/types/game';
 
 const TURNS = 150;
 

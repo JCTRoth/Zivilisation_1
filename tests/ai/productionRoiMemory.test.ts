@@ -11,7 +11,7 @@ import {
   ProductionROIMemory,
   productionKey,
   type ProductionVerdict,
-} from '@/game/engine/AI/ProductionROIMemory';
+} from '@shared/game/engine/AI/ProductionROIMemory';
 
 /** A civ that forecasts X and gets Y, `n` times. */
 function experience(

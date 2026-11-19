@@ -7,15 +7,15 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { world as wrapWorld, makeGridEngine, type TestWorld } from './helpers/world';
-import GameEngine from '@/game/engine/GameEngine';
-import { CITY_CENTER_COMMERCE } from '@/game/engine/EconomicManager';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { CITY_CENTER_COMMERCE } from '@shared/game/engine/EconomicManager';
 import {
   computeNuclearAllowed,
   computeSeesAllCities,
   computeSpaceshipEnabled,
   computeVisionRangeBonus,
-} from '@/game/engine/WonderEffects';
-import type { City } from '../types/game';
+} from '@shared/game/engine/WonderEffects';
+import type { City } from '@shared/types/game';
 
 describe('wonder effects', () => {
   let engine: GameEngine;

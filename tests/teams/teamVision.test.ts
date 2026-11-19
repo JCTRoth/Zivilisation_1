@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
+import GameEngine from '@shared/game/engine/GameEngine';
 
 /** A real 3-civ team game: civs 0 and 1 are locked teammates, 2 is the enemy. */
 async function newTeamGame(): Promise<GameEngine> {

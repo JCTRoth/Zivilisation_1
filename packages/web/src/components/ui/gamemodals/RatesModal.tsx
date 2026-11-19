@@ -1,13 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Form } from 'react-bootstrap';
-import { useGameStore } from '@/stores/GameStore';
-import { gameLogger } from '@/utils/GameLogger';
-import { sendCommand, isCommandRejection } from '@/utils/session';
-import { getGovernment } from '@/data/GovernmentData';
-import { GameUtils } from '@/utils/GameUtils';
-import GameEngine from '@/game/engine/GameEngine';
-import { useTranslation } from '@/i18n/useTranslation';
-import type { TranslationKey } from '@/i18n';
+import { useGameStore } from '../../../stores/GameStore';
+import { gameLogger } from '../../../utils/GameLogger';
+import { sendCommand, isCommandRejection } from '../../../session';
+import { getGovernment } from '@shared/data/GovernmentData';
+import { GameUtils } from '../../../utils/GameUtils';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { useTranslation } from '../../../i18n/useTranslation';
+import type { TranslationKey } from '@shared/i18n/index';
 import GameModal from './ModalShell';
 import '../../../styles/ratesModal.css';
 

@@ -13,10 +13,10 @@
  * - Option to ignore fog (developer mode)
  */
 
-import { Constants } from '@/utils/Constants';
-import { TILE_SIZE, TERRAIN_TYPES } from '@/data/TerrainData';
-import { CIVILIZATIONS } from '@/data/GameData';
-import type { MapState, CameraState, Unit, City, Civilization } from '../../../types/game';
+import { Constants } from '@shared/utils/Constants';
+import { TILE_SIZE, TERRAIN_TYPES } from '@shared/data/TerrainData';
+import { CIVILIZATIONS } from '@shared/data/GameData';
+import type { MapState, CameraState, Unit, City, Civilization } from '@shared/types/game';
 
 /**
  * Parameters for rendering the minimap.

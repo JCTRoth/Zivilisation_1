@@ -9,12 +9,12 @@
  *    mine grassland/plains).
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { TERRAIN_TYPES } from '@shared/data/TerrainConstants';
 import {
   IMPROVEMENT_TYPES,
   IMPROVEMENT_PROPERTIES,
-} from '@/data/TileImprovementConstants';
+} from '@shared/data/TileImprovementConstants';
 
 describe('Civ1 tile improvement construction', () => {
   let engine: GameEngine | null = null;

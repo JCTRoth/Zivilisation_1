@@ -10,8 +10,8 @@
  *    `already_in_production` / `already_built`).
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import type { City, ProductionItem } from '../types/game';
+import GameEngine from '@shared/game/engine/GameEngine';
+import type { City, ProductionItem } from '@shared/types/game';
 
 const warrior: ProductionItem = { type: 'unit', itemType: 'warrior', name: 'Warrior', cost: 10 };
 const archer: ProductionItem = { type: 'unit', itemType: 'archer', name: 'Archer', cost: 30 };

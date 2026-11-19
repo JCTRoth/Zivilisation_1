@@ -1,10 +1,10 @@
 import React from 'react';
 import type { GameMenuName } from './GameMenuSheet';
-import type GameEngine from '@/game/engine/GameEngine';
-import { useTranslation } from '@/i18n/useTranslation';
-import type { TranslationKey } from '@/i18n';
-import { useGameStore } from '@/stores/GameStore';
-import { teamColor, teamName } from '@/data/TeamConstants';
+import type GameEngine from '@shared/game/engine/GameEngine';
+import { useTranslation } from '../../i18n/useTranslation';
+import type { TranslationKey } from '@shared/i18n/index';
+import { useGameStore } from '../../stores/GameStore';
+import { teamColor, teamName } from '@shared/data/TeamConstants';
 import ResearchIndicator from './ResearchIndicator';
 
 interface TopBarProps {

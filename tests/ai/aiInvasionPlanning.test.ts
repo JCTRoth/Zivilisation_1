@@ -8,9 +8,9 @@
  *    computing the civ-wide preconditions once per planning pass.
  */
 import { describe, it, expect } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { SquareGrid } from '@/game/SquareGrid';
-import type { Unit } from '../../types/game';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { SquareGrid } from '@shared/game/SquareGrid';
+import type { Unit } from '@shared/types/game';
 
 const O = 'ocean';
 const G = 'grassland';

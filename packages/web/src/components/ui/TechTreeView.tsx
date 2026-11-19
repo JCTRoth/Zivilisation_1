@@ -1,8 +1,8 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
-import { Technology } from '../../../types/game';
-import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
-import { useTranslation } from '@/i18n/useTranslation';
-import { tTechName } from '@/i18n/dataNames';
+import { Technology } from '@shared/types/game';
+import { TECHNOLOGIES_DATA } from '@shared/data/TechnologyData';
+import { useTranslation } from '../../i18n/useTranslation';
+import { tTechName } from '@shared/i18n/dataNames';
 import '../../styles/TechTreeView.css';
 
 // Very small, dependency-free tree renderer using SVG.

@@ -6,14 +6,14 @@
  * real `GameEngine` because they exercise real engine code paths.
  */
 import { vi } from 'vitest';
-import { TeamManager } from '@/game/engine/TeamManager';
-import { DiplomacyManager } from '@/game/engine/DiplomacyManager';
+import { TeamManager } from '@shared/game/engine/TeamManager';
+import { DiplomacyManager } from '@shared/game/engine/DiplomacyManager';
 
 /** A complete `GameSettings` fixture with fixed alliances enabled. */
 export function teamSettings(
   assignments: number[],
   civCount = assignments.length,
-): import('@/game/engine/GameEngine').GameSettings {
+): import('@shared/game/engine/GameEngine').GameSettings {
   return {
     difficulty: 'normal',
     mapType: 'NORMAL_SKIRMISH',

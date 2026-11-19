@@ -17,12 +17,12 @@ import {
   AICoordinator,
   type BuildingFundingCandidate,
   type FundingDemand,
-} from '@/game/engine/AI/AICoordinator';
+} from '@shared/game/engine/AI/AICoordinator';
 import {
   evaluateBuildingEconomics,
   NEUTRAL_CITY_ECONOMICS,
   type BuildingEconomics,
-} from '@/game/engine/AI/BuildingEconomics';
+} from '@shared/game/engine/AI/BuildingEconomics';
 
 type Verdict = BuildingEconomics['verdict'];
 

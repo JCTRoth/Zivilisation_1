@@ -8,9 +8,9 @@
  *  - Combat: terrain defense, fortification and fortress stacking.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { TERRAIN_PROPERTIES, TERRAIN_RESOURCES, TERRAIN_TYPES } from '@/data/TerrainConstants';
-import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES } from '@/data/TileImprovementConstants';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { TERRAIN_PROPERTIES, TERRAIN_RESOURCES, TERRAIN_TYPES } from '@shared/data/TerrainConstants';
+import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES } from '@shared/data/TileImprovementConstants';
 
 describe('Civ1 terrain data', () => {
   it('has Civ1 base yields', () => {

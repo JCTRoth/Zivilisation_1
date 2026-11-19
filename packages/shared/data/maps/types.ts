@@ -8,7 +8,7 @@
  * savegame. New maps only need to be dropped into this folder and registered
  * in `index.ts`.
  */
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
+import { TERRAIN_TYPES } from '../TerrainConstants';
 
 export interface StaticMapDefinition {
   /** Stable id used by the registry (also the file name). */

@@ -21,10 +21,10 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import GameEngine from '@/game/engine/GameEngine';
+import GameEngine from '@shared/game/engine/GameEngine';
 import { useSeededRandom } from './helpers/world';
 
-const SOURCE = readFileSync(join(__dirname, '..', 'src', 'components', 'ui', 'GameSetupModal.tsx'), 'utf8');
+const SOURCE = readFileSync(join(__dirname, '..', 'packages', 'web', 'src', 'components', 'ui', 'GameSetupModal.tsx'), 'utf8');
 
 /** The map types that do NOT read the land-shaping sliders, per the engine. */
 const FIXED = ['EARTH', 'NAVAL_CLOSEUP', 'AI_VS_AI_NAVAL', 'AEGEAN_CAMPAIGN'];

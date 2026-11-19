@@ -8,9 +8,9 @@
  * — the declaration itself was not gated.
  */
 import { describe, it, expect } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { SquareGrid } from '@/game/SquareGrid';
-import type { Unit } from '../../types/game';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { SquareGrid } from '@shared/game/SquareGrid';
+import type { Unit } from '@shared/types/game';
 
 const O = 'ocean';
 const G = 'grassland';

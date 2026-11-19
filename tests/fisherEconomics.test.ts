@@ -23,9 +23,9 @@ import {
   netTileFoodFor,
   type FisherGroundEngine,
   type FisherRelevanceEngine,
-} from '@/game/engine/FisherEconomics';
-import { FISHER_BOAT_STORAGE, UNIT_PROPERTIES } from '@/data/UnitConstants';
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
+} from '@shared/game/engine/FisherEconomics';
+import { FISHER_BOAT_STORAGE, UNIT_PROPERTIES } from '@shared/data/UnitConstants';
+import { TERRAIN_TYPES } from '@shared/data/TerrainConstants';
 
 const O = TERRAIN_TYPES.OCEAN;
 const G = TERRAIN_TYPES.GRASSLAND;

@@ -6,7 +6,7 @@
  * its first hull (no hull → no contact → no mission → no hull).
  */
 import { describe, it, expect } from 'vitest';
-import { AICoordinator } from '@/game/engine/AI/AICoordinator';
+import { AICoordinator } from '@shared/game/engine/AI/AICoordinator';
 import {
   desiredEscorts,
   desiredScouts,
@@ -15,7 +15,7 @@ import {
   scoreNavalTarget,
   scoreLandingSite,
   type AvailableShip,
-} from '@/game/engine/AI/NavalDoctrine';
+} from '@shared/game/engine/AI/NavalDoctrine';
 
 const FERRY: AvailableShip = { type: 'ferry', cost: 30, maintenance: 1, attack: 0, defense: 0, transportCapacity: 3 };
 const TRIREME: AvailableShip = { type: 'trireme', cost: 80, maintenance: 2, attack: 3, defense: 2, transportCapacity: 0 };

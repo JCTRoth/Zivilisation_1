@@ -10,7 +10,7 @@
  */
 
 import { getGovernment } from '../../data/GovernmentData';
-import type { Civilization, City, Unit } from '../../../types/game';
+import type { Civilization, City, Unit } from '../../types/game';
 import { hasBuildingEffect, PALACE_BUILDING_ID, stripPalaceBuildings } from './BuildingEffects';
 import GameEngine from './GameEngine';
 

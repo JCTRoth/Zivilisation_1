@@ -1,4 +1,4 @@
-import TERRAIN, { getResourceYields } from '@/data/TerrainConstants';
+import TERRAIN, { getResourceYields } from '@shared/data/TerrainConstants';
 
 const { SPECIAL_RESOURCES, TERRAIN_PROPERTIES } = TERRAIN;
 

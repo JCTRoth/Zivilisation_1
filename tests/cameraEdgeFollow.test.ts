@@ -9,8 +9,8 @@ import {
   clampCameraToMap,
   nudgeCameraToKeepPointInView,
 } from '@/utils/CameraUtils';
-import { TILE_SIZE } from '@/data/TerrainData';
-import type { Unit } from '../types/game';
+import { TILE_SIZE } from '@shared/data/TerrainData';
+import type { Unit } from '@shared/types/game';
 
 /**
  * Edge-follow: a unit that moves past the viewport edge drags the camera

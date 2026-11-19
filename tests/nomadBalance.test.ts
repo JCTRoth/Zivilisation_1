@@ -23,7 +23,7 @@ import {
   NOMAD_CITY_OFFER_MIN_GOLD,
   NOMAD_START_GOLD,
   NOMAD_TRADE_ROUTE_LIMIT,
-} from '@/data/NomadConstants';
+} from '@shared/data/NomadConstants';
 
 describe('Nomads — balance', () => {
   it('paces the economy: routes early, the market mid-game, no snowball', async () => {

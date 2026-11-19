@@ -14,13 +14,13 @@
  * market tile in ONE turn instead of two, so a 10-tile route is 10 turns, not 11.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
+import GameEngine from '@shared/game/engine/GameEngine';
 import {
   CARAVAN_CITY_MOVE_BONUS,
   CARAVAN_CITY_MOVE_RADIUS,
-} from '@/data/GameConstants';
+} from '@shared/data/GameConstants';
 import { makeGridEngine, useSeededRandom } from './helpers/world';
-import type { City, Unit } from '../types/game';
+import type { City, Unit } from '@shared/types/game';
 
 const G = 'grassland';
 

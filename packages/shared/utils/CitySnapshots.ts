@@ -7,7 +7,7 @@
  * explicitly here.
  */
 
-import type { City, ProductionItem } from '../../types/game';
+import type { City, ProductionItem } from '../types/game';
 
 export interface CitySnapshot {
   id: string;

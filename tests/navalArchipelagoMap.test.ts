@@ -8,11 +8,11 @@
  * small islets for the AI to colonise by sea, which is the whole point.
  */
 import { describe, it, expect } from 'vitest';
-import { validateStaticMap } from '@/data/maps/types';
-import { STATIC_MAPS, staticMapForMapType } from '@/data/maps';
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
-import { terrainIdForChar } from '@/data/maps/types';
-import { SMALL_ISLAND_MAX_TILES } from '@/data/GameConstants';
+import { validateStaticMap } from '@shared/data/maps/types';
+import { STATIC_MAPS, staticMapForMapType } from '@shared/data/maps/index';
+import { TERRAIN_TYPES } from '@shared/data/TerrainConstants';
+import { terrainIdForChar } from '@shared/data/maps/types';
+import { SMALL_ISLAND_MAX_TILES } from '@shared/data/GameConstants';
 
 const NAV4: ReadonlyArray<readonly [number, number]> = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 

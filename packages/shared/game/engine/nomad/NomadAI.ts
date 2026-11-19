@@ -31,7 +31,7 @@ import {
   NOMAD_STRATEGY_REVIEW_ROUNDS,
   NOMAD_TRADE_ROUTE_LIMIT,
   type NomadPersonality,
-} from '@/data/NomadConstants';
+} from '../../../data/NomadConstants';
 
 /** What the tribe is currently about. */
 export type NomadStance = 'roads' | 'treasury' | 'market' | 'steel' | 'bribery';
@@ -90,10 +90,10 @@ export class NomadAI {
    * turns angry (revenge does not wait for the quarterly meeting).
    * Returns the NEW stance when it changed, null when it held.
    */
-  review(s: NomadSituation): NomadStance | null {
+  review(s: NomadSituation, random: () => number = Math.random): NomadStance | null {
     const angry = s.standing === 'angry';
     if (!angry && s.round % NOMAD_STRATEGY_REVIEW_ROUNDS !== 0) return null;
-    const next = this.choose(s);
+    const next = this.choose(s, random);
     if (next === this.stance) return null;
     this.stance = next;
     return next;
@@ -115,11 +115,11 @@ export class NomadAI {
   }
 
   /** Highest score wins; REVIEW_ORDER breaks ties; jitter varies the board. */
-  private choose(s: NomadSituation): NomadStance {
+  private choose(s: NomadSituation, random: () => number): NomadStance {
     let best: NomadStance = REVIEW_ORDER[0];
     let bestScore = -Infinity;
     for (const stance of REVIEW_ORDER) {
-      const score = scoreStance(stance, s) + Math.floor(Math.random() * 2);
+      const score = scoreStance(stance, s) + Math.floor(random() * 2);
       if (score > bestScore) {
         best = stance;
         bestScore = score;

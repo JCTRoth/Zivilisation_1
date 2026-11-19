@@ -15,16 +15,16 @@ import {
   subscribeLanguage,
   t,
   translateDynamic,
-} from '@/i18n';
-import { en } from '@/i18n/en';
-import { de } from '@/i18n/de';
-import { fr } from '@/i18n/fr';
-import { ru } from '@/i18n/ru';
-import { es } from '@/i18n/es';
-import { ja } from '@/i18n/ja';
-import { DEFAULT_LANGUAGE, LANGUAGES, LANGUAGE_STORAGE_KEY, isSupportedLanguage } from '@/i18n/languages';
-import { tGovernmentName, tSpecialistName, tTechName, tUnitName, tWonderName } from '@/i18n/dataNames';
-import { gameSpeedLabel } from '@/data/GameConstants';
+} from '@shared/i18n/index';
+import { en } from '@shared/i18n/en';
+import { de } from '@shared/i18n/de';
+import { fr } from '@shared/i18n/fr';
+import { ru } from '@shared/i18n/ru';
+import { es } from '@shared/i18n/es';
+import { ja } from '@shared/i18n/ja';
+import { DEFAULT_LANGUAGE, LANGUAGES, LANGUAGE_STORAGE_KEY, isSupportedLanguage } from '@shared/i18n/languages';
+import { tGovernmentName, tSpecialistName, tTechName, tUnitName, tWonderName } from '@shared/i18n/dataNames';
+import { gameSpeedLabel } from '@shared/data/GameConstants';
 
 const DICTIONARIES = { en, de, fr, ru, es, ja };
 type LanguageCode = keyof typeof DICTIONARIES;

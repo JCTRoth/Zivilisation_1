@@ -14,8 +14,8 @@
  *   * dev mode and free-for-all games are completely inert.
  */
 import { describe, it, expect } from 'vitest';
-import { TeamCoordinator } from '@/game/engine/AI/TeamCoordinator';
-import { TeamManager } from '@/game/engine/TeamManager';
+import { TeamCoordinator } from '@shared/game/engine/AI/TeamCoordinator';
+import { TeamManager } from '@shared/game/engine/TeamManager';
 import { teamSettings } from './teamHelpers';
 
 const WIDTH = 20;

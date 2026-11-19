@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import type { Civilization } from '../../types/game';
-import { AIEconomicManager } from '@/game/engine/AI/AIEconomicManager';
+import GameEngine from '@shared/game/engine/GameEngine';
+import type { Civilization } from '@shared/types/game';
+import { AIEconomicManager } from '@shared/game/engine/AI/AIEconomicManager';
 
 /**
  * The army cap must be planned at a tax rate the rate controller is actually

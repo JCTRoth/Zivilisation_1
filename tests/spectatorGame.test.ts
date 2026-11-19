@@ -9,8 +9,8 @@
  * harness, and `GameEngine.initialize` itself.
  */
 import { describe, it, expect } from 'vitest';
-import { isSpectatorGame, isAutoScenario } from '@/data/GameConstants';
-import type GameEngine from '@/game/engine/GameEngine';
+import { isSpectatorGame, isAutoScenario } from '@shared/data/GameConstants';
+import type GameEngine from '@shared/game/engine/GameEngine';
 import { makeEngine } from './helpers/world';
 
 describe('isSpectatorGame', () => {

@@ -19,9 +19,9 @@
  *     through an embassy, and only in the shapes `aiTechDealTerms` can fill in.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { DiplomacyManager } from '@/game/engine/DiplomacyManager';
-import { evaluateProposal } from '@/game/engine/diplomacy/ProposalScoring';
-import { scoreCandidates } from '@/game/engine/diplomacy/AIDiplomacyPolicy';
+import { DiplomacyManager } from '@shared/game/engine/DiplomacyManager';
+import { evaluateProposal } from '@shared/game/engine/diplomacy/ProposalScoring';
+import { scoreCandidates } from '@shared/game/engine/diplomacy/AIDiplomacyPolicy';
 
 function createMockGameEngine(overrides: Record<string, unknown> = {}): any {
   return {

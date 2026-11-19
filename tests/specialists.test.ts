@@ -12,10 +12,10 @@
  *  - GameEngine promote/demote/removeCitizenFromTile
  */
 import { describe, it, expect } from 'vitest';
-import { SPECIALIST_YIELDS } from '../src/data/GameConstants';
-import type { City, SpecialistType } from '../types/game';
-import { EconomicManager } from '../src/game/engine/EconomicManager';
-import GameEngine from '../src/game/engine/GameEngine';
+import { SPECIALIST_YIELDS } from '@shared/data/GameConstants';
+import type { City, SpecialistType } from '@shared/types/game';
+import { EconomicManager } from '@shared/game/engine/EconomicManager';
+import GameEngine from '@shared/game/engine/GameEngine';
 import { checkInvariants } from './helpers/world';
 
 /**

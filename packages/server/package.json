@@ -1,0 +1,10 @@
+{
+  "name": "@civ1/server",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Authoritative game rooms: commands in, classified events out.",
+  "dependencies": {
+    "@civ1/shared": "*"
+  }
+}

@@ -17,7 +17,7 @@
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { makeGridEngine, useSeededRandom, world } from './helpers/world';
-import type GameEngine from '@/game/engine/GameEngine';
+import type GameEngine from '@shared/game/engine/GameEngine';
 
 const G = 'grassland';
 const T = 'tundra';

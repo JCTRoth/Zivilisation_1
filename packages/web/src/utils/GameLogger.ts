@@ -14,8 +14,8 @@
  * the full city state of every player.
  */
 
-import { serializeCity, isCityEvent, isTurnBoundaryEvent } from './CitySnapshots';
-import type { City, Unit } from '../../types/game';
+import { serializeCity, isCityEvent, isTurnBoundaryEvent } from '@shared/utils/CitySnapshots';
+import type { City, Unit } from '@shared/types/game';
 
 /**
  * Known engine event-payload fields the logger reads to build messages.

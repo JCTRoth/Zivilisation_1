@@ -5,8 +5,8 @@
  * disorder, and the research-compounding fix.
  */
 import { describe, it, expect } from 'vitest';
-import { EconomicManager, CITY_CENTER_COMMERCE, TRADE_GOLD_MULTIPLIER } from '../src/game/engine/EconomicManager';
-import { getResourceYields } from '../src/data/TerrainConstants';
+import { EconomicManager, CITY_CENTER_COMMERCE, TRADE_GOLD_MULTIPLIER } from '@shared/game/engine/EconomicManager';
+import { getResourceYields } from '@shared/data/TerrainConstants';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function makeEngine(overrides: any = {}): any {

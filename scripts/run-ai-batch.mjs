@@ -33,8 +33,8 @@ const SEEDS = [7, 19, 33, 51, 64, 88, 101, 129, 142, 177, 190, 210, 233, 246, 25
 const spec = `
 import { describe, it, expect, vi } from 'vitest';
 import { useSeededRandom } from '../helpers/world';
-import GameEngine from '@/game/engine/GameEngine';
-import { BARBARIAN_CIV_ID } from '@/data/VillageConstants';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { BARBARIAN_CIV_ID } from '@shared/data/VillageConstants';
 
 const ROUNDS = ${ROUNDS};
 const CIVS = ${CIVS};

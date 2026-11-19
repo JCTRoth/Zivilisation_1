@@ -26,8 +26,8 @@ import {
   type AirDoctrineInput,
   type AirTarget,
   type GroundAttacker,
-} from '@/game/engine/AI/AirDoctrine';
-import { UNIT_PROPS } from '@/utils/Constants';
+} from '@shared/game/engine/AI/AirDoctrine';
+import { UNIT_PROPS } from '@shared/utils/Constants';
 
 const base = (col: number, row: number, cityId = 'b'): AirBase => ({ col, row, cityId });
 const target = (col: number, row: number, owner: number, defense: number, acrossWater = false, cityId = 't'): AirTarget =>

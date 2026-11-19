@@ -15,11 +15,11 @@
  * both the rules themselves and the three doors into them.
  */
 import { describe, expect, it } from 'vitest';
-import { diplomatActionsFor, type DiplomatAbilityFacts } from '@/game/engine/diplomacy/DiplomatAbilities';
-import type { DiplomatAction, DiplomatTarget } from '@/game/engine/DiplomacyTypes';
+import { diplomatActionsFor, type DiplomatAbilityFacts } from '@shared/game/engine/diplomacy/DiplomatAbilities';
+import type { DiplomatAction, DiplomatTarget } from '@shared/game/engine/DiplomacyTypes';
 import { makeEngine } from './helpers/world';
-import { BARBARIAN_CIV_ID } from '../src/data/VillageConstants';
-import type { City, Unit } from '../types/game';
+import { BARBARIAN_CIV_ID } from '@shared/data/VillageConstants';
+import type { City, Unit } from '@shared/types/game';
 
 /** Every ability a diplomat has, from the one union that defines them. */
 const ALL_ABILITIES: DiplomatAction[] = [

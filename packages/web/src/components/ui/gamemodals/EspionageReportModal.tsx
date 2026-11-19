@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Modal } from 'react-bootstrap';
-import { useTranslation } from '@/i18n/useTranslation';
-import { playSfx, type SfxCue } from '@/utils/Sfx';
+import { useTranslation } from '../../../i18n/useTranslation';
+import { playSfx, type SfxCue } from '../../../utils/Sfx';
 import '../../../styles/gameModalShell.css';
 import '../../../styles/espionageModal.css';
 

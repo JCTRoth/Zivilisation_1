@@ -1,6 +1,6 @@
 import React from 'react';
-import type { LeaderPortraitConfig } from '@/data/LeaderPortraits';
-import { MOOD_COLORS } from '@/data/LeaderPortraits';
+import type { LeaderPortraitConfig } from '@shared/data/LeaderPortraits';
+import { MOOD_COLORS } from '@shared/data/LeaderPortraits';
 
 /** Diplomatic attitudes the portrait can be tinted with. */
 type PortraitMood = 'friendly' | 'neutral' | 'annoyed' | 'hostile';
@@ -19,20 +19,20 @@ interface LeaderPortraitProps {
 }
 
 // Import leader images
-import leader_Alexander_the_Great from '@/assets/leader/Alexander_the_Great.jpg';
-import leader_Elizabeth_I from '@/assets/leader/Elizabeth_I.jpg';
-import leader_Frederick_the_Great from '@/assets/leader/Frederick_the_Great.jpg';
-import leader_Genghis_Khan from '@/assets/leader/Genghis_Khan.jpg';
-import leader_Hammurabi from '@/assets/leader/Hammurabi.jpg';
-import leader_Joseph_Stalin from '@/assets/leader/Joseph_Stalin.jpg';
-import leader_Julius_Caesar from '@/assets/leader/Julius_Caesar.jpg';
-import leader_Mahatma_Gandhi from '@/assets/leader/Mahatma_Gandhi.jpg';
-import leader_Mao_Tse_Tung from '@/assets/leader/Mao_Tse_Tung.jpg';
-import leader_Montezuma from '@/assets/leader/Montezuma.jpg';
-import leader_Napoleon_Bonaparte from '@/assets/leader/Napoleon_Bonaparte.jpg';
-import leader_Ramesses_II from '@/assets/leader/Ramesses_II.jpg';
-import leader_Shaka from '@/assets/leader/Shaka.jpg';
-import leader_Abraham_Lincoln from '@/assets/leader/lincoln.jpg';
+import leader_Alexander_the_Great from '../../assets/leader/Alexander_the_Great.jpg';
+import leader_Elizabeth_I from '../../assets/leader/Elizabeth_I.jpg';
+import leader_Frederick_the_Great from '../../assets/leader/Frederick_the_Great.jpg';
+import leader_Genghis_Khan from '../../assets/leader/Genghis_Khan.jpg';
+import leader_Hammurabi from '../../assets/leader/Hammurabi.jpg';
+import leader_Joseph_Stalin from '../../assets/leader/Joseph_Stalin.jpg';
+import leader_Julius_Caesar from '../../assets/leader/Julius_Caesar.jpg';
+import leader_Mahatma_Gandhi from '../../assets/leader/Mahatma_Gandhi.jpg';
+import leader_Mao_Tse_Tung from '../../assets/leader/Mao_Tse_Tung.jpg';
+import leader_Montezuma from '../../assets/leader/Montezuma.jpg';
+import leader_Napoleon_Bonaparte from '../../assets/leader/Napoleon_Bonaparte.jpg';
+import leader_Ramesses_II from '../../assets/leader/Ramesses_II.jpg';
+import leader_Shaka from '../../assets/leader/Shaka.jpg';
+import leader_Abraham_Lincoln from '../../assets/leader/lincoln.jpg';
 
 // Map leader names to image paths
 const LEADER_IMAGES: Record<string, string> = {

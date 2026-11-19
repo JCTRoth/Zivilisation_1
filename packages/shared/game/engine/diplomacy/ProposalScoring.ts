@@ -20,7 +20,7 @@ import type {
   TreatyType,
 } from '../DiplomacyTypes';
 import type { DiplomaticWeights } from './DiplomaticWeights';
-import { TECHNOLOGIES_DATA } from '@/data/TechnologyData';
+import { TECHNOLOGIES_DATA } from '../../../data/TechnologyData';
 
 /** Base beaker cost of a tech id (0 if unknown — scoring still works). */
 function techBaseCost(techId: string): number {

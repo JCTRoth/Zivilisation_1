@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { DEFEATED_UNIT_REMOVAL_DELAY_MS } from '@/game/engine/GameEngine';
-import { MathUtils } from '@/utils/MathUtils';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { DEFEATED_UNIT_REMOVAL_DELAY_MS } from '@shared/game/engine/GameEngine';
+import { MathUtils } from '@shared/utils/MathUtils';
 
 /**
  * A unit killed in combat only lingers in `units` so its 💥/death-blink

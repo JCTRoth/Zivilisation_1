@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { MAX_TRADE_ROUTES } from '@/game/engine/GameEngine';
-import { EconomicManager } from '@/game/engine/EconomicManager';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { MAX_TRADE_ROUTES } from '@shared/game/engine/GameEngine';
+import { EconomicManager } from '@shared/game/engine/EconomicManager';
 
 /**
  * Civ1 Trade Routes: a Caravan (Trade tech) delivers to a city — lump-sum

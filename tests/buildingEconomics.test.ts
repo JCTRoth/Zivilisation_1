@@ -27,8 +27,8 @@ import {
   CORRUPTION_PROTECTED_SHARE,
   INERT_EFFECTS,
   type CityEconomics,
-} from '@/game/engine/AI/BuildingEconomics';
-import { TRADE_GOLD_MULTIPLIER } from '@/game/engine/EconomicManager';
+} from '@shared/game/engine/AI/BuildingEconomics';
+import { TRADE_GOLD_MULTIPLIER } from '@shared/game/engine/EconomicManager';
 
 const city = (overrides: Partial<CityEconomics> = {}): CityEconomics => ({
   taxRate: 50,

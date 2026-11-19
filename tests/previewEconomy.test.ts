@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import type { City, Civilization } from '../types/game';
-import { TRADE_GOLD_MULTIPLIER, CITY_CENTER_COMMERCE } from '@/game/engine/EconomicManager';
+import GameEngine from '@shared/game/engine/GameEngine';
+import type { City, Civilization } from '@shared/types/game';
+import { TRADE_GOLD_MULTIPLIER, CITY_CENTER_COMMERCE } from '@shared/game/engine/EconomicManager';
 
 /**
  * Verify that EconomicManager.previewEconomy() returns correct projected

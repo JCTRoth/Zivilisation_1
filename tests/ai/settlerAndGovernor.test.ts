@@ -7,16 +7,16 @@
  *    citizen), which is the pacification pressure valve.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { SquareGrid } from '@/game/SquareGrid';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { SquareGrid } from '@shared/game/SquareGrid';
 import {
   AICityManager,
   AI_COMMERCE_GOVERNOR_MIN_POP,
   AI_COMMERCE_MIN_TRADE_TILE_SHARE,
   AI_COMMERCE_MIN_CITY_TRADE,
-} from '@/game/engine/AI/AICityManager';
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
-import type { City } from '../../types/game';
+} from '@shared/game/engine/AI/AICityManager';
+import { TERRAIN_TYPES } from '@shared/data/TerrainConstants';
+import type { City } from '@shared/types/game';
 
 const G = TERRAIN_TYPES.GRASSLAND;
 

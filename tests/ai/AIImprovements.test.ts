@@ -4,9 +4,9 @@
  * Multi-turn construction applies to AI settlers exactly as to the human.
  */
 import { describe, expect, it, afterEach } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
-import { IMPROVEMENT_TYPES } from '@/data/TileImprovementConstants';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { TERRAIN_TYPES } from '@shared/data/TerrainConstants';
+import { IMPROVEMENT_TYPES } from '@shared/data/TileImprovementConstants';
 
 describe('AI settler tile improvements (Civ1)', () => {
   let engine: GameEngine | null = null;

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import GameEngine from '@/game/engine/GameEngine';
-import { UNIT_PROPERTIES } from '@/data/UnitConstants';
-import { TERRAIN_TYPES } from '@/data/TerrainConstants';
+import GameEngine from '@shared/game/engine/GameEngine';
+import { UNIT_PROPERTIES } from '@shared/data/UnitConstants';
+import { TERRAIN_TYPES } from '@shared/data/TerrainConstants';
 
 describe('Civ1 settler rules', () => {
   let engine: GameEngine | null = null;
