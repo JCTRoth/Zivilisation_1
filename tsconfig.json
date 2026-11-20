@@ -27,5 +27,5 @@
   },
   "include": ["packages", "tests", "e2e", "playwright.config.ts"],
   "types": ["vite/client", "node"],
-  "exclude": ["node_modules", "dist"]
+  "exclude": ["node_modules", "dist", "packages/web/pwa/sw.template.js"]
 }

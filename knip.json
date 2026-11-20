@@ -18,7 +18,9 @@
     "tools/tile-generator/**",
     "vitest.diag.config.ts",
     "packages/web/config.template.js",
-    "packages/web/public/config.js"
+    "packages/web/public/config.js",
+    "packages/web/pwa/sw.template.js",
+    "playwright.local.config.ts"
   ],
   "ignoreBinaries": ["magick"]
 }

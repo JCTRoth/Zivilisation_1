@@ -66,7 +66,7 @@ Command: `CIV1_SERVER=http://localhost:31787 CIV1_WEB=http://localhost:31080 npm
 |8. Outbox retention |Done |10k-event trim + `SNAPSHOT_REQUIRED` on too-old `?after`
 |9. Observability |Done |JSON log lines with seq correlation, Prometheus `/metrics`
 |10. Network policy & ingress |Done |default-deny policy + Traefik HTTPS ingress verified end-to-end (self-signed `civ1.local`)
-|11. Autoscaling / multi-node |Manifest ready |HPA applied; single-node test cluster (second agent not added)
+|11. Autoscaling / multi-node |Done |HPA applied; K3s test cluster has 2 nodes, server and web pods spread with topologySpreadConstraints; both e2e modes pass
 |12. Deeper deployed-topology e2e |Done |seat-0 command + seat-1 snapshot assertion in the spec
 |===
 
@@ -241,10 +241,10 @@ Extend e2e/multiplayer.spec.ts:
 
 == Remaining work
 
-All twelve prompts now have either an implementation or ready-to-enable manifests. Before a real deployment:
+All twelve prompts are implemented and verified against the running two-node K3s test cluster (NodePort and HTTPS ingress e2e modes both pass with screenshots). Before a real deployment:
 
-. Enable `k8s/networkpolicy.yaml` and `k8s/ingress.yaml` in `k8s/kustomization.yaml` once Traefik and the `civ1-tls` secret exist, then re-run the e2e spec over HTTPS.
-. Apply `k8s/hpa.yaml`, add a second K3s agent and verify the multiplayer spec with replicas spread across nodes.
-. Replace the remaining development defaults in `.env` / created secrets with real credentials.
+. Replace the development defaults in `.env` and the created K3s secrets with real credentials, and use a proper TLS certificate rather than the self-signed `civ1.local` one.
+. Use a managed Postgres (or Patroni) before running more than one control-plane node — the StatefulSet is still the single writer.
+. Generate/install the tile sprites (`npm run tiles:install`) so the 33 missing PNG requests disappear.
 
-Already closed: #1-#9, #12; #10 and #11 have manifests ready and are opt-in.
+Already closed: #1-#12.

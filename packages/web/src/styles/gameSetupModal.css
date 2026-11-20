@@ -2506,7 +2506,7 @@ select.setup-setting__control:focus {
 
 .war-menu__utilities {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 12px;
   margin-top: 14px;
 }
@@ -2873,5 +2873,54 @@ select.setup-setting__control:focus {
 
   .war-lobby__copy {
     min-height: 34px;
+  }
+}
+
+/* Dialogs opened from the council (Settings, Field Manual) are portalled to
+   <body> by react-bootstrap and would otherwise sit under the z-index 2000
+   room. Lift the whole bootstrap modal stack while the council is on screen. */
+body.civ1-setup-active .modal {
+  z-index: 5000;
+}
+
+body.civ1-setup-active .modal-backdrop {
+  z-index: 4990;
+}
+
+/* A soft reading scrim behind the hub/lobby hero: the room's horizon line
+   otherwise runs straight through the lede. The scrim fades out at its edges
+   so it never reads as a card. */
+.war-menu__hero::before,
+.war-lobby__hero::before {
+  content: '';
+  position: absolute;
+  inset: -26px -30px -12px;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(3, 6, 10, 0.42), transparent 82%),
+    radial-gradient(80% 130% at 40% 55%, rgba(3, 6, 10, 0.86), transparent 74%);
+}
+
+/* The table's horizon is scenery, not a rule through the copy. Dim it on the
+   hub/lobby where the hero sits directly on the room's axis. */
+.war-room-menu .setup-screen__horizon,
+.war-lobby .setup-screen__horizon {
+  opacity: 0.38;
+}
+
+@media (max-width: 719.98px) {
+  .war-lobby__footer .setup-footer__selected {
+    display: none;
+  }
+
+  .war-lobby__footer .setup-footer__nav {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .war-lobby__footer .setup-footer__button {
+    width: 100%;
+    min-width: 0;
   }
 }

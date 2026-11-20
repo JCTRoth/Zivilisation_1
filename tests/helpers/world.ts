@@ -19,6 +19,7 @@ import { getGovernment } from '@shared/data/GovernmentData';
 import { NOMAD_CIV_ID } from '@shared/data/NomadConstants';
 import GameEngine from '@shared/game/engine/GameEngine';
 import { SquareGrid } from '@shared/game/SquareGrid';
+import type { SaveStore } from '@shared/ports/saveStore';
 import type { City, Unit } from '@shared/types/game';
 
 // ── Deterministic randomness ───────────────────────────────────────────────
@@ -73,6 +74,8 @@ export interface MakeEngineOptions {
    * of seat 0.
    */
   humanPlayerIds?: number[];
+  /** Storage the engine saves into — e.g. the browser campaign library. */
+  saveStore?: SaveStore;
 }
 
 export interface TestWorld {
@@ -101,7 +104,7 @@ export async function makeEngine(options: MakeEngineOptions = {}): Promise<TestW
     humanPlayerIds,
   } = options;
 
-  const engine = new GameEngine(null);
+  const engine = new GameEngine(null, undefined, options.saveStore);
   // Animation pacing is the only thing that needs stubbing; everything else is
   // the real engine.
   (engine as unknown as { sleep: () => Promise<void> }).sleep = () => Promise.resolve();

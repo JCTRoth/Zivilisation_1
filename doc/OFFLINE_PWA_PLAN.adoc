@@ -1,0 +1,745 @@
+= Offline Play & PWA — Implementation Plan
+:revdate: 2026-11-20
+:toc:
+:toclevels: 3
+:sectnums:
+
+== Implementation status
+
+All twelve phases are implemented. The table below is the short version; the
+sections that follow describe the design.
+
+[cols="1,2,3"]
+|===
+|Phase |State |Where
+
+|1 — Save-version contract
+|Done
+|`packages/shared/types/saves.ts`; used by `GameEngine.loadGame()` and by the file picker.
+
+|2 — Campaign store port
+|Done
+|`packages/shared/ports/campaignStore.ts` (+ the memory implementation).
+
+|3 — Browser persistence
+|Done
+|`packages/web/src/pwa/indexedDbCampaignStore.ts`, `packages/web/src/pwa/browserSaveStore.ts`.
+
+|4 — Engine wiring
+|Done
+|`App.tsx` injects the browser store; `utils/Autosave.ts` reads the library.
+
+|5 — Campaign manager UI
+|Done
+|`packages/web/src/components/ui/CampaignPanel.tsx`, `WarRoomMenu.tsx`, `GameMenuSheet.tsx`.
+
+|6 — Manifest and icons
+|Done
+|`public/manifest.webmanifest`, `public/icons/`, `tools/pwa/generate_icons.py`.
+
+|7 — Service worker generation
+|Done
+|`packages/web/pwa/vite-plugin-pwa.mjs`, `packages/web/pwa/sw.template.js`.
+
+|8 — Registration and update UX
+|Done
+|`packages/web/src/pwa/registerServiceWorker.ts`, `useServiceWorkerUpdate.ts`, `useOnlineStatus.ts`, `OfflineBanner.tsx`, `UpdateBanner.tsx`.
+
+|9 — Asset runtime caching
+|Done
+|Inside `sw.template.js` (stale-while-revalidate, 600-entry cap).
+
+|10 — Serving headers
+|Done
+|`packages/web/nginx.conf`; `scripts/static-server.mjs` mirrors the policy for the e2e run.
+
+|11 — Tests
+|Done
+|`tests/pwa/` (6 files, 40 tests) and `e2e/offline.spec.ts` (2 tests, `npm run test:offline`).
+
+|12 — Documentation
+|Done
+|This document, `doc/save-load-system.adoc`, `README.adoc`.
+|===
+
+=== What changed for the player
+
+* The game can be *installed* (manifest + icons + service worker) and launches
+  with the network off.
+* `GAME ▸ Save Game` now also keeps the campaign on the device, so
+  `GAME ▸ Campaigns` can list, continue, export, import and delete it.
+* The file picker accepts the app's own V5 saves — a long-standing bug that
+  made "Load Game" reject the game's own files.
+* `Ctrl+S` / `Ctrl+L` now report what they did.
+* A dropped connection shows a banner instead of failing silently; a
+  multiplayer room waits for the browser to report the network back instead
+  of burning its reconnect attempts in a tunnel.
+
+=== Deviations from the plan
+
+[cols="1,3"]
+|===
+|Deviation |Why
+
+|The precache holds ~5 MB, not ~4 MB.
+|The emoji font (880 kB) and the bootstrap icon fonts are part of the shell. The unit icons and leader portraits moved to the runtime cache, which keeps the install small.
+
+|The service worker template is excluded from `tsconfig.json`.
+|It is a template with `__PRECACHE_MANIFEST__` placeholders, not runnable TypeScript — `checkJs` would flag the placeholders and the service-worker globals.
+
+|`fake-indexeddb` was added as a dev dependency.
+|The IndexedDB adapter is exercised against the real API instead of a hand-written fake. It is dev-only and never reaches the bundle.
+
+|The reconnect loop still has a bounded retry count.
+|An unbounded loop would keep a Node process alive after a test closed a room. Instead the loop *waits* for the browser's `online` event while offline, so the attempts are not consumed by a tunnel.
+
+|The runtime cache holds both the game artwork and the on-demand images.
+|Two caches would double the quota bookkeeping for no benefit; one capped cache with a stale-while-revalidate policy does the same job.
+|===
+
+== Executive summary
+
+Games that do not need other players must work *offline*, on an installed
+Progressive Web App, with the server switched off:
+
+* the game must run entirely in the browser with no server connection,
+* the game must save its state locally and be resumable later,
+* the game must be able to load its state from a local file,
+* and none of this may duplicate the game code.
+
+The last point is the easy one, and it is the reason the whole plan is small.
+
+== The core insight: there is nothing to duplicate
+
+The repository already answers "how do we run the game without a server?"
+structurally:
+
+[cols="1,3"]
+|===
+|Where the engine lives |`packages/shared/game/engine/**` — one `GameEngine` class, one rules implementation, one AI, one map generator.
+
+|Where it runs in the browser |`packages/web/src/App.tsx` builds `new GameEngine(actions, webRuntime)` **in the tab** for single-player. The UI talks to it through `createLocalSession()` in `packages/web/src/session.ts`.
+
+|Where it runs on the server |`packages/server/src/room.ts` builds the *same* class for authoritative rooms. The UI talks to that through `createRemoteSession()` over HTTP/WS.
+
+|The seam |`GameSession` (`packages/web/src/session.ts`). Both sides implement `send(command)`. `sendCommand()` in the UI is transport-agnostic.
+|===
+
+Single-player is therefore *already* a local, server-free game. "Offline play"
+is not a new mode of the game — it is the existing local session with two
+missing pieces bolted on:
+
+. a **shell** that survives a dead network (web app manifest + service worker), and
+. a **persistence layer** that is not `localStorage` (IndexedDB), because a
+   late-game save is ~2.6 MB and `localStorage` has a ~5 MB per-origin quota
+   with a synchronous write API.
+
+Consequences that shape every decision below:
+
+* **No offline build.** The offline PWA is the *same* `npm run build` artifact
+  that is served online. There is no `offline/` fork, no second bundle, no
+  feature flag that compiles a different game.
+* **No engine changes.** The engine keeps talking to the synchronous
+  `SaveStore` port it already has. The browser-side implementation of that port
+  becomes memory-backed + write-through, which is invisible to the engine.
+* **One save format.** The V5 blob is what the browser stores, what the file
+  export writes, what the file import reads, and what the server persists. A
+  campaign saved offline can be uploaded to a server room and vice versa.
+* **One codebase.** Everything offline-specific lives in
+  `packages/web/src/pwa/**` (browser-only APIs) and
+  `packages/shared/ports/**` (the storage seam). Nothing forks the game.
+
+== Current state — the gap analysis
+
+[cols="1,4,2"]
+|===
+|# |Gap today |Consequence
+
+|G1
+|No web app manifest anywhere in the repo (`packages/web/index.html` has only the Apple/iOS meta tags).
+|The app cannot be *installed* as a PWA. "Offline when installed" is therefore impossible today.
+
+|G2
+|No service worker anywhere in the repo.
+|Even with a manifest, a cold launch with no network renders a browser error page. Nothing is cached.
+
+|G3
+|`handleLoadGame` in `packages/web/src/App.tsx` rejects every save whose `version` is not 1, 2 or 3, while the engine writes `version: 5`.
+|*A save file written by this build cannot be loaded back through GAME ▸ Load Game.* The documented "load the game state from a local file" path is broken today. This is a pre-existing bug, not a PWA bug, and it must be fixed first.
+
+|G4
+|Autosave goes to `localStorage` under `civ1_autosave`; `civ1_savegame` holds the manual slot. `packages/web/src/utils/Autosave.ts` only ever *reads* metadata.
+|One slot per slot name, ~5 MB quota ceiling, synchronous main-thread writes, and the autosave slot is effectively write-only — nothing can resume from it by name.
+
+|G5
+|`packages/web/src/remoteGame.ts`, `remoteSession.ts` and `remoteEvents.ts` fetch the server unconditionally when a remote room is joined.
+|A dropped connection in a remote room surfaces as a generic command rejection with no user-visible state.
+
+|G6
+|No online/offline UI state anywhere.
+|The player is never told whether the app can reach the server, so a silent failure looks like a broken game.
+
+|G7
+|`packages/web/nginx.conf` serves `/assets/` as immutable and everything else through the SPA fallback. There is no rule for `/sw.js` and none for `/index.html`.
+|A service worker served through the SPA fallback gets the wrong MIME type; a cached `index.html` is never revalidated, so a deploy can be invisible.
+
+|G8
+|`public/assets/` is 38 MB (tiles 24 MB, wonders 9.7 MB, music 3.7 MB, SFX 852 kB, story 400 kB).
+|A naive "precache everything" service worker would need ~40 MB of download and ~120 MB of quota on install. Unworkable on mobile.
+|===
+
+=== Good news
+
+* The local single-player path already runs the full game in the browser, AI
+  included — nothing about the *simulation* needs a server.
+* `packages/web/src/hooks/UseGameEngine.ts` already binds a local session when
+  no remote session is bound, so "offline" needs no new UI wiring at the
+  command level.
+* The `SaveStore` port (`packages/shared/ports/saveStore.ts`) already exists
+  precisely so the engine never touches `localStorage` directly. The offline
+  work extends that seam instead of hacking around it.
+* The server already persists the identical V5 blob, so cross-device and
+  cross-mode compatibility comes for free.
+
+== Decisions taken
+
+The following decisions were confirmed with the user before implementation.
+
+[cols="1,3,3"]
+|===
+|Decision |Choice |Rationale
+
+|Where offline state is persisted
+|*IndexedDB, with a `localStorage` fallback.*
+|A ~2.6 MB blob against a ~5 MB synchronous quota is a cliff, not a buffer. IndexedDB is async, stores many named slots, and survives the cliff. The fallback keeps private-mode / locked-down browsers usable.
+
+|How much is cached for offline
+|*App shell precached; game assets cached on demand.*
+|Precaching 38 MB makes install slow and quota-hungry. Runtime caching means the assets you have already seen work offline, and the app is usable from the first launch.
+
+|When the service worker registers
+|*Production builds only.*
+|`npm run dev` stays a plain dev server — no stale-module cache, no HMR confusion. The container image serves the production build, which is what gets installed.
+
+|What happens to a multiplayer room on disconnect
+|*Keep the existing reconnect/backoff, add an offline banner.*
+|Remote sessions already reconnect with exponential backoff (`packages/web/src/remoteEvents.ts`). Forking a remote game into a local engine would create a divergence problem that needs a merge story; that is out of scope.
+
+|Export file format
+|*The raw V5 JSON blob, unchanged.*
+|Byte-compatible with the server's persisted blob and with the engine's loader. A file saved offline can be uploaded to a room later and vice versa.
+|===
+
+== Architecture
+
+=== The three layers
+
+[source]
+----
+┌──────────────────────────────────────────────────────────────┐
+│  Browser (packages/web)                                       │
+│                                                              │
+│  React UI ──sendCommand()──▶ GameSession                     │
+│                              ├── createLocalSession(engine)  │  offline
+│                              └── createRemoteSession(url)    │  online
+│                                                              │
+│  GameEngine (packages/shared)  ◀── ONE implementation        │
+│       │                                                      │
+│       │ SaveStore { get, set }   (synchronous, unchanged)    │
+│       ▼                                                      │
+│  BrowserSaveStore                                              │
+│    ├── in-memory map  (synchronous source of truth)          │
+│    ├── write-through ──▶ IndexedDB (campaign library)        │
+│    └── mirror ───────▶ localStorage (fallback + legacy)      │
+└──────────────────────────────────────────────────────────────┘
+             ▲                            ▲
+             │ same V5 blob              │ same V5 blob
+┌────────────┴───────────┐   ┌────────────┴─────────────┐
+│ Service worker         │   │ packages/server          │
+│  ├── precache: shell   │   │  GameRoom → GameEngine   │
+│  └── runtime: assets   │   │  → SqliteSaveStore/Postgres│
+└────────────────────────┘   └──────────────────────────┘
+----
+
+=== Storage model
+
+Three concepts, deliberately kept apart:
+
+[cols="1,3"]
+|===
+|Concept |Owner |Description
+
+|*Save slot*
+|`GameEngine` (`civ1_savegame`, `civ1_autosave`)
+|The engine's existing synchronous `SaveStore` API. Unchanged. The browser implementation of that port is now a facade.
+
+|*Campaign*
+|`CampaignStore` port (`packages/shared/ports/campaignStore.ts`)
+|A named, listable entry in IndexedDB: `{ id, name, turn, year, civilizationName, updatedAt, sizeBytes, version }` plus the JSON blob. This is the new "local campaign library" the player browses.
+
+|*File*
+|The player's disk
+|The same JSON blob, exported through a `Blob` download and imported through a file picker. Byte-identical to what IndexedDB holds.
+|===
+
+The browser `SaveStore` implementation becomes **memory-backed with
+write-through**:
+
+* `get(key)` reads from the in-memory map — synchronous, exactly what the
+  engine expects, unchanged.
+* `set(key, value)` writes the map, then flushes. The autosave is debounced
+  (it is written every turn); a deliberate save — the manual slot, a named
+  campaign — reaches the disk immediately, because the player may close the
+  tab right afterwards and a pending write would be lost. When IndexedDB is
+  unavailable — or the device is out of space — the store falls back to the
+  `localStorage` tier and says so.
+* `hydrate()` (async, called once at boot) loads IndexedDB into the map and
+  migrates the legacy `localStorage` slots.
+* `flush()` is also triggered when the tab is hidden or closed, as a last
+  line of defence.
+
+This is the piece that makes the whole thing work *without touching the
+engine*. The engine keeps calling `saveGame('civ1_autosave')` and
+`loadGame('civ1_savegame')`; the store underneath got smarter.
+
+=== Why a new port instead of widening `SaveStore`
+
+`SaveStore` is synchronous, because the engine's `saveGame()` is synchronous and
+the server's `GameRoom` writes to SQLite/Postgres through a synchronous
+interface. IndexedDB is asynchronous. Changing `SaveStore` to async would
+ripple into the engine, the server, and 3 000+ tests.
+
+The new `CampaignStore` port is therefore **asynchronous** and sits one layer
+above: the browser save store implements the synchronous `SaveStore` and
+*delegates* to a `CampaignStore` behind an async write-through. The engine
+never sees IndexedDB, the server never sees IndexedDB, and neither has to
+change.
+
+=== Service worker caching rules
+
+[cols="2,3"]
+|===
+|Request |Strategy
+
+|Navigations (`mode === 'navigate'`)
+|*Network-first*, falling back to the precached `index.html`. A deployed update is picked up on the next online load; an offline launch still boots.
+
+|Build assets (`/assets/<name>-<hash>.js|.css|.woff|.ttf`)
+|*Precached* at install time — the document, the JavaScript, the stylesheet and the fonts (~5 MB). The filename hash makes them immutable.
+
+|On-demand images (unit icons, leader portraits) and game assets (`/assets/tiles/*`, `/assets/music/*`, `/assets/sfx/*`, `/assets/wonders/*`, `/assets/story/*`, `/assets/nomads/*`)
+|*Stale-while-revalidate* into a capped runtime cache (600 entries, oldest-first trimming). These are the 38 MB; they are cached the first time the player meets them, not at install time.
+
+|`/config.js`
+|*Network-first*, with the cached copy as the offline fallback. The container rewrites this file at start-up, so a frozen copy would point the app at the wrong server — but an offline launch still needs *some* value.
+
+|Anything cross-origin (the game server), or any non-`GET`
+|*Not intercepted.* The service worker only ever answers same-origin `GET`s, so the multiplayer transport, the `POST /rooms` lobby calls and the dev-only `/__game_log` endpoint are untouched.
+
+|The service worker file itself
+|*Never cached.* Served with `Cache-Control: no-cache` by nginx and with a version-stamped cache name so a new deploy replaces the old cache atomically.
+|===
+
+=== The "no source code duplication" answer, concretely
+
+[cols="1,3"]
+|===
+|Duplication that is *avoided* |How
+
+|A second copy of the engine for offline play
+|There is none. `packages/shared` is imported by both the browser and the server; the browser already runs the full game locally.
+
+|A separate offline bundle / build target
+|None. `npm run build` produces one artifact. The service worker is generated *into* that artifact by a Vite plugin.
+
+|A second save format for offline vs online
+|None. One V5 blob, written and read by the same engine code in both worlds.
+
+|A second copy of the save/load UI logic
+|None. The campaign manager is a view over the same `CampaignStore` the engine's store facade writes to.
+
+|A second copy of the "which mode am I in" logic
+|None. The existing `?server=&room=` URL parameters already select the session. Offline is simply "no remote session bound", which `hasActiveSession()` already expresses.
+|===
+
+What *is* new, and is new because the platform requires it: the manifest, the
+service worker, the IndexedDB adapter, and the campaign-management UI. None of
+it duplicates the game.
+
+== Implementation plan
+
+Twelve phases. Each phase is independently verifiable; the whole plan is
+gated on the existing suite (`npm run type-check`, `npm test`, `npm run lint`,
+`npm run build`) staying green.
+
+=== Phase 0 — This document
+
+Deliverable: `doc/OFFLINE_PWA_PLAN.adoc`.
+
+=== Phase 1 — One save-version contract (fixes G3)
+
+*New:* `packages/shared/types/saves.ts`
+
+[source,typescript]
+----
+export const CURRENT_SAVE_VERSION = 5;
+export const MIN_SUPPORTED_SAVE_VERSION = 1;
+export const MAX_SUPPORTED_SAVE_VERSION = 5;
+export function isSupportedSaveVersion(version: unknown): boolean;
+export interface SaveBlobHeader { version: number; currentTurn?: number; ... }
+export function readSaveMetadata(json: string): SaveMeta | null;
+----
+
+`GameEngine.loadGame()` and the UI's file picker both call
+`isSupportedSaveVersion()`. One source of truth, so the gate can never drift
+again — this is the "no duplication" rule applied to the version check.
+
+*Acceptance:* a V5 file written by the app loads back through GAME ▸ Load
+Game; a V6 file is rejected with a clear message; `tests/pwa/saveFormat.test.ts`
+covers 1..5 accepted, 0/6/NaN/`"5"` rejected.
+
+=== Phase 2 — The campaign store port
+
+*New:* `packages/shared/ports/campaignStore.ts`
+
+[source,typescript]
+----
+export interface CampaignMeta {
+  id: string;
+  name: string;
+  turn: number;
+  year: number;
+  civilizationName: string | null;
+  updatedAt: number;
+  sizeBytes: number;
+  version: number;
+  kind: 'manual' | 'autosave';
+}
+export interface CampaignStore {
+  list(): Promise<CampaignMeta[]>;
+  read(id: string): Promise<string | null>;
+  write(id: string, json: string, meta: CampaignMeta): Promise<void>;
+  remove(id: string): Promise<void>;
+}
+export function createMemoryCampaignStore(): CampaignStore;   // tests + node
+----
+
+Exported from `packages/shared/index.ts`.
+
+=== Phase 3 — Browser persistence
+
+*New:* `packages/web/src/pwa/indexedDbCampaignStore.ts` — IndexedDB
+implementation (one database `civ1`, one object store `campaigns`, keyPath
+`id`), with a small in-memory `CampaignStore` fallback.
+
+*New:* `packages/web/src/pwa/browserSaveStore.ts` — the synchronous
+`SaveStore` facade:
+
+[source,typescript]
+----
+export interface BrowserSaveStore extends SaveStore {
+  readonly mode: 'indexeddb' | 'localstorage';
+  hydrate(): Promise<void>;
+  flush(): Promise<void>;
+  listCampaigns(): Promise<CampaignMeta[]>;
+  readCampaign(id: string): Promise<string | null>;
+  writeCampaign(id: string, json: string, meta?: Partial<CampaignMeta>): Promise<CampaignMeta>;
+  removeCampaign(id: string): Promise<void>;
+}
+export function createBrowserSaveStore(): BrowserSaveStore;
+----
+
+Behaviour:
+
+* `hydrate()` reads every campaign from IndexedDB into the in-memory map and
+  imports the legacy `localStorage` keys `civ1_savegame` / `civ1_autosave`
+  once (migration), then deletes them from `localStorage` only after a
+  successful IndexedDB write.
+* `set()` writes the map, schedules a 400 ms debounced flush of the dirty keys
+  to IndexedDB, and mirrors to `localStorage` so a browser with IndexedDB
+  disabled still keeps the last save.
+* Quota errors (`QuotaExceededError`) downgrade the store to `localstorage`
+  mode and log once — the game keeps running.
+* `writeCampaign()` parses the blob's metadata with `readSaveMetadata()` and
+  writes a proper `CampaignMeta` row.
+
+*Acceptance:* `tests/pwa/browserSaveStore.test.ts` — write → flush → a fresh
+store instance hydrates and reads the same value; legacy `localStorage`
+migration; quota failure downgrades the mode.
+
+=== Phase 4 — Wire the engine to the new store
+
+* `packages/shared/game/engine/GameEngine.ts` — the default `saveStore` becomes
+  a lazily-created browser store singleton instead of `browserSaveStore`
+  (localStorage). The `SaveStore` type is unchanged.
+* `packages/web/src/App.tsx` — `handleGameStart`, `handleContinueGame` and the
+  file import/export all go through the new store.
+* `packages/web/src/utils/Autosave.ts` — read the campaign metadata from the
+  store, not from `localStorage`, so "Continue" survives the migration.
+
+*Acceptance:* play 5 turns offline → close the tab → reopen → Continue
+restores the exact state (turn, year, units, cities, RNG stream).
+
+=== Phase 5 — Campaign manager UI
+
+*New:* `packages/web/src/components/ui/CampaignPanel.tsx` — lists campaigns
+(name, civilization, turn/year, date, size) with *Continue*, *Export*,
+*Delete*; an *Import from file* action; and a *Save current game here* action
+when a game is running.
+
+*Wired into:* `WarRoomMenu` (a new "Campaigns" card) and the in-game
+`GAME` menu (a "Campaigns" entry).
+
+*Acceptance:* e2e — start a game, save it under a name, reload, open Campaigns,
+see it listed, continue it, delete it, and import a file.
+
+=== Phase 6 — PWA manifest and icons
+
+*New:* `public/manifest.webmanifest` — name, short_name, description,
+`start_url: "/"`, `scope: "/"`, `display: "standalone"`, `orientation:
+"any"`, `theme_color: "#0b1116"`, `background_color: "#0b1116"`, categories,
+and icons at 192×192, 512×512 plus a 512×512 *maskable* variant.
+
+*New:* `public/icons/icon-192.png`, `icon-512.png`, `maskable-512.png`,
+`apple-touch-icon-180.png` — generated from the existing `public/favicon.png`
+with a committed generator script (`tools/pwa/generate_icons.py`, Pillow is
+already available for the tile generator) so the icons are reproducible and
+reviewable.
+
+* `packages/web/index.html` — add `<link rel="manifest">`, the icon links and
+  `apple-touch-icon`; keep the existing meta tags.
+
+*Acceptance:* Chrome's "Install" affordance appears; Lighthouse PWA checks
+pass on the production build.
+
+=== Phase 7 — Service worker generation (Vite plugin)
+
+*New:* `packages/web/pwa/vite-plugin-pwa.mjs` — a Vite plugin that, at build
+time:
+
+. collects the emitted bundle file names in `generateBundle`,
+. renders `packages/web/pwa/sw.template.js` with the precache manifest and a
+  content-derived version stamp,
+. emits `sw.js` at the root of `dist/`,
+. emits `manifest.webmanifest` (or copies the static one) and the icons.
+
+*New:* `packages/web/pwa/sw.template.js` — the service worker source:
+
+[source,javascript]
+----
+const PRECACHE = __PRECACHE_MANIFEST__;
+const VERSION  = __SW_VERSION__;
+const SHELL_CACHE = `civ1-shell-${VERSION}`;
+const ASSET_CACHE = `civ1-assets-${VERSION}`;
+const RUNTIME_CACHE = `civ1-runtime-${VERSION}`;
+const MAX_RUNTIME_ENTRIES = 600;
+// install → precache the shell
+// activate → drop old caches, clients.claim()
+// fetch  → the rules in "Service worker caching rules" above
+----
+
+* In `vite dev` the plugin emits nothing and the registration is skipped, so
+  the dev server is untouched.
+
+*Acceptance:* `npm run build` produces `dist/sw.js` containing the hashed entry
+chunk name; `tests/pwa/precacheManifest.test.ts` asserts the manifest lists
+every emitted JS/CSS file.
+
+=== Phase 8 — Registration and update UX
+
+*New:* `packages/web/src/pwa/registerServiceWorker.ts`
+
+[source,typescript]
+----
+export function registerServiceWorker(onUpdate?: (reload: () => void) => void): void
+----
+
+* registers `/sw.js` with `scope: '/'` only when `import.meta.env.PROD` and
+  `navigator.serviceWorker` exists,
+* listens for `updatefound` → `installed` while a controller exists → reports
+  an available update (the UI offers "Reload"),
+* `skipWaiting` + `clients.claim()` are driven by the user's choice, not
+  automatically, so a running game is never swapped out mid-turn.
+
+*New:* `packages/web/src/pwa/useOnlineStatus.ts` — `useSyncExternalStore` over
+`navigator.onLine` plus the `online`/`offline` events.
+
+* `packages/web/src/App.tsx` — render an offline banner when offline; in a
+  remote room, show "reconnecting" while `remoteEvents` is retrying; toast
+  when the store had to fall back to the smaller storage tier.
+* `packages/web/src/Main.tsx` — flush pending saves when the tab is hidden.
+* `packages/web/src/pwa/useServiceWorkerUpdate.ts` — registers the worker and
+  exposes the "a new version is ready" state to the UI.
+
+*Acceptance:* e2e — build, serve, load once, `context.setOffline(true)`,
+reload → the app still renders; the banner shows.
+
+=== Phase 9 — Asset runtime caching
+
+Implemented inside `sw.template.js`:
+
+* `/assets/<hashed>` → cache-first into the asset cache.
+* `/assets/tiles/*` etc. → cache-first into the runtime cache, with a cap of
+  600 entries and oldest-first trimming.
+* The runtime cache is versioned with the service worker, so a deploy starts
+  clean instead of inheriting a stale 38 MB.
+
+*Acceptance:* e2e — visit the map, go offline, reload, the tiles still render.
+
+=== Phase 10 — Serving headers
+
+* `packages/web/nginx.conf`:
+
+[source,nginx]
+----
+location = /sw.js {
+  add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+  add_header Service-Worker-Allowed "/" always;
+  types { } default_type application/javascript;
+}
+location = /manifest.webmanifest { add_header Cache-Control "public, max-age=3600" always; }
+location = /index.html { add_header Cache-Control "no-cache" always; }
+----
+
+* `k8s/ingress.yaml` — no change needed (the ingress passes headers through),
+  but verify the annotation that keeps `sw.js` un-cached if a CDN is added later.
+
+*Acceptance:* `curl -I /sw.js` against the container returns
+`Cache-Control: no-cache` and `Content-Type: application/javascript`.
+
+=== Phase 11 — Tests
+
+[cols="2,3"]
+|===
+|Suite |Coverage
+
+|`tests/pwa/saveFormat.test.ts`
+|Version gate 1..5, metadata parsing, malformed JSON.
+
+|`tests/pwa/campaignStore.test.ts`
+|Memory store + IndexedDB store (via `fake-indexeddb`): write/read/list/remove, ordering, quota error.
+
+|`tests/pwa/browserSaveStore.test.ts`
+|Hydrate, write-through, debounce, legacy `localStorage` migration, quota downgrade.
+
+|`tests/pwa/offlineRoundTrip.test.ts`
+|Engine-level: create → play → save → new engine → load → identical state *and* identical next RNG draws.
+
+|`tests/pwa/precacheManifest.test.ts`
+|The Vite plugin's manifest contains every emitted chunk.
+
+|`e2e/offline.spec.ts`
+|Production build served statically: install → go offline → reload → play → save → reload → continue → export → import.
+|===
+
+The static server for the e2e spec is a tiny committed script
+(`scripts/static-server.mjs`) so the spec does not need an extra dependency.
+
+=== Phase 12 — Documentation
+
+* `doc/OFFLINE_PWA_PLAN.adoc` — this document, updated with the final state.
+* `doc/save-load-system.adoc` — rewritten for the new storage model
+  (IndexedDB campaigns, the fixed version gate, the file round trip).
+* `README.adoc` — a "Play offline" section: install the PWA, what is cached,
+  where the saves live, how to move a save between devices.
+
+== Risk register
+
+[cols="1,3"]
+|===
+|Risk |Mitigation
+
+|A stale service worker serves an old bundle after a deploy
+|Navigation is network-first; the shell cache is version-stamped by the content hash of the bundle; updates require an explicit user action.
+
+|`localStorage` → IndexedDB migration loses a save
+|Migration writes to IndexedDB first and only then deletes the `localStorage` key. A failed write leaves the legacy key in place.
+
+|IndexedDB quota exceeded on a huge late-game map
+|The write is caught; the store downgrades to `localstorage` mode and logs once. The game keeps running and the player is told that saves are now limited.
+
+|The service worker interferes with the multiplayer transport
+|The worker only answers same-origin `GET`s. The game server is a different origin, and `POST` is never intercepted.
+
+|The service worker interferes with `npm run dev`
+|Registration is production-only and the plugin emits nothing in dev mode.
+
+|Music/SFX files are fetched by URL with query strings in some code paths
+|The cache key is the full URL, so query strings create separate entries. The runtime cache cap keeps that bounded.
+
+|A 3 MB main chunk is precached — is that acceptable?
+|Yes: 3 MB is a normal PWA shell. Precache happens in the background during `install`, and the page is usable before it completes.
+|===
+
+== Definition of done
+
+[cols="1,3"]
+|===
+|Requirement |How it is met
+
+|"Games that do not require gameplay against other players can be played offline when the PWA is installed."
+|The app is installable (manifest + icons + service worker) and a cold launch with the network down renders the full game, because single-player already runs the engine in the tab.
+
+|"The game runs in a local environment without a server connection."
+|The local session (`createLocalSession`) is the same code path as before; only the shell and the storage changed. No request is made to the game server in single-player mode.
+
+|"The game saves its state locally and can be continued later."
+|IndexedDB campaign library + autosave slot. "Continue" on the War Council restores the exact state, including the RNG stream.
+
+|"The game can load its state from a local file."
+|The file import path now accepts the app's own V5 saves (the version gate is fixed) and writes them into the campaign library, so an imported file is also resumable.
+
+|"Without source code duplication."
+|One engine in `packages/shared`, one build artifact, one save format, one version gate, one set of UI paths. The new code is limited to `packages/web/src/pwa/**`, `packages/shared/ports/**` and the Vite plugin — none of which duplicates the game.
+|===
+
+== Appendix — file map
+
+[cols="2,3"]
+|===
+|File |Role
+
+|`packages/shared/types/saves.ts` |Save-version contract and metadata reader (new).
+
+|`packages/shared/ports/campaignStore.ts` |Async campaign-library port + memory implementation (new).
+
+|`packages/web/src/pwa/indexedDbCampaignStore.ts` |IndexedDB implementation of the port (new).
+
+|`packages/web/src/pwa/browserSaveStore.ts` |Synchronous `SaveStore` facade over the campaign store, with hydration, write-through and `localStorage` fallback (new).
+
+|`packages/web/src/pwa/saveFile.ts` |Save-file import/export: validation, download, file picker (new).
+
+|`packages/web/src/pwa/registerServiceWorker.ts` |Production-only registration and update signalling (new).
+
+|`packages/web/src/pwa/useOnlineStatus.ts` |Online/offline React binding (new).
+
+|`packages/web/src/pwa/useServiceWorkerUpdate.ts` |Update-available state for the UI (new).
+
+|`packages/web/pwa/vite-plugin-pwa.mjs` |Build-time generator for `sw.js` and the precache manifest (new).
+
+|`packages/web/pwa/sw.template.js` |Service worker source (new).
+
+|`public/manifest.webmanifest` |Web app manifest (new).
+
+|`public/icons/` |192/512/maskable icons (new).
+
+|`tools/pwa/generate_icons.py` |Reproducible icon generation (new).
+
+|`tools/pwa/add_i18n_keys.py` |The PWA translation table (new).
+
+|`scripts/static-server.mjs` |Static server for the production build (new, used by the offline e2e).
+
+|`playwright.offline.config.ts` |The offline e2e configuration (new).
+
+|`packages/web/src/components/ui/CampaignPanel.tsx` |Campaign library UI (new).
+
+|`packages/web/src/components/ui/OfflineBanner.tsx` |Offline / reconnecting banner (new).
+
+|`packages/web/src/components/ui/UpdateBanner.tsx` |"A new version is ready" banner (new).
+
+|`packages/web/src/styles/pwa.css` |Styles for the banners and the campaign panel (new).
+
+|`packages/web/src/App.tsx` |Save/load/import/export routed through the new store; offline and update banners; the campaign panel.
+
+|`packages/web/nginx.conf` |Service-worker and manifest headers.
+|===

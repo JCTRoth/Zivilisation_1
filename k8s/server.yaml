@@ -19,6 +19,12 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       terminationGracePeriodSeconds: 30
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: { app: civ1-server }
       initContainers:
         - name: wait-for-db
           image: postgres:16-alpine

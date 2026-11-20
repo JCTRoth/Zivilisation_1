@@ -8,103 +8,125 @@ This document describes the Save/Load game system and the leader portrait render
 
 == Save / Load System
 
-The game supports saving and loading the complete game state. Save files are downloaded to disk as `.json` files, and loading opens a file picker dialog to select a previously saved file. The functionality is accessible from the **Game Menu** (opened via the GAME button in the top menu bar).
+:toc:
+:toclevels: 2
+:sectnums:
+
+The game supports saving and loading the complete game state. Saves live in a
+*campaign library* on the player's device, can be exported to a `.json` file
+and imported back, and are fully available with or without a network
+connection.
+
+The full design — and the reasons behind it — are in
+link:OFFLINE_PWA_PLAN.adoc[Offline Play & PWA — Implementation Plan].
 
 === Architecture
 
-The Save/Load system follows a two-tier architecture:
+Three layers, each with one owner:
 
-1. **Game Engine Layer** (`src/game/engine/GameEngine.ts`)::
-   Handles serialization and deserialization of the full game state to/from
-   JSON (`getSaveJSON()` / `loadGame()`). `saveGame()` stages that JSON in
-   `localStorage` under the key `civ1_savegame`, which is also where
-   `loadGame()` reads from.
+[cols="1,3"]
+|===
+|Layer |Owner
 
-2. **UI Layer** (`src/App.tsx`)::
-   `handleSaveGame()` (`App.tsx:658`) and `handleLoadGame()` (`App.tsx:697`)
-   provide the user-facing Save/Load buttons, the file download trigger, and
-   the file picker dialog. They are handed to the GAME menu as `onSaveGame` /
-   `onLoadGame` props (`GameMenuSheet.tsx`).
+|Storage port
+|`packages/shared/ports/saveStore.ts` — the engine's synchronous `{ get, set }` slot API. Unchanged; the engine never touches `localStorage` or IndexedDB directly.
+
+|Campaign library
+|`packages/shared/ports/campaignStore.ts` — the asynchronous `{ list, read, write, remove }` port for a browsable list of named campaigns. `packages/web/src/pwa/indexedDbCampaignStore.ts` implements it against IndexedDB.
+
+|Browser facade
+|`packages/web/src/pwa/browserSaveStore.ts` — a synchronous `SaveStore` backed by an in-memory map that writes through to IndexedDB (or to `localStorage` when IndexedDB is unavailable). The engine sees exactly the same API it always saw.
+
+|===
+
+Because the facade keeps a synchronous in-memory map, `GameEngine.saveGame()`
+and `GameEngine.loadGame()` work unchanged — and the server, which writes to
+SQLite through the same port, is unaffected.
+
+=== The campaign library
+
+A *campaign* is one named entry in the library:
+
+[source,json]
+----
+{
+  "id": "campaign-l3k9x2",
+  "name": "Rome — saved",
+  "turn": 42,
+  "year": -1200,
+  "civilizationName": "Rome",
+  "updatedAt": 1763654321000,
+  "sizeBytes": 2718344,
+  "version": 5,
+  "kind": "manual"
+}
+----
+
+* **Where it lives.** IndexedDB, database `civ1`, object store `campaigns`,
+  keyed by `id`. When IndexedDB is unavailable (private mode, a locked-down
+  kiosk) the store falls back to `localStorage` and says so in the console.
+  A device that is out of space also steps down to `localStorage`; the player
+  is told with a toast that saves are now limited.
+* **When it is written.** A deliberate save (the manual slot, a named
+  campaign) reaches the disk immediately — the player may close the tab right
+  afterwards. The end-of-turn autosave is debounced. The store also flushes
+  when the tab is hidden or closed.
+* **The engine's own slots.** `civ1_savegame` (manual) and `civ1_autosave`
+  (written at the end of every turn) are campaigns too, with `kind`
+  `manual` / `autosave`.
+* **Migration.** A legacy `localStorage` save is imported on the first
+  launch. The legacy key is deleted only *after* the campaign is safely in
+  the library, so a failed write never destroys the only copy.
 
 === Save Game (File Download)
 
-When the user clicks **Save Game**, the following flow occurs:
+When the player clicks **Save Game** in the GAME menu:
 
-. `handleSaveGame()` calls `gameEngine.getSaveJSON()`, which serializes the
-  complete game state to JSON. (That is the same serializer `saveGame()` uses;
-  reading `localStorage` is only the fallback when `getSaveJSON` is missing.)
-. The JSON is wrapped in a `Blob` and downloaded through a temporary
-  `<a download>` element — the browser prompts the user to save a `.json` file.
-  Nothing is written to `localStorage` by this path.
-. The filename follows the pattern `civ1-save-turn-{turn}.json` (e.g., `civ1-save-turn-42.json`).
+. `gameEngine.getSaveJSON()` serializes the complete game state to JSON.
+. The blob is written into the campaign library under the manual slot
+  `civ1_savegame` — so the game can be continued later, offline.
+. The same JSON is handed to the browser as a download through a temporary
+  `<a download>` element; the file name follows the pattern
+  `civ1-save-turn-{turn}.json`.
 
-The serialized save data includes:
-
-* `version` — Save format version (currently `5`; the engine's `loadGame()`
-  accepts versions `1`–`5`, but the file picker accepts only `1`–`3` — see
-  <<save-load-limitations,Limitations>>)
-* `timestamp` — When the save was created
-* `gameSettings` — Game configuration (number of civilizations, map size, difficulty, etc.)
-* `currentTurn` — Current turn number
-* `currentYear` — Current in-game year
-* `activePlayer` — ID of the active player
-* `map` — Full map state (tiles, terrain, improvements, visibility, explored status)
-* `units` — All units with their properties (type, position, health, moves, orders, etc.)
-* `cities` — All cities with production, population, buildings, build queue, etc.
-* `civilizations` — All civilizations with resources, technologies, diplomatic state,
-  and (in v5) the denormalised `teamId`, etc.
-* `technologies` — Technology tree state
-* `gameSettings.fixedAlliances` — Whether the game uses fixed alliances (v5)
-* `gameSettings.teamAssignments` — Slot-indexed team indices (v5)
-
-On success, a notification *"Game saved to civ1-save-turn-{turn}.json"* is shown. On failure, appropriate error notifications are displayed.
+On success a notification *"Game saved to civ1-save-turn-{n}.json"* is shown.
 
 === Load Game (File Picker)
 
-When the user clicks **Load Game**, the following flow occurs:
+When the player clicks **Load Game**:
 
-. `handleLoadGame()` creates a hidden `<input type="file" accept=".json">` element and programmatically clicks it.
-. The browser's native file picker dialog opens, filtered to `.json` files.
-. When the user selects a file, its content is read via `file.text()`.
-. The JSON is validated — must have `version` in `1..3`
-  (`App.tsx:715-720`). Anything else is rejected with
-  *"Invalid or incompatible save file."*
-. The valid JSON is stored in `localStorage` under `civ1_savegame`.
-. `gameEngine.loadGame()` is called, which:
-.. Reads the JSON from `localStorage`
-.. Re-checks the version — the engine itself accepts `1..5`
-   (`GameEngine.ts:9185`)
-.. Restores all engine properties (currentTurn, currentYear, activePlayer, map, units, cities, civilizations, technologies)
-.. Recreates the `SquareGrid` pathfinding grid
-.. Re-initializes subsystems (`playerStorage`, `scoutMemory`, `diplomacyManager`, `teamManager`, `victoryManager`)
-.. Rebuilds fixed-alliance membership from `gameSettings.teamAssignments`, then
-   reapplies `DiplomacyManager.applyTeamInvariants()` *after* the relations are
-   restored, so a stale teammate war in the save is repaired to an alliance
-.. Rebuilds the unit turn queue
-.. Syncs everything to the Zustand store via `storeActions`
-. A final store sync is performed in the UI layer to ensure all views are updated.
-. Fog of war visibility is recalculated via `actions.updateVisibility()`.
+. The native file picker opens, filtered to `.json`.
+. The file is read with `file.text()` and validated against the shared
+  version contract (`packages/shared/types/saves.ts`).
+. The blob is added to the campaign library under the manual slot.
+. `gameEngine.loadGame()` restores the state; the UI then forces a full
+  store sync (map, units, cities, civilizations, technologies, visibility).
 
-If the user cancels the file picker, no `change` event fires: nothing is
-loaded, and the hidden `<input>` is removed again after one second.
+A cancelled picker changes nothing.
 
-On success, a notification *"Game loaded from {filename}"* is shown.
+=== The Campaign Library
+
+`GAME ▸ Campaigns` (and the *Campaign Library* card on the War Council) open
+a panel over the game:
+
+* **Continue** — restore a campaign. With a game running it replaces the
+  current game in place; without one it starts a fresh engine, exactly like
+  the War Council's *Continue* card.
+* **Save current game** — write the running game into the library under a
+  name of the player's choosing.
+* **Export** — download a campaign as a `.json` file (the raw V5 blob).
+* **Import from file** — read a `.json` file and add it to the library.
+* **Delete** — remove a campaign from the device.
+
+The panel works with no network: the library is on the device.
 
 === Keyboard Shortcuts
 
-The following keyboard shortcuts are available (documented in the Help modal):
+* `Ctrl+S` — save the manual slot (and toast *"Game saved locally."*).
+* `Ctrl+L` — load the manual slot (and toast *"Game loaded from the local
+  save."*).
 
-* `Ctrl+S` — Save game
-* `Ctrl+L` — Load game
-
-They are handled in `App.tsx`'s `handleKeyDown` (the `ctrlKey && !altKey &&
-!shiftKey` switch at `App.tsx:1239`; `case "s"` at `:1258`, `case "l"` at
-`:1264`) — **not** in `src/hooks/UseGameEngine.ts`, which holds no keyboard
-code. Both shortcuts work
-on the `localStorage` slot instead of the file dialogs: `Ctrl+S` calls
-`gameEngine.saveGame()` (writes `civ1_savegame`, no download) and `Ctrl+L` calls
-`gameEngine.loadGame()` (reads `civ1_savegame`, no file picker), so they give no
-feedback toast either (see `doc/MODALS.adoc`, "Save / Load Feedback").
+Both are handled in `App.tsx`'s keydown handler.
 
 === Save File Format
 
@@ -150,39 +172,48 @@ Save files are plain JSON with the following structure:
 |Earlier diplomacy/economy additions. No team fields.
 
 |5
-|Fixed alliances: `gameSettings.fixedAlliances`,
-`gameSettings.teamAssignments` and `civilizations[].teamId`.
+|Fixed alliances: `gameSettings.fixedAlliances`, `gameSettings.teamAssignments` and `civilizations[].teamId`.
 |===
 
 Versions 1–4 load as free-for-all. A version-5 save with
 `fixedAlliances: false` (or an invalid team assignment) also loads as
 free-for-all. See link:FIXED_ALLIANCES.adoc[Fixed Alliances].
 
-[IMPORTANT]
+[NOTE]
 ====
-The engine and the menu are **not** in sync on versions. `GameEngine.loadGame()`
-accepts `1`–`5` (`GameEngine.ts:9185`), but the file picker in
-`handleLoadGame()` rejects everything except `1`, `2` and `3`
-(`App.tsx:715-720`) *before* the JSON ever reaches the engine. A save written
-by this build (`version: 5`) therefore **cannot be loaded back through
-GAME ▸ Load Game** — the picker answers *"Invalid or incompatible save
-file."* The only way to load a v4/v5 file today is to put its JSON into
-`localStorage.civ1_savegame` out of band (devtools, a script) and press
-`Ctrl+L`. Known limitation as of 2026-11-07.
+The version gate now lives in exactly one place:
+`isSupportedSaveVersion()` in `packages/shared/types/saves.ts`. The engine's
+`loadGame()` and the file picker both call it, so they can no longer drift
+apart.
+
+This fixed a long-standing bug: the picker used to accept versions 1–3 while
+the engine wrote version 5, which meant *a save written by this build could
+not be loaded back through the menu*. Known limitation as of 2026-11-07,
+fixed as of 2026-11-20.
 ====
+
+=== Offline behaviour
+
+* Single-player saves and loads without any server: the campaign library is
+  on the device.
+* The file export and import work without a network — the browser's file
+  picker and download are local operations.
+* A multiplayer room keeps its state on the server. Its client-side mirror
+  is not part of the local campaign library.
 
 [[save-load-limitations]]
 === Limitations
 
-* Only one save can exist in `localStorage` at a time (the `civ1_savegame` key is overwritten on each save). However, since saves are also downloaded as files, users can keep multiple save files on disk by renaming them.
-* Every turn also autosaves into a **separate** `localStorage` slot,
-  `civ1_autosave` (`App.tsx:486-488`), so the manual save is never clobbered
-  mid-game. Nothing reads that slot back today — it is write-only.
-* Save format version `5` is the current format; versions `1`–`4` load with
-  free-for-all defaults. A save written by a *newer* format is rejected.
-  The file picker is narrower still: `1`–`3` only (see above).
-* No cloud save support (only local file download/upload).
-* Large maps with many units may produce save files of several megabytes.
+* No cloud save support: campaigns live on the device and travel only as
+  exported files.
+* Large maps with many units produce save files of several megabytes. The
+  library therefore uses IndexedDB rather than `localStorage`, whose ~5 MB
+  per-origin quota would otherwise be the ceiling.
+* A browser that blocks IndexedDB falls back to `localStorage`, which brings
+  the size ceiling back. The game keeps running; only the size of a save is
+  limited.
+* A save written by a *newer* format version is rejected by both the engine
+  and the file picker.
 
 == Leader Portraits
 

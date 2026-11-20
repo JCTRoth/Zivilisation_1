@@ -20,6 +20,12 @@ live in `doc/dialogs/`.
 |===
 |Dialog |Screenshot
 
+|War Council hub (front menu)
+|image::dialogs/17-war-council-hub.png[War Council hub, width=420]
+
+|Multiplayer lobby
+|image::dialogs/18-multiplayer-lobby.png[Multiplayer lobby, width=420]
+
 |Game Setup — War Council (Step 1)
 |image::dialogs/00-game-setup.png[Game setup, width=420]
 
@@ -72,13 +78,48 @@ live in `doc/dialogs/`.
 |image::dialogs/16-victory-chronicle.png[Victory chronicle, width=420]
 |===
 
+== Pre-game flow — the War Council
+
+The app no longer drops the player straight into the civilization picker. The
+first screen is the *War Council hub* (`WarRoomMenu.tsx`), the Battle-Room-styled
+front menu. All pre-game screens share one fullscreen 3D stage
+(`BattleRoomStage.tsx`) — the same sky, receding walls, tilted map table and
+candles — so the hub, the wizard, the lobby and the pause screen read as rooms
+in one building instead of unrelated dialogs.
+
+User flows:
+
+. *New Campaign* → `GameSetupModal` step I (civilization) → step II (terms,
+  roster, world, summary) → *Start Game*.
+. *Multiplayer* → `LobbyPanel` → host chooses server, seats and difficulty →
+  *Create room* → one signed join link per seat → a link boots the normal remote
+  client (`?server=&room=&token=`).
+. *Continue Campaign* → the browser campaign library (IndexedDB, localStorage
+  fallback) → the newest autosave is restored; the card is disabled when no
+  campaign exists.
+. *Campaign Library* → `CampaignPanel` → list, resume, export or delete local
+  saves.
+. *Settings* and *Field Manual* → the same shared dialogs the in-game menus
+  open. While the council is visible, `body.civ1-setup-active` lifts the
+  Bootstrap portal above the room's `z-index: 2000`.
+. *Back to War Council* (wizard/lobby nameplate or footer) → the hub, without
+  starting a game.
+
+Shortcuts that bypass the hub keep working: `?quickstart`, `?maptype=…`,
+`?combatlab`, `?server=&room=&token=` and `?lobby[=server]`. The last one opens
+the hub directly on the multiplayer lobby.
+
 == Dialog list at a glance
 
 [cols="2,1,2,2", options="header"]
 |===
 |Dialog |Id / key |How to open |Screenshot
 
-|Game Setup wizard |— (App state) |page load (skipped by `?quickstart`) |`00-game-setup.png`
+|War Council hub |— (App state) |page load (skipped by `?quickstart` / `?maptype` / remote join) |`17-war-council-hub.png`
+
+|Multiplayer lobby |— (App state) |War Council ▸ Multiplayer; `?lobby[=server]` |`18-multiplayer-lobby.png`
+
+|Game Setup wizard |— (App state) |War Council ▸ New Campaign (skipped by `?quickstart`) |`00-game-setup.png`
 
 |Tech Tree |`tech` · `F2` |WORLD ▸ Tech Tree |`01-tech-tree.png`
 
@@ -175,13 +216,14 @@ Two engine-side gates read the id: `EngineEventHandlers.isDecisionScreenOpen`
 whether closing that id re-runs the auto-end check (see
 `doc/auto-end-turn.adoc`).
 
-*B — local state in `src/App.tsx`* :: Plain `useState` booleans that never
-touch the store: `showGameSetup` (L67), `showSettings` (L66),
-`showEndTurnConfirm` (L68), `confirmNewGame` / `confirmQuit` (L69–L70), plus
-`gameResult` (read from the store) driving `PauseScreen` and
-`GameResultOverlay`. The `GameMenuSheet` (`activeMenu`, L63) and the DOM
-`showToast` helper (L108) live here too. Because these are not `activeDialog`,
-the engine cannot see them.
+*B — local state in `src/App.tsx`* :: Plain `useState` values that never touch
+the store: `showGameSetup`, `setupView` (`'menu' | 'single' | 'multiplayer'`,
+the War Council's three screens), `showSettings`, `showCampaigns`,
+`showEndTurnConfirm`, `confirmNewGame` / `confirmQuit`, plus `gameResult` (read
+from the store) driving `PauseScreen` and `GameResultOverlay`. The
+`GameMenuSheet` (`activeMenu`) and the memoized DOM `showToast` helper live here
+too. Because these are not `activeDialog`, the engine cannot see them; the
+pre-game screens are a plain early return in `App.tsx`.
 
 *C — canvas-local state in `src/components/game/GameCanvas.tsx`* :: `contextMenu`
 (L249) drives the ORDERS unit menu, `stackModal` (L273) drives the unit-stack
@@ -691,7 +733,8 @@ emissions, verified against the router's `switch`.
 * **Why:** an AI declaring war on you is buried in a toast that auto-dismisses; the player may play several turns without noticing they are at war. Treaty expiry/anniversary has no event at all yet (`DiplomacyManager` has no expiry logic) and would need one first.
 
 === 2. Save / Load Feedback
-* **Trigger:** `GAME_SAVED` (`GameEngine.ts` L9166) and `GAME_LOADED` (L9502) are emitted but unhandled. The menu path compensates with `App.showToast`; the `Ctrl+S` / `Ctrl+L` shortcuts (`App.tsx` L1258 / L1264) give *no feedback at all*.
+* **Trigger:** `GAME_SAVED` (`GameEngine.ts` L9166) and `GAME_LOADED` (L9502) are emitted but unhandled. The menu path compensates with `App.showToast`.
+* **Status:** the `Ctrl+S` / `Ctrl+L` shortcuts now toast as well — *"Game saved locally."* and *"Game loaded from the local save."* (the save goes into the local campaign library; see link:OFFLINE_PWA_PLAN.adoc[Offline Play & PWA]). What is still missing is the *rich* confirmation: file name, turn, timestamp, byte size, and on load "restored turn N, M cities, K units".
 * **Shows:** a small shell-styled confirmation: file name, turn, timestamp, byte size; on load, "restored turn N, M cities, K units" or a clear failure reason.
 * **Why:** the fastest way to lose a long game is not knowing whether the save landed.
 

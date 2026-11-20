@@ -5,6 +5,7 @@ import { SMALL_ISLAND_MAX_TILES, VERY_SMALL_ISLAND_MAX_TILES, RESEARCH_UNLOCK_RO
 import { headlessRuntime, type GameRuntime } from '../../ports/runtime';
 import { createGameplayRng, type Rng } from './Rng';
 import { browserSaveStore, type SaveStore } from '../../ports/saveStore';
+import { isSupportedSaveVersion } from '../../types/saves';
 import { staticMapForMapType, SIZE_LOCKED_MAP_TYPES } from '../../data/maps/index';
 import { TECHNOLOGIES_DATA } from '../../data/TechnologyData';
 import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_REQUIREMENTS, IMPROVEMENT_TYPES } from '../../data/TileImprovementConstants';
@@ -9534,7 +9535,9 @@ const occupiedLandmasses = new Set(
       }
 
       const saveData = JSON.parse(json);
-      if (!saveData || ![1, 2, 3, 4, 5].includes(saveData.version)) {
+      // The version gate lives in `types/saves.ts` so the UI's file picker and
+      // the engine can never drift apart again.
+      if (!saveData || !isSupportedSaveVersion(saveData.version)) {
         console.warn('[GameEngine] Invalid or incompatible save data, version:', saveData?.version);
         return false;
       }

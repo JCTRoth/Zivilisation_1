@@ -659,3 +659,17 @@ From TOBECHECKED.txt (now proven by unit tests, moved to DONE):
   (SMALL_ISLAND_MAX_TILES); tests scoutBlocking:250, scoutExploration,
   ScoutMemory, ScoutDefense.
 
+* [DONE] Offline play for single-player games when the PWA is installed:
+  public/manifest.webmanifest + public/icons/{icon-192,icon-512,maskable-512,
+  apple-touch-icon-180}.png make the app installable; a service worker is
+  generated into dist/sw.js by packages/web/pwa/vite-plugin-pwa.mjs (shell
+  precached ~5 MB, the 38 MB of artwork cached on demand) and registered in
+  production builds only. Saves live in a local campaign library (IndexedDB
+  via packages/shared/ports/campaignStore.ts, localStorage fallback) behind
+  the existing synchronous SaveStore port — the engine is unchanged. The
+  save-file version gate now lives in one place
+  (packages/shared/types/saves.ts), which fixes the bug where the file
+  picker rejected the app's own v5 saves. New: GAME ▸ Campaigns, the War
+  Council's Campaign Library card, an offline/reconnecting banner and a
+  "new version ready" notice. Plan: doc/OFFLINE_PWA_PLAN.adoc; tests
+  tests/pwa/ (38) + e2e/offline.spec.ts (npm run test:offline).

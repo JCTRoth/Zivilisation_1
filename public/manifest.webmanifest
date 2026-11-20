@@ -1,0 +1,43 @@
+{
+  "id": "/",
+  "name": "Zivilisation 1 Browser",
+  "short_name": "Civ1",
+  "description": "Zivilisation 1 — a browser-based recreation of Sid Meier's Civilization (1991). Play offline: build an empire from 4000 BC to 2100 AD, settle cities, research 45 technologies, fight wars and race for the Moonshot.",
+  "lang": "en",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#0b1116",
+  "background_color": "#0b1116",
+  "categories": ["games", "strategy", "entertainment"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "New campaign",
+      "short_name": "New game",
+      "description": "Start a fresh single-player campaign.",
+      "url": "/?quickstart=1"
+    }
+  ]
+}

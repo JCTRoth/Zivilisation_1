@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import { mkdirSync, appendFileSync, readFileSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { pwaPlugin } from './packages/web/pwa/vite-plugin-pwa.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -73,7 +74,17 @@ export default defineConfig({
   root: 'packages/web',
   // Keep the generated tile assets where the tile-generator tools expect them.
   publicDir: join(__dirname, 'public'),
-  plugins: [react(), gameLogPlugin()],
+  plugins: [
+    react(),
+    gameLogPlugin(),
+    // Generates `sw.js` (and knows the precache manifest) for the offline
+    // PWA. Build-only — the dev server is untouched.
+    pwaPlugin({
+      template: join(__dirname, 'packages/web/pwa/sw.template.js'),
+      publicDir: join(__dirname, 'public'),
+      outputFile: 'sw.js',
+    }),
+  ],
   server: {
     host: true,
     port: 3000,

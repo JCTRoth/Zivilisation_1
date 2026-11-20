@@ -16,6 +16,76 @@ Root-level `tests/`, `scripts/`, `e2e/` and `tools/` stay where they are. Vite s
 
 For the full implementation status — completed work, verification results, open limitations and concrete next steps — see link:doc/SERVER_CLIENT_SPLIT_STATUS.adoc[Server/Client Split Status Report].
 
+== Playing offline (PWA)
+
+Games that need no other players — single player, hotseat and the AI-vs-AI
+spectator scenarios — run *entirely in the browser*. The same is true of the
+installed PWA: install it once and it keeps working with the network off.
+
+The plan, the rationale and the implementation status are in
+link:doc/OFFLINE_PWA_PLAN.adoc[Offline Play & PWA — Implementation Plan].
+
+=== What "offline" means here
+
+* **One engine, one codebase.** The simulation lives in `packages/shared` and
+  already runs in the tab for single-player; the server runs the *same* class
+  for authoritative rooms. Offline play therefore needs no second copy of the
+  game and no second build — `npm run build` produces one artifact that is
+  served online and installed offline.
+* **One save format.** The V5 save blob is what the browser stores, what the
+  file export writes, what the file import reads and what the server
+  persists. A campaign saved offline can be uploaded to a room later.
+* **The shell is cached, the artwork is fetched on demand.** The service
+  worker precaches the document, the JavaScript, the stylesheet and the fonts
+  (~5 MB). Tiles, music, sound effects and wonder art (38 MB) are cached the
+  first time you meet them.
+
+=== Install it
+
+. Serve the production build over HTTPS (or `http://localhost`).
+. Open it in Chrome, Edge or Safari and use the browser's *Install* action
+  (Chrome: the install icon in the address bar).
+. Launch it from the desktop. It works with the network off.
+
+The manifest lives at `public/manifest.webmanifest`, the icons at
+`public/icons/` (regenerate with `python3 tools/pwa/generate_icons.py`), and
+the service worker is generated into `dist/sw.js` at build time by
+`packages/web/pwa/vite-plugin-pwa.mjs`. The worker is registered in
+production builds only — `npm run dev` is untouched.
+
+=== Where the saves live
+
+Campaigns are stored on the device in IndexedDB (`civ1` → `campaigns`), with a
+`localStorage` fallback for browsers that block IndexedDB. The engine's own
+two slots (`civ1_savegame`, `civ1_autosave`) live in the same library; a
+legacy `localStorage` save is migrated on the first launch and is never
+deleted before its copy is safely stored.
+
+* `GAME ▸ Save Game` writes the manual slot *and* downloads a `.json` file.
+* `GAME ▸ Load Game` reads a file and adds it to the library.
+* `GAME ▸ Campaigns` opens the library: continue, export, delete, import.
+* The War Council's *Campaign Library* entry opens the same list before a
+  game starts.
+* `Ctrl+S` / `Ctrl+L` save and load the manual slot.
+
+A deliberate save is written to the device immediately; the end-of-turn
+autosave is debounced. Nothing is pending when the tab is closed.
+
+=== Multiplayer and a dropped connection
+
+A multiplayer room still needs the server. When the connection drops the
+client keeps the existing reconnect logic, waits for the browser to report
+the network back, and shows a *Reconnecting* banner instead of silently
+dropping commands. A single-player game is never affected.
+
+=== Verify it
+
+[source,bash]
+----
+npm run test:offline   # Playwright against the production build, network cut
+npm test               # unit tests, including tests/pwa/
+----
+
 == Multiplayer / server mode
 
 Start the authoritative server in one terminal:
@@ -555,8 +625,9 @@ npm run dev          # Vite dev server, port 3000
 npm run build        # production build
 npm run lint         # ESLint, max-warnings 0
 npm run type-check   # tsc --noEmit
-npm run test         # Vitest — 247 suites, 2,929 cases, node environment, no DOM
+npm run test         # Vitest — 263 suites, 3,050 cases, node environment, no DOM
 npm run test:e2e     # Playwright (needs the dev server)
+npm run test:offline # Playwright against the production build, network cut
 npm run knip         # unused exports / dependencies
 ----
 
@@ -633,7 +704,8 @@ the commit message which rule the number encodes.
 
 === Systems
 
-* link:doc/save-load-system.adoc[Save & Load System] — the v5 format and migrations
+* link:doc/save-load-system.adoc[Save & Load System] — the v5 format, the campaign library and the file round trip
+* link:doc/OFFLINE_PWA_PLAN.adoc[Offline Play & PWA] — installing the app, the service worker, and playing without a server
 * link:doc/GOTO_MANAGER_IMPLEMENTATION.adoc[GoTo Manager] — pathfinding orders
 * link:doc/ROUND_MANAGER_IMPLEMENTATION.adoc[Round Manager] — automated path following
 * link:doc/GAME_PROGRESSION_EXPORT.adoc[Game Progression Export] — the analysis JSON/CSV

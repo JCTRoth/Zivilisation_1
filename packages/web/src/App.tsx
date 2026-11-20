@@ -43,7 +43,22 @@ import { gameLogger } from "./utils/GameLogger";
 import { gameProgression } from "./utils/GameProgression";
 import type { TerrainTileRenderInfo } from "./game/rendering/MapRenderer";
 import { debugLog } from '@shared/utils/DevLog';
-import { readAutosaveMeta, type AutosaveMeta } from "./utils/Autosave";
+import { readAutosaveMeta, readAutosaveMetaAsync, type AutosaveMeta } from "./utils/Autosave";
+import { getBrowserSaveStore, SAVE_STORE_FALLBACK_EVENT } from "./pwa/browserSaveStore";
+import {
+  describeSaveFileError,
+  downloadSaveFile,
+  isSaveFileError,
+  pickSaveFile,
+  readSaveFile,
+  saveFileName,
+} from "./pwa/saveFile";
+import { MANUAL_SAVE_SLOT } from "@shared/ports/campaignStore";
+import { useOnlineStatus } from "./pwa/useOnlineStatus";
+import { useServiceWorkerUpdate } from "./pwa/useServiceWorkerUpdate";
+import OfflineBanner from "./components/ui/OfflineBanner";
+import UpdateBanner from "./components/ui/UpdateBanner";
+import CampaignPanel from "./components/ui/CampaignPanel";
 
 declare global {
   interface Window {
@@ -77,6 +92,11 @@ function App() {
   const [setupView, setSetupView] = useState<'menu' | 'single' | 'multiplayer'>('menu');
   const [lobbyServer, setLobbyServer] = useState<string | null>(null);
   const [autosaveMeta, setAutosaveMeta] = useState<AutosaveMeta | null>(() => readAutosaveMeta());
+  // The local campaign library (IndexedDB) and the offline notices.
+  const [showCampaigns, setShowCampaigns] = useState(false);
+  const online = useOnlineStatus();
+  const [reconnecting, setReconnecting] = useState(false);
+  const { updateAvailable, applyUpdate, dismissUpdate } = useServiceWorkerUpdate();
   const [showEndTurnConfirm, setShowEndTurnConfirm] = useState(false);
   const [confirmNewGame, setConfirmNewGame] = useState(false);
   const [confirmQuit, setConfirmQuit] = useState(false);
@@ -116,36 +136,37 @@ function App() {
     };
   }, [turnFlashTrigger]);
 
-  // Simple toast notification (DOM-based for immediate feedback)
-  const showToast = (
-    message: string,
-    type: "success" | "error" | "warning" = "success",
-  ) => {
-    try {
-      const colors: Record<string, string> = {
-        success: "var(--color-success)",
-        error: "var(--color-danger)",
-        warning: "var(--color-warning)",
-      };
-      const toast = document.createElement("div");
-      toast.textContent = message;
-      toast.className = "app-toast";
-      toast.setAttribute("role", "status");
-      toast.style.background = colors[type] || "#333";
-      document.body.appendChild(toast);
-      requestAnimationFrame(() => {
-        toast.style.opacity = "1";
-      });
-      setTimeout(() => {
-        toast.style.opacity = "0";
+  // Simple toast notification (DOM-based for immediate feedback).
+  // Memoized so the callbacks that show a toast keep a stable identity.
+  const showToast = useCallback(
+    (message: string, type: "success" | "error" | "warning" = "success") => {
+      try {
+        const colors: Record<string, string> = {
+          success: "var(--color-success)",
+          error: "var(--color-danger)",
+          warning: "var(--color-warning)",
+        };
+        const toast = document.createElement("div");
+        toast.textContent = message;
+        toast.className = "app-toast";
+        toast.setAttribute("role", "status");
+        toast.style.background = colors[type] || "#333";
+        document.body.appendChild(toast);
+        requestAnimationFrame(() => {
+          toast.style.opacity = "1";
+        });
         setTimeout(() => {
-          if (document.body.contains(toast)) document.body.removeChild(toast);
-        }, 300);
-      }, 3000);
-    } catch (e) {
-      console.warn("[App] showToast failed:", e);
-    }
-  };
+          toast.style.opacity = "0";
+          setTimeout(() => {
+            if (document.body.contains(toast)) document.body.removeChild(toast);
+          }, 300);
+        }, 3000);
+      } catch (e) {
+        console.warn("[App] showToast failed:", e);
+      }
+    },
+    [],
+  );
 
   // Preload unit icons on mount
   useEffect(() => {
@@ -189,7 +210,12 @@ function App() {
         }).__remote;
         if (remote) {
           console.log("[App] Joining remote room:", remote.roomId, "at", remote.baseUrl);
-          const joined = await createRemoteGame(remote);
+          const joined = await createRemoteGame({
+            ...remote,
+            // The banner tells the player that a multiplayer room is waiting
+            // for the network instead of silently dropping their commands.
+            onConnectionChange: (connected) => setReconnecting(!connected),
+          });
           remoteGameRef.current = joined;
           setGameEngine(joined.engine);
           setShowGameSetup(false);
@@ -228,7 +254,7 @@ function App() {
           actions.updateSettings({ devMode: true });
         }
 
-        const engine = new GameEngine(actions, webRuntime);
+        const engine = new GameEngine(actions, webRuntime, getBrowserSaveStore());
         await engine.initialize(gameSettings);
 
         // The Forge of War defaults to the barbarian horde's plan, but most
@@ -345,13 +371,13 @@ function App() {
    * still need wiring here. Nothing is generated and no settings are changed.
    */
   const handleContinueGame = useCallback(async () => {
-    const meta = readAutosaveMeta();
+    const meta = await readAutosaveMetaAsync();
     if (!meta) {
       setAutosaveMeta(null);
       return;
     }
     try {
-      const engine = new GameEngine(actions, webRuntime);
+      const engine = new GameEngine(actions, webRuntime, getBrowserSaveStore());
       const loaded = await engine.loadGame(meta.slot);
       if (!loaded) {
         setError("Could not read the saved campaign.");
@@ -375,13 +401,117 @@ function App() {
     }
   }, [actions]);
 
+  /**
+   * Load a campaign from the local library.
+   *
+   * With a game already running the campaign replaces it in place; without
+   * one, a fresh engine is created — the same path the War Council's
+   * "Continue" card uses.
+   */
+  const handleLoadCampaign = useCallback(
+    async (id: string) => {
+      const store = getBrowserSaveStore();
+      await store.hydrate();
+      if (!store.get(id)) {
+        showToast(t("campaigns.missing"), "error");
+        return;
+      }
+      if (gameEngine) {
+        const loaded = await gameEngine.loadGame(id);
+        if (!loaded) {
+          showToast(t("campaigns.missing"), "error");
+          return;
+        }
+        actions.updateMap(gameEngine.map);
+        actions.updateUnits(gameEngine.getAllUnits());
+        actions.updateCities(gameEngine.getAllCities());
+        actions.updateCivilizations(gameEngine.civilizations);
+        actions.updateTechnologies(gameEngine.technologies);
+        actions.updateVisibility();
+        showToast(t("campaigns.loaded"), "success");
+        setShowCampaigns(false);
+        return;
+      }
+      const engine = new GameEngine(actions, webRuntime, store);
+      const loaded = await engine.loadGame(id);
+      if (!loaded) {
+        setError("Could not read the saved campaign.");
+        return;
+      }
+      actions.startGame();
+      actions.updateGameState({
+        mapGenerated: true,
+        currentTurn: engine.currentTurn,
+        currentYear: engine.currentYear,
+        humanPlayerIds: engine.gameSettings?.humanPlayerIds ?? [0],
+      });
+      gameProgression.startSession(engine, engine.gameSettings);
+      setGameEngine(engine);
+      setShowGameSetup(false);
+      setSetupView("menu");
+      actions.focusOnNextUnit();
+      setShowCampaigns(false);
+    },
+    [actions, gameEngine, showToast, t],
+  );
+
+  /** Save the running game into the local campaign library under a name. */
+  const handleSaveCampaign = useCallback(
+    async (name: string) => {
+      if (!gameEngine) {
+        throw new Error(t("campaigns.noGame"));
+      }
+      const json = gameEngine.getSaveJSON();
+      if (!json) {
+        throw new Error(t("campaigns.saveFailed"));
+      }
+      const id = `campaign-${Date.now().toString(36)}`;
+      await getBrowserSaveStore().writeCampaign(id, json, {
+        kind: "manual",
+        ...(name.trim() ? { name: name.trim() } : {}),
+      });
+    },
+    [gameEngine, t],
+  );
+
   // The council promises a current autosave whenever it is visible. Every
   // route that returns to the menu (quit, result screen, reload) refreshes
   // this, so the Continue card never shows stale metadata.
+  //
+  // The store also announces that it had to fall back to the smaller
+  // storage tier (a full device); the player should know that saves are now
+  // limited rather than lose one silently.
+  useEffect(() => {
+    const onFallback = () => {
+      showToast(t("campaigns.storageFallback"), "warning");
+    };
+    window.addEventListener(SAVE_STORE_FALLBACK_EVENT, onFallback);
+    return () => window.removeEventListener(SAVE_STORE_FALLBACK_EVENT, onFallback);
+  }, [showToast, t]);
+
   useEffect(() => {
     if (!gameEngine && showGameSetup) {
-      setAutosaveMeta(readAutosaveMeta());
+      // The campaign library lives in IndexedDB, so the metadata only exists
+      // after the store has been hydrated.
+      let cancelled = false;
+      void readAutosaveMetaAsync().then((meta) => {
+        if (!cancelled) setAutosaveMeta(meta);
+      });
+      return () => {
+        cancelled = true;
+      };
     }
+  }, [gameEngine, showGameSetup]);
+
+  // Bootstrap portals dialogs to <body>, where their 1050 stack sits *below*
+  // the War Council (z-index 2000). While the council is the page, raise the
+  // body-level modals above it so Settings and the Field Manual can open over
+  // the room. The class is removed with the screen.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const active = !gameEngine && showGameSetup;
+    document.body.classList.toggle('civ1-setup-active', active);
+    return () => document.body.classList.remove('civ1-setup-active');
   }, [gameEngine, showGameSetup]);
 
   // Quick-start mode: when the URL contains `?quickstart`, skip the setup
@@ -793,24 +923,19 @@ function App() {
         json = gameEngine.getSaveJSON();
       } else if (typeof gameEngine.saveGame === "function") {
         gameEngine.saveGame();
-        json = localStorage.getItem("civ1_savegame");
+        json = getBrowserSaveStore().get(MANUAL_SAVE_SLOT);
       }
       if (!json) {
         showToast("Failed to generate save data", "error");
         setActiveMenu(null);
         return;
       }
+      // Keep a copy in the local campaign library so the game can be
+      // continued later — with or without a network.
+      getBrowserSaveStore().set(MANUAL_SAVE_SLOT, json);
       // Trigger file download
-      const filename = `civ1-save-turn-${gameState.currentTurn}.json`;
-      const blob = new Blob([json], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      const filename = saveFileName(gameState.currentTurn);
+      downloadSaveFile(json, filename);
       showToast(`Game saved to ${filename}`, "success");
     } catch (e) {
       console.error("[App] Save failed:", e);
@@ -826,29 +951,24 @@ function App() {
       setActiveMenu(null);
       return;
     }
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = ".json,application/json";
-    input.style.display = "none";
-    input.onchange = async () => {
-      const file = input.files?.[0];
+    void (async () => {
+      const file = await pickSaveFile();
       if (!file) {
         setActiveMenu(null);
         return;
       }
       try {
-        const text = await file.text();
-        const saveData = JSON.parse(text);
-        // Accept saved-state versions 1, 2 and 3 — the engine's `loadGame`
-        // supports all three (3 adds multi-unit transport cargo), so the menu
-        // Load Game must too.
-        if (!saveData || (saveData.version !== 1 && saveData.version !== 2 && saveData.version !== 3)) {
-          showToast("Invalid or incompatible save file.", "error");
+        const result = await readSaveFile(file);
+        if (isSaveFileError(result)) {
+          showToast(describeSaveFileError(result.reason), "error");
           setActiveMenu(null);
           return;
         }
-        localStorage.setItem("civ1_savegame", text);
-        const success = await gameEngine.loadGame();
+        // The imported file joins the campaign library, so it is resumable
+        // from the War Council as well as from the running game.
+        const store = getBrowserSaveStore();
+        await store.writeCampaign(MANUAL_SAVE_SLOT, result.json, { kind: "manual" });
+        const success = await gameEngine.loadGame(MANUAL_SAVE_SLOT);
         if (success) {
           // Force a full store sync
           actions.updateMap(gameEngine.map);
@@ -866,12 +986,7 @@ function App() {
         showToast("Failed to read save file: " + (e as Error).message, "error");
       }
       setActiveMenu(null);
-    };
-    document.body.appendChild(input);
-    input.click();
-    setTimeout(() => {
-      if (document.body.contains(input)) document.body.removeChild(input);
-    }, 1000);
+    })();
   };
 
   const handleResultClose = useCallback(() => {
@@ -1384,15 +1499,31 @@ function App() {
             }
             break;
           case "s":
-            // Save game
+            // Save game into the local campaign library (IndexedDB).
             if (gameEngine && gameEngine.saveGame) {
-              gameEngine.saveGame();
+              const saved = gameEngine.saveGame(MANUAL_SAVE_SLOT);
+              showToast(
+                saved ? "Game saved locally." : "Save failed.",
+                saved ? "success" : "error",
+              );
             }
             break;
           case "l":
-            // Load game
+            // Load game from the local campaign library.
             if (gameEngine && gameEngine.loadGame) {
-              gameEngine.loadGame();
+              void gameEngine.loadGame(MANUAL_SAVE_SLOT).then((loaded) => {
+                if (!loaded) {
+                  showToast("No local save to load.", "warning");
+                  return;
+                }
+                actions.updateMap(gameEngine.map);
+                actions.updateUnits(gameEngine.getAllUnits());
+                actions.updateCities(gameEngine.getAllCities());
+                actions.updateCivilizations(gameEngine.civilizations);
+                actions.updateTechnologies(gameEngine.technologies);
+                actions.updateVisibility();
+                showToast("Game loaded from the local save.", "success");
+              });
             }
             break;
           case "p":
@@ -1423,6 +1554,7 @@ function App() {
     gameEngine,
     camera,
     setCamera,
+    showToast,
     handleEndTurnRequest,
     activeMenu,
     showHexDetail,
@@ -1480,8 +1612,22 @@ function App() {
             onNewCampaign={() => setSetupView('single')}
             onMultiplayer={() => setSetupView('multiplayer')}
             onContinue={() => void handleContinueGame()}
+            onCampaigns={() => setShowCampaigns(true)}
             onSettings={() => setShowSettings(true)}
             onHelp={() => actions.showDialog('help')}
+          />
+        )}
+
+        {/* Offline / update notices and the local campaign library. */}
+        <OfflineBanner offline={!online} reconnecting={reconnecting} />
+        <UpdateBanner available={updateAvailable} onApply={applyUpdate} onDismiss={dismissUpdate} />
+        {showCampaigns && (
+          <CampaignPanel
+            onLoad={handleLoadCampaign}
+            onSaveCurrent={handleSaveCampaign}
+            hasRunningGame={!!gameEngine}
+            onBack={() => setShowCampaigns(false)}
+            notify={(message, tone) => showToast(message, tone)}
           />
         )}
 
@@ -1529,6 +1675,10 @@ function App() {
         gameEngine={gameEngine}
       />
 
+      {/* Offline / update notices — status lines, never a modal. */}
+      <OfflineBanner offline={!online} reconnecting={reconnecting} />
+      <UpdateBanner available={updateAvailable} onApply={applyUpdate} onDismiss={dismissUpdate} />
+
       {/* Main Game Area */}
       <div className="app-main">
         {/* Info panel: static sidebar on desktop, slide-in drawer on mobile */}
@@ -1562,6 +1712,10 @@ function App() {
         onNewGame={handleNewGame}
         onSaveGame={handleSaveGame}
         onLoadGame={handleLoadGame}
+        onOpenCampaigns={() => {
+          setShowCampaigns(true);
+          setActiveMenu(null);
+        }}
         onPause={handlePause}
         onOpenSettings={() => {
           setShowSettings(true);
@@ -1604,6 +1758,18 @@ function App() {
         }}
       />
 
+      {/* The local campaign library (IndexedDB). Reachable from the War
+          Council and from the GAME menu; it works without a network. */}
+      {showCampaigns && (
+        <CampaignPanel
+          onLoad={handleLoadCampaign}
+          onSaveCurrent={handleSaveCampaign}
+          hasRunningGame={!!gameEngine}
+          onBack={() => setShowCampaigns(false)}
+          notify={(message, tone) => showToast(message, tone)}
+        />
+      )}
+
       {/* Confirmation dialogs (replace native window.confirm for consistent mobile UX) */}
       <ConfirmDialog
         show={confirmNewGame}
@@ -1615,8 +1781,7 @@ function App() {
         variant="danger"
         onConfirm={handleNewGameConfirmed}
         onCancel={() => setConfirmNewGame(false)}
-      />
-      <ConfirmDialog
+      />      <ConfirmDialog
         show={confirmQuit}
         title={t('confirm.quit.title')}
         message={t('confirm.quit.message')}

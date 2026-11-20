@@ -8,6 +8,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 NAME="civ1-k3s"
+# Scratch space for the generated kubeconfig and TLS material. Anything
+# under the system temp dir works on every machine.
 TMP_ROOT="${TMPDIR:-/tmp}/civ1-k3s"
 mkdir -p "$TMP_ROOT"
 KUBECONFIG_PATH="$TMP_ROOT/k3s-test.yaml"
@@ -41,9 +43,26 @@ sed -i 's/:6443/:16443/' "$KUBECONFIG_PATH"
 export KUBECONFIG="$KUBECONFIG_PATH"
 kubectl wait --for=condition=Ready node --all --timeout=90s >/dev/null
 
-echo "[k3s] importing images into containerd"
-docker save civ1browser-server:local | docker exec -i "$NAME" ctr -n k8s.io images import - >/dev/null
-docker save civ1browser-web:local | docker exec -i "$NAME" ctr -n k8s.io images import - >/dev/null
+echo "[k3s] joining a second agent node"
+SERVER_IP="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$NAME")"
+NODE_TOKEN="$(docker exec "$NAME" cat /var/lib/rancher/k3s/server/node-token)"
+docker rm -f civ1-k3s-agent >/dev/null 2>&1 || true
+docker run -d --privileged --name civ1-k3s-agent \
+  -e K3S_URL="https://${SERVER_IP}:6443" -e K3S_TOKEN="$NODE_TOKEN" \
+  rancher/k3s:v1.31.4-k3s1 agent >/dev/null
+for _ in $(seq 1 40); do
+  count="$(kubectl get nodes --no-headers 2>/dev/null | wc -l || true)"
+  count="${count//[^0-9]/}"
+  if [ "${count:-0}" -ge 2 ]; then break; fi
+  sleep 2
+done
+kubectl wait --for=condition=Ready node --all --timeout=90s >/dev/null
+
+echo "[k3s] importing images into containerd on both nodes"
+for node in "$NAME" civ1-k3s-agent; do
+  docker save civ1browser-server:local | docker exec -i "$node" ctr -n k8s.io images import - >/dev/null
+  docker save civ1browser-web:local | docker exec -i "$node" ctr -n k8s.io images import - >/dev/null
+done
 
 echo "[k3s] applying namespace"
 kubectl apply -f k8s/namespace.yaml >/dev/null

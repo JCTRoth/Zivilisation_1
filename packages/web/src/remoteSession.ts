@@ -19,6 +19,11 @@ export interface RemoteSessionOptions {
   token?: string;
   /** Called after each reply so the read model can refresh immediately. */
   onResult?: (result: CommandResult) => void;
+  /**
+   * Called when the event stream connects or drops. The UI uses it to tell
+   * the player that a multiplayer game is waiting for the network.
+   */
+  onConnectionChange?: (connected: boolean) => void;
 }
 
 export function createRemoteSession(options: RemoteSessionOptions): GameSession {

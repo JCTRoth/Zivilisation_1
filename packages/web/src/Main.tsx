@@ -8,10 +8,15 @@ import 'bootstrap/dist/css/bootstrap.min.css'
 import 'bootstrap-icons/font/bootstrap-icons.css'
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ensureTerrainFont } from "./utils/TerrainFont";
+import { installPageHideFlush } from "./pwa/browserSaveStore";
 
 // Register the Noto Emoji Light font used for terrain symbols before the app
 // mounts — the map canvas picks it up on the next frame once loaded.
 void ensureTerrainFont();
+
+// The campaign library writes through on a debounce; flush it when the tab is
+// hidden so a closed tab never loses the last turn.
+installPageHideFlush();
 
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

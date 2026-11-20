@@ -11,6 +11,8 @@ interface GameMenuSheetProps {
   onNewGame: () => void;
   onSaveGame: () => void;
   onLoadGame: () => void;
+  /** Open the local campaign library (saved on this device). */
+  onOpenCampaigns: () => void;
   onPause: () => void;
   onOpenSettings: () => void;
   onOpenRates: () => void;
@@ -57,6 +59,7 @@ const GameMenuSheet: React.FC<GameMenuSheetProps> = ({
   onNewGame,
   onSaveGame,
   onLoadGame,
+  onOpenCampaigns,
   onPause,
   onOpenSettings,
   onOpenRates,
@@ -106,6 +109,7 @@ const GameMenuSheet: React.FC<GameMenuSheetProps> = ({
             <MenuItem icon="💾" label={t('menu.saveGame')} onClick={onSaveGame} />
             <MenuItem icon="⏸️" label={t('menu.pause')} onClick={onPause} />
             <MenuItem icon="📁" label={t('menu.loadGame')} onClick={onLoadGame} />
+            <MenuItem icon="🗄️" label={t('menu.campaigns')} onClick={onOpenCampaigns} />
             <MenuItem icon="⚙️" label={t('menu.settings')} onClick={onOpenSettings} />
             <MenuItem icon="🚪" label={t('menu.quit')} onClick={onQuit} danger />
           </>

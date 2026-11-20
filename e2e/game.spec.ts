@@ -107,7 +107,9 @@ test.describe('Top Menu', () => {
   });
 
   test('right-clicking a unit opens the ORDERS context menu', async ({ page }) => {
-    test.setTimeout(30_000);
+    // The council → wizard → board path needs a little more headroom on a
+    // cold dev server (the ORDERS scan itself is cheap, the boot is not).
+    test.setTimeout(45_000);
     await startGame(page);
 
     const canvas = page.locator('.game-canvas canvas').first();

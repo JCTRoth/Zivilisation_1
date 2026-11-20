@@ -20,6 +20,7 @@
     "type-check": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:offline": "playwright test --config playwright.offline.config.ts",
     "check:secrets": "node scripts/check-no-secrets.mjs",
     "test:k3s": "playwright test --config playwright.k3s.config.ts"
   },
@@ -47,6 +48,7 @@
     "eslint": "^8.55.0",
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.5",
+    "fake-indexeddb": "^6.2.8",
     "knip": "^6.24.0",
     "typescript": "^5.6.0",
     "vite": "^7.2.7",

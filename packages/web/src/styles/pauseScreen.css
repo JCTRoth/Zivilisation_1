@@ -224,6 +224,16 @@
   width: 100%;
 }
 
+/* The council's action colour, matching the War Council and the modal shell. */
+.pause-screen .touch-btn--primary {
+  background: var(--color-accent, #f0c33c);
+  color: var(--color-accent-ink, #141006);
+}
+
+.pause-screen .touch-btn--primary:hover {
+  background: var(--color-accent-strong, #ffd75e);
+}
+
 /* ---- 360px and up -------------------------------------------------------- */
 
 @media (max-width: 479.98px) {

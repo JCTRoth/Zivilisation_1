@@ -279,10 +279,10 @@ describe('SettlementEvaluator', () => {
       }
       const end = performance.now();
 
-      // Smoke guard, not a micro-benchmark: this runs in the shared CI suite
-      // under variable load (observed 616-1043 ms on an idle dev box). The
-      // detailed benchmark lives in vitest.diag.config.ts.
-      expect(end - start).toBeLessThan(1500);
+      // Smoke guard, not a micro-benchmark: this runs in the shared suite
+      // under variable load (observed up to ~1.6 s with a local K3s cluster
+      // running). The detailed benchmark lives in vitest.diag.config.ts.
+      expect(end - start).toBeLessThan(4000);
     });
   });
 });

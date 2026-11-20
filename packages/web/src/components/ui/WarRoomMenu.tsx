@@ -12,6 +12,8 @@ interface WarRoomMenuProps {
   onMultiplayer: () => void;
   /** Resume the campaign in the browser's autosave slot. */
   onContinue: () => void;
+  /** Open the local campaign library. */
+  onCampaigns: () => void;
   /** Open the shared options dialog over the council. */
   onSettings: () => void;
   /** Open the field manual over the council. */
@@ -33,6 +35,7 @@ export default function WarRoomMenu({
   onNewCampaign,
   onMultiplayer,
   onContinue,
+  onCampaigns,
   onSettings,
   onHelp,
   autosave,
@@ -132,6 +135,13 @@ export default function WarRoomMenu({
             </div>
 
             <div className="war-menu__utilities">
+              <button type="button" className="war-menu__utility" onClick={onCampaigns}>
+                <span className="war-menu__utility-icon" aria-hidden="true">🗄️</span>
+                <span>
+                  <strong>{t('warroom.campaigns')}</strong>
+                  <span className="war-menu__utility-hint">{t('warroom.campaignsLede')}</span>
+                </span>
+              </button>
               <button type="button" className="war-menu__utility" onClick={onSettings}>
                 <span className="war-menu__utility-icon" aria-hidden="true">⚙️</span>
                 <span>

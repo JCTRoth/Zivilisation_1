@@ -95,12 +95,16 @@ export async function createRemoteGame(options: RemoteSessionOptions): Promise<{
     roomId: options.roomId,
     token: options.token ?? '',
     onConnected: () => {
+      options.onConnectionChange?.(true);
       void catchUp().then((ok) => {
         if (!ok) void refresh();
       });
     },
     onEvent: (event: OutboundEvent) => consume(event),
-    onError: (error) => console.error('[remoteGame] event stream error', error),
+    onError: (error) => {
+      console.error('[remoteGame] event stream error', error);
+      options.onConnectionChange?.(false);
+    },
   });
 
   try {
