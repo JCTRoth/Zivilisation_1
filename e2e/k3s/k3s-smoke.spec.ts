@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 /**
@@ -10,7 +11,7 @@ const SERVER = process.env.CIV1_SERVER ?? 'http://localhost:31787';
 const WEB = process.env.CIV1_WEB ?? 'http://localhost:31080';
 // Node-side fetch uses a resolvable URL; browser stays on the HTTPS ingress.
 const API = process.env.CIV1_API ?? SERVER;
-const SHOTS = process.env.CIV1_SCREENSHOTS ?? '/home/jonas/Desktop/civ1-k3s-screenshots';
+const SHOTS = process.env.CIV1_SCREENSHOTS ?? join(homedir(), 'Desktop', 'civ1-k3s-screenshots');
 
 let shotIndex = 0;
 async function shot(page: Page, name: string): Promise<void> {
