@@ -4,6 +4,20 @@
 :toclevels: 3
 :sectnums:
 
+[NOTE]
+====
+This document is the *audit trail*: what was verified, the bugs found, and
+the prompts the implementation was driven from. For the current state and the
+remaining work, read:
+
+* link:CONTAINERS.adoc[Containers and Deployed Topologies] — what runs where
+* link:K3S_SETUP.adoc[K3s Setup] — how to run and verify it
+* link:K3S_COMPLETION_PLAN.adoc[K3s Completion Plan] — the verified gap register (P0–P2) and the phased plan
+
+The forward-looking items below are superseded by the completion plan; they
+are kept because they record *why* each decision was made.
+====
+
 == What was actually verified on this machine
 
 === Local Docker Compose stack
@@ -48,7 +62,7 @@ A dedicated Playwright suite (`playwright.k3s.config.ts`, `e2e/k3s/k3s-smoke.spe
 
 Command: `CIV1_SERVER=http://localhost:31787 CIV1_WEB=http://localhost:31080 npm run test:k3s`.
 
-*Finding:* both compose and K3s return 404 for `/assets/units/unit_*.png` (33 requests) — these generated tile sprites are not committed and are absent until `npm run tiles:install` is run. It is pre-existing and not caused by the containerization.
+*Finding:* both compose and K3s return 404 for generated artwork — unit sprites (`/assets/units/unit_*.png`) and terrain variants (`/assets/tiles/terrain_*_*.png`), roughly 160 requests. They are not committed and are absent until `npm run tiles:install` is run. The client falls back to bundled SVG/emoji icons and colour tiles, so nothing is visibly broken; it is network noise, not a containerization regression.
 
 == Implementation status of the prompts
 

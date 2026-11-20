@@ -1,0 +1,439 @@
+= K3s Setup
+:revdate: 2026-11-20
+:toc:
+:toclevels: 3
+:sectnums:
+
+How to stand up the complete stack on Kubernetes: a two-node K3s cluster in
+Docker, the two application images, Postgres with persistence, TLS through
+Traefik, and the Playwright suite that proves the chain end to end.
+
+This document describes the *test* cluster that ships with the repository
+(`scripts/setup-k3s-test.sh`) and the manifests in `k8s/`. It notes where a
+real cluster differs.
+
+For what each container contains see link:CONTAINERS.adoc[Containers and
+Deployed Topologies]. For the remaining production work see
+link:K3S_COMPLETION_PLAN.adoc[K3s Completion Plan].
+
+== What you get
+
+[source]
+----
+host machine
+├── civ1-k3s           (privileged container, K3s server, control plane)
+│   └── node d16ec770… Ready  control-plane,master  v1.31.4+k3s1
+├── civ1-k3s-agent     (privileged container, K3s agent)
+│   └── node f42cb1b0… Ready  <none>                v1.31.4+k3s1
+│
+├── namespace civ1
+│   ├── civ1-web        Deployment ×2   nginx + PWA
+│   ├── civ1-server     Deployment ×2…6 HTTP/SSE + WS (HPA on CPU)
+│   ├── civ1-postgres   StatefulSet ×1  PVC 2 Gi
+│   └── civ1-pg-backup  CronJob         PVC 5 Gi
+│
+├── Traefik ingress    https://civ1.local:30443  (self-signed)
+└── NodePorts          web 31080 · server 31787/31788 · API 16443
+----
+
+Everything runs on one machine and is disposable: one script creates it, one
+command destroys it, and nothing outside `~/tmp` and Docker volumes is
+touched.
+
+=== Why a second node
+
+The server deployment uses `topologySpreadConstraints`, so two nodes let the
+replicas actually spread — that is what makes the rolling update, the HPA and
+the cross-worker event bus meaningful. A single-node cluster would pass the
+same tests while proving much less.
+
+== Prerequisites
+
+[cols="1,3"]
+|===
+|Tool |Why
+
+|Docker (with `--privileged` containers allowed)
+|The cluster itself runs as containers.
+
+|`kubectl`
+|Talks to the cluster through the generated kubeconfig.
+
+|`openssl`
+|Creates the self-signed certificate for `civ1.local`.
+
+|`npm`, Node ≥18
+|Builds the images through `docker compose build`.
+
+|~6 GB free RAM, ~10 GB disk
+|Two K3s nodes, Postgres, the app and two browsers for the e2e run.
+
+|Ports 16443, 31080, 31787, 31788, 30443 free
+|The test cluster deliberately uses alternates so it coexists with a host K3s on 6443/30080/30787.
+|===
+
+== Quick start
+
+[source,bash]
+----
+./scripts/setup-k3s-test.sh
+----
+
+The script is idempotent: it removes and recreates the containers, re-imports
+the images, recreates the secrets and restarts the web deployment. A cold run
+takes a few minutes (mainly image builds and Postgres start-up).
+
+At the end it prints:
+
+[source,text]
+----
+  web:      http://localhost:31080/
+  server:   http://localhost:31787/health
+  https:    https://civ1.local:30443/  (add 'civ1.local' to /etc/hosts)
+  run:      CIV1_SERVER=http://localhost:31787 CIV1_WEB=http://localhost:31080 npm run test:k3s
+  https e2e: CIV1_WEB=https://civ1.local:30443/ CIV1_SERVER=https://civ1.local:30443/api npm run test:k3s
+  kubeconfig: /tmp/civ1-k3s/k3s-test.yaml
+----
+
+Export the kubeconfig for every later command:
+
+[source,bash]
+----
+export KUBECONFIG=$TMPDIR/civ1-k3s/k3s-test.yaml   # usually /tmp/civ1-k3s/k3s-test.yaml
+kubectl get nodes
+----
+
+== What the script does, step by step
+
+[cols="1,3"]
+|===
+|# |Step
+
+|1
+|`docker compose build server web` — builds both images from the repository root, then tags them `civ1browser-server:local` / `civ1browser-web:local`.
+
+|2
+|Starts the `civ1-k3s` container with `rancher/k3s:v1.31.4-k3s1`, publishing `16443→6443` (API) and the NodePorts `31080`, `31787`, `31788`. `--disable=servicelb` because there is no cloud load balancer.
+
+|3
+|Waits for the API and for the node to register, then copies the admin kubeconfig out of the container and rewrites `:6443` to `:16443`. The five-second pause lets K3s finish rotating its serving certificate.
+
+|4
+|Starts `civ1-k3s-agent` as the second node: it joins with `K3S_URL` and the node token read from the server container.
+
+|5
+|`docker save | ctr import` on **both** nodes — the images are built on the host, so each node's containerd must receive them.
+
+|6
+|Applies `k8s/namespace.yaml`, then creates the TLS secret. `openssl` makes a 365-day certificate for `civ1.local` and `localhost`.
+
+|7
+|`kubectl apply -k k8s` — namespace, Postgres, server, web, HPA, network policies, ingress.
+
+|8
+|Creates the two secrets out of band (`civ1-db`, `civ1-server`) with test values, because `k8s/secrets.example.yaml` is a template and must not be applied.
+
+|9
+|Patches `civ1-web-config` to `GAME_SERVER_URL=http://localhost:31787` so the browser (on the host) can reach the NodePort, then restarts the web deployment to re-render `/config.js`.
+
+|10
+|Waits for `civ1-postgres`, `civ1-server`, `civ1-web` rollouts to converge, then for Traefik to be running.
+
+|11
+|Starts a `kubectl port-forward` from `localhost:30443` to the Traefik service (its NodePort changes per cluster, a forward gives a stable URL).
+|===
+
+== Manual setup (without the script)
+
+Useful when you want to run the cluster elsewhere, or to understand what the
+script hides.
+
+=== 1. Cluster
+
+[source,bash]
+----
+docker run -d --privileged --name civ1-k3s \
+  -p 16443:6443 -p 31080:30080 -p 31787:30787 -p 31788:30788 \
+  rancher/k3s:v1.31.4-k3s1 server \
+  --disable=servicelb --write-kubeconfig-mode 644
+
+mkdir -p /tmp/civ1-k3s
+docker cp civ1-k3s:/etc/rancher/k3s/k3s.yaml /tmp/civ1-k3s/k3s-test.yaml
+sed -i 's/:6443/:16443/' /tmp/civ1-k3s/k3s-test.yaml
+export KUBECONFIG=/tmp/civ1-k3s/k3s-test.yaml
+kubectl wait --for=condition=Ready node --all --timeout=120s
+----
+
+Add the second node (optional but recommended):
+
+[source,bash]
+----
+SERVER_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' civ1-k3s)
+NODE_TOKEN=$(docker exec civ1-k3s cat /var/lib/rancher/k3s/server/node-token)
+docker run -d --privileged --name civ1-k3s-agent \
+  -e K3S_URL="https://${SERVER_IP}:6443" -e K3S_TOKEN="$NODE_TOKEN" \
+  rancher/k3s:v1.31.4-k3s1 agent
+kubectl wait --for=condition=Ready node --all --timeout=120s
+----
+
+=== 2. Images
+
+[source,bash]
+----
+docker build -f packages/web/Dockerfile    -t civ1browser-web:local .
+docker build -f packages/server/Dockerfile -t civ1browser-server:local .
+
+for node in civ1-k3s civ1-k3s-agent; do
+  docker save civ1browser-web:local    | docker exec -i "$node" ctr -n k8s.io images import -
+  docker save civ1browser-server:local | docker exec -i "$node" ctr -n k8s.io images import -
+done
+----
+
+=== 3. Namespace, TLS, secrets
+
+[source,bash]
+----
+kubectl apply -f k8s/namespace.yaml
+
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout /tmp/civ1-k3s/tls.key -out /tmp/civ1-k3s/tls.crt \
+  -subj "/CN=civ1.local" -addext "subjectAltName=DNS:civ1.local,DNS:localhost"
+kubectl -n civ1 create secret tls civ1-tls \
+  --cert=/tmp/civ1-k3s/tls.crt --key=/tmp/civ1-k3s/tls.key
+
+kubectl -n civ1 create secret generic civ1-db \
+  --from-literal=POSTGRES_DB=civ1 \
+  --from-literal=POSTGRES_USER=civ1 \
+  --from-literal=POSTGRES_PASSWORD='choose-a-password'
+
+kubectl -n civ1 create secret generic civ1-server \
+  --from-literal=PG_URL='postgres://civ1:choose-a-password@civ1-postgres:5432/civ1' \
+  --from-literal=GAME_SERVER_SECRET='choose-another-secret'
+----
+
+=== 4. Apply
+
+[source,bash]
+----
+kubectl apply -k k8s
+
+# the browser on the host reaches the server through the NodePort
+kubectl -n civ1 patch configmap civ1-web-config --type merge \
+  -p '{"data":{"GAME_SERVER_URL":"http://localhost:31787"}}'
+kubectl -n civ1 rollout restart deploy/civ1-web
+
+kubectl -n civ1 rollout status statefulset/civ1-postgres --timeout=180s
+kubectl -n civ1 rollout status deployment/civ1-server  --timeout=180s
+kubectl -n civ1 rollout status deployment/civ1-web     --timeout=180s
+----
+
+=== 5. HTTPS ingress
+
+[source,bash]
+----
+# Traefik's NodePort varies; a port-forward is the stable URL.
+kubectl -n kube-system port-forward svc/traefik 30443:443 &
+
+# resolve civ1.local without touching /etc/hosts:
+curl -k --resolve civ1.local:30443:127.0.0.1 https://civ1.local:30443/api/health
+----
+
+=== 6. Two configuration modes
+
+The web container must know a URL the *browser* can reach. There are two
+supported shapes, and they are mutually exclusive:
+
+[cols="1,2,2"]
+|===
+|Mode |`GAME_SERVER_URL` |CORS
+
+|NodePort (default)
+|`http://localhost:31787`
+|The browser talks cross-origin to `:31787`; the server answers `access-control-allow-origin: *`.
+
+|Ingress / TLS
+|`/api`
+|Same origin (`https://civ1.local:30443/api`), the Traefik `strip-api` middleware removes the prefix. No CORS needed.
+|===
+
+To switch to ingress mode:
+
+[source,bash]
+----
+kubectl -n civ1 patch configmap civ1-web-config --type merge \
+  -p '{"data":{"GAME_SERVER_URL":"/api"}}'
+kubectl -n civ1 rollout restart deploy/civ1-web
+----
+
+Then open `https://civ1.local:30443/` (with `civ1.local` resolving to your
+machine) and create a room from the lobby. The server's `/api/health` is the
+same endpoint as `/health`.
+
+== Verify it
+
+=== Endpoints
+
+[source,bash]
+----
+curl http://localhost:31787/health      # {"ok":true,"rooms":[…]}
+curl http://localhost:31787/ready       # 200 when Postgres is reachable
+curl http://localhost:31787/metrics     # Prometheus text
+curl -k --resolve civ1.local:30443:127.0.0.1 https://civ1.local:30443/api/health
+curl -s http://localhost:31080/ -o /dev/null -w '%{http_code}\n'
+----
+
+=== The Playwright suite
+
+[source,bash]
+----
+CIV1_SERVER=http://localhost:31787 \
+CIV1_WEB=http://localhost:31080 \
+npm run test:k3s
+----
+
+It runs three tests (`e2e/k3s/k3s-smoke.spec.ts`) and writes screenshots to
+`~/Desktop/civ1-k3s-screenshots` by default:
+
+[cols="1,3"]
+|===
+|Test |What it proves
+
+|Full chain
+|Lobby renders from the K3s-served client, a room is created through the real UI, two independent browser contexts join with the minted seat tokens, seat 0 issues a real `SET_RATES` command over the API, seat 1 reads the resulting state, and `/metrics` + `/ready` are live. It also asserts that the container rendered `window.__CIV1_CONFIG__.gameServer`.
+
+|Game UI interactions
+|Rates modal, research panel and end turn work on a K3s-served client.
+
+|Token binding
+|A token minted for one room is rejected with `401` against another.
+|===
+
+HTTPS mode:
+
+[source,bash]
+----
+CIV1_TLS=1 \
+CIV1_WEB=https://civ1.local:30443/ \
+CIV1_SERVER=https://civ1.local:30443/api \
+npm run test:k3s
+----
+
+`CIV1_TLS=1` also makes the browser resolve `civ1.local` to `127.0.0.1`
+through `--host-resolver-rules`, so no `/etc/hosts` edit is needed.
+
+Overrides: `CIV1_SCREENSHOTS=/path`, `CIV1_API=<url>` (node-side API when the
+browser URL differs), `CHROME_PATH=<binary>`.
+
+== Operating the cluster
+
+[source,bash]
+----
+kubectl -n civ1 get pods -o wide
+kubectl -n civ1 get hpa
+kubectl -n civ1 logs deploy/civ1-server --tail=50        # JSON lines
+kubectl -n civ1 exec deploy/civ1-server -- wget -qO- localhost:8787/metrics
+kubectl -n civ1 rollout restart deploy/civ1-server
+kubectl -n civ1 scale deploy/civ1-server --replicas=3     # HPA takes over again
+kubectl -n civ1 port-forward svc/civ1-server 8787:8787
+----
+
+=== Postgres and backups
+
+[source,bash]
+----
+kubectl -n civ1 exec statefulset/civ1-postgres -- \
+  psql -U civ1 -d civ1 -c 'select version, name from migrations order by version;'
+
+# a backup by hand (see the warning below)
+kubectl -n civ1 create job --from=cronjob/civ1-pg-backup backup-manual
+kubectl -n civ1 logs job/backup-manual
+----
+
+[WARNING]
+====
+The scheduled backup currently fails: the job pod has no NetworkPolicy
+allowing DNS or egress to Postgres, so it aborts with *“could not translate
+host name civ1-postgres”*. Reproduced with `kubectl create job
+--from=cronjob/civ1-pg-backup`. Do not rely on backups until
+link:K3S_COMPLETION_PLAN.adoc[the plan] P0-2 is done.
+====
+
+=== Logs
+
+The server writes one JSON object per line (`ts`, `level`, `message`,
+`workerId`, plus `roomId` / `commandSeq` / `eventSeq` when relevant), so
+`kubectl logs` output is directly parseable:
+
+[source,bash]
+----
+kubectl -n civ1 logs deploy/civ1-server --tail=20 | jq -r '.message'
+----
+
+== Teardown
+
+[source,bash]
+----
+# stop the Traefik port-forward
+pkill -f 'port-forward.*svc/traefik'
+
+docker rm -f civ1-k3s civ1-k3s-agent
+rm -f /tmp/civ1-k3s/k3s-test.yaml
+rm -rf /tmp/civ1-k3s/civ1-tls
+----
+
+Everything else (the namespace, PVCs, secrets) lives inside the container and
+disappears with it. The host images remain; remove them with
+`docker rmi civ1browser-web:local civ1browser-server:local`.
+
+== Troubleshooting
+
+[cols="2,3"]
+|===
+|Symptom |Cause and fix
+
+|`ImagePullBackOff` / `ErrImageNeverPull`
+|The image was not imported into *that* node's containerd. `docker save | ctr import` on **both** nodes, then `kubectl rollout restart`.
+
+|Pods stuck `ContainerCreating`, node `NotReady`
+|The K3s containers need `--privileged`. Without it the kubelet cannot start a container runtime.
+
+|`kubectl` talks to `localhost:8080`
+|`KUBECONFIG` is unset or the file is missing (a reboot clears `/tmp`). Re-copy it from the container; the cluster is still running.
+
+|API connection refused right after start
+|K3s rotates its serving certificate once at bootstrap. Wait a few seconds before copying `k3s.yaml`, or restart the copy.
+
+|Server pods crash-loop before Postgres is ready
+|Expected without the `wait-for-db` init container — it is in `k8s/server.yaml`. If you removed it, restore it.
+
+|`civ1.local` does not resolve
+|Add `127.0.0.1 civ1.local` to `/etc/hosts`, or use `curl --resolve` and the Playwright suite's `CIV1_TLS=1` resolver rule.
+
+|Pods `Running` but not `Ready`
+|Check `/ready`. It returns `503` when Postgres is unreachable — look at the `civ1-server` secret and the postgres pod.
+
+|Backup job fails with a DNS error
+|Known gap: no NetworkPolicy for the job (plan P0-2).
+
+|HPA shows `<unknown>` targets
+|The metrics API is not available. K3s ships metrics-server; wait a minute after start, or check `kubectl top pods`.
+
+|Playwright fails with a 404 on `/assets/units/…`
+|The generated unit sprites are not committed. Run `npm run tiles:install` and rebuild the web image.
+
+|Web client loads but cannot create a room (“Failed to fetch”)
+|`GAME_SERVER_URL` points at a URL the *browser* cannot reach. In NodePort mode it must be `http://localhost:31787`; in ingress mode `/api`.
+|===
+
+== Known limitations of this setup
+
+These are deliberate boundaries of the test cluster, not bugs to fix here:
+
+* one machine, no cloud load balancer (`--disable=servicelb`);
+* self-signed TLS, no cert-manager;
+* images imported by hand, no registry;
+* Postgres is a single instance;
+* the backup job is blocked by the network policy;
+* no Prometheus/Grafana, only the annotated `/metrics` endpoint.
+
+Each one is addressed in link:K3S_COMPLETION_PLAN.adoc[K3s Completion Plan].

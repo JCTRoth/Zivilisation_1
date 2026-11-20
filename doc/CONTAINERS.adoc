@@ -1,0 +1,576 @@
+= Containers and Deployed Topologies
+:revdate: 2026-11-20
+:toc:
+:toclevels: 3
+:sectnums:
+
+Every container in this project, what is inside it, how it is built, how the
+pieces reach each other, and where the configuration lives. It covers both
+supported topologies: Docker Compose on one host, and K3s.
+
+For the step-by-step cluster walkthrough see link:K3S_SETUP.adoc[K3s Setup].
+For what is still missing before this is production-grade see
+link:K3S_COMPLETION_PLAN.adoc[K3s Completion Plan].
+
+== Inventory
+
+[cols="2,2,1,1,3"]
+|===
+|Image |Built from |Base |Size |Role
+
+|`civ1browser-web`
+|`packages/web/Dockerfile`
+|`nginx:1.27-alpine`
+|~108 MB
+|Static client + installable PWA behind nginx. The only container a browser talks to.
+
+|`civ1browser-server`
+|`packages/server/Dockerfile`
+|`node:20-bookworm-slim`
+|~279 MB
+|Authoritative game server: HTTP/SSE, WebSocket, room manager, persistence.
+
+|`postgres:16-alpine`
+|upstream
+|—
+|~276 MB
+|Durable shared store for rooms, seats, save blobs and the event outbox. Used by the server when `PG_URL` is set.
+
+|`postgres:16-alpine` (job)
+|`k8s/postgres.yaml` (`CronJob civ1-pg-backup`)
+|—
+|—
+|Nightly `pg_dump` into a PVC.
+
+|`postgres:16-alpine` (init)
+|`k8s/server.yaml` (`initContainer wait-for-db`)
+|—
+|—
+|Blocks the server pods until Postgres accepts connections.
+
+|`rancher/k3s:v1.31.4-k3s1`
+|`scripts/setup-k3s-test.sh`
+|—
+|—
+|*Test cluster only.* One server (control plane) + one agent, each a privileged Docker container.
+|===
+
+Sizes are `docker images` on the development machine; containerd reports the
+uncompressed size inside a node (web 110 MB, server 296 MB).
+
+== `civ1browser-web`
+
+=== Build
+
+Two stages (`packages/web/Dockerfile`), built from the *repository root*:
+
+[source,bash]
+----
+docker build -f packages/web/Dockerfile -t civ1browser-web .
+# optional: --build-arg VITE_GAME_SERVER=https://game.example.com
+----
+
+[cols="1,2"]
+|===
+|Stage |What happens
+
+|`build` (`node:20-bookworm-slim`)
+|Copies the workspace manifests, `npm ci` (plus `python3 make g++` only because the workspace's optional `better-sqlite3` would otherwise fail its install script), copies the tree, runs `npm run build` → `/app/dist`.
+
+|runtime (`nginx:1.27-alpine`)
+|Copies `dist/` to `/usr/share/nginx/html`, the nginx site config, the runtime-config template and the entrypoint.
+|===
+
+What `dist/` contains:
+
+* `index.html` — the shell, including `<link rel="manifest">` and the icon links
+* `assets/` — hashed JS/CSS/fonts *and* the unhashed public game art (`tiles/`, `music/`, `sfx/`, `wonders/`, `story/`, `nomads/`)
+* `manifest.webmanifest` — the web app manifest
+* `sw.js` — the service worker, generated at build time by
+  `packages/web/pwa/vite-plugin-pwa.mjs` (build only; the dev server never
+  registers it)
+* `icons/`, `favicon*.png`, `apple-touch-icon.png`
+
+=== Runtime configuration
+
+The client must know the game-server URL without being rebuilt per
+environment. The container renders it at start-up:
+
+[cols="1,3"]
+|===
+|File |Purpose
+
+|`/etc/civ1/config.template.js`
+|`window.__CIV1_CONFIG__ = { gameServer: "${GAME_SERVER_URL}" };`
+
+|`/usr/local/bin/docker-entrypoint.sh`
+|`envsubst '${GAME_SERVER_URL}'` the template into
+ `/usr/share/nginx/html/config.js`, then `exec nginx -g 'daemon off;'`
+
+|`/usr/share/nginx/html/config.js`
+|The rendered file the browser loads with `<script src="/config.js">`
+|===
+
+`GAME_SERVER_URL` therefore has to be readable from the browser. Two valid
+shapes:
+
+* a direct origin — `http://localhost:30787` (NodePort) or
+  `https://game.example.com`;
+* a same-origin path — `/api` — when a reverse proxy strips the prefix
+  (the K3s Traefik ingress does exactly this).
+
+The Vite build-time `VITE_GAME_SERVER` argument is only a fallback used by
+`LobbyPanel` when `config.js` is absent (for example under `npm run preview`).
+
+=== nginx behaviour (`packages/web/nginx.conf`)
+
+[cols="2,1,3"]
+|===
+|Path |Cache-Control |Why
+
+|`/assets/<name>-<8-char-hash>.<ext>`
+|`public, immutable` (1 y)
+|Vite output. The hash makes the file immutable. The regex requires exactly eight hash characters after the last dash, so `city-captured-classic.mp3` is not mistaken for a hashed asset.
+
+|`/assets/…` (everything else)
+|`public, max-age=3600`
+|The unhashed game art. A one-hour TTL lets a redeployed tile set reach installed clients.
+
+|`/sw.js`
+|`no-cache, no-store, must-revalidate` + `Service-Worker-Allowed: /`, `application/javascript`
+|A cached worker would pin the app to an old build forever.
+
+|`/manifest.webmanifest`
+|`public, max-age=3600`, `application/manifest+json`
+|Installability requires a JSON manifest MIME type.
+
+|`/index.html`
+|`no-cache`
+|So a deploy is picked up on the next load.
+
+|everything else
+|SPA fallback to `index.html`
+|Client-side routes.
+|===
+
+[IMPORTANT]
+====
+The MIME type for `.webmanifest` and the `sw.js` cache headers were added with
+the PWA work. An image built before 2026-11-20 18:20 serves the manifest as
+`application/octet-stream` and no cache headers — rebuild and redeploy to get
+installability. Verified against the running K3s pods: they still run the old
+config. See link:K3S_COMPLETION_PLAN.adoc[the plan], P0-1.
+====
+
+=== Ports, probes, resources
+
+[cols="1,2"]
+|===
+|Container port |`80`
+
+|Service (compose) |`3000:80`
+|Service (K3s) |NodePort `30080`; also routed by the ingress at `/`
+|Readiness |`GET /` (K3s)
+|Requests / limits |`50m` / `64Mi` — `500m` / `256Mi` (K3s)
+|Replicas |2 in K3s, 1 in compose
+|===
+
+The container is stateless. It holds no game state; every save lives in
+Postgres (server) or in the player's browser (offline PWA).
+
+== `civ1browser-server`
+
+=== Build
+
+Single stage (`packages/server/Dockerfile`), built from the repository root:
+
+[source,bash]
+----
+docker build -f packages/server/Dockerfile -t civ1browser-server .
+----
+
+* `npm ci --omit=dev --omit=optional` — `better-sqlite3` is explicitly
+  excluded, because a Postgres deployment never loads it and the native
+  toolchain would add hundreds of megabytes.
+* Copies `packages/server` and `packages/shared` — *not* `packages/web`.
+* Command: `npm run start:server` → `tsx packages/server/src/main.ts`.
+
+[NOTE]
+====
+The image executes TypeScript through `tsx` at runtime rather than compiled
+JavaScript. That is why it is ~279 MB with a 107 MB `node_modules` and why
+start-up does a transform pass. It is correct and debuggable, but a compiled
+multi-stage image would be smaller and faster; see
+link:K3S_COMPLETION_PLAN.adoc[the plan], P2-14.
+====
+
+=== What runs inside
+
+[cols="1,3"]
+|===
+|Component |Role
+
+|HTTP transport (`transport.ts`)
+|`/health`, `/ready`, `/metrics`, room CRUD, commands, SSE event stream, snapshots, save/load.
+
+|WebSocket transport (`wsTransport.ts`)
+|The same room registry over `ws` on `WS_PORT`. *The shipped browser client does not use it* — it streams events over SSE (`fetch` + `ReadableStream`). It exists for programmatic clients and tests.
+
+|`RoomManager`
+|Creates, hydrates and restores rooms. With `PG_URL` set, rooms are discovered from the shared store, so any replica can serve any room.
+
+|`GameRoom` + `GameEngine`
+|One authoritative simulation per room, a tick loop, classified and fog-filtered events, debounced autosaves.
+
+|`PostgresPersistence` / `SqlitePersistence`
+|Save blobs, room and seat metadata, the event outbox. SQLite is used when `PG_URL` is absent (single process only).
+
+|`RoomEventBus`
+|`LISTEN`/`NOTIFY` fan-out so a command handled by one replica reaches SSE clients on another.
+|===
+
+=== Environment
+
+[cols="2,1,3"]
+|===
+|Variable |Default |Effect
+
+|`PORT` |`8787` |HTTP port.
+|`WS_PORT` |`8788` |WebSocket port.
+|`HOST` |`127.0.0.1` |Bind address. **Set to `0.0.0.0` in containers**, otherwise the service is unreachable from outside the pod.
+|`GAME_SERVER_SECRET` |`dev-secret` |HMAC key for signed seat tokens. The default is insecure — always set it outside local play.
+|`DB_FILE` |`server.db` |SQLite file when `PG_URL` is unset.
+|`PG_URL` |unset |Postgres DSN. Enables the shared store, lazy room hydration and `LISTEN`/`NOTIFY`.
+|`WORKERS` |`1` |Node cluster workers *inside one container*. Compose uses 2; K3s uses 1 because scaling is per pod.
+|`SHUTDOWN_TIMEOUT_MS` |`10000` |How long the primary waits for workers to drain on `SIGTERM`.
+|===
+
+=== Endpoints
+
+[cols="2,1,3"]
+|===
+|Endpoint |Probe |Notes
+
+|`GET /health`
+|liveness
+|`{ ok: true, rooms: [...] }`. The room list is the *local* process's registry — with several replicas behind one Service, different calls return different subsets. Treat it as a liveness signal, not a cluster inventory.
+
+|`GET /ready`
+|readiness
+|`200` when the data store answers, `503` with `{ok:false,reason:'STORE_UNAVAILABLE'}` otherwise.
+
+|`GET /metrics`
+|scrape
+|Prometheus text: `civ1_commands_total{type,result}`, `civ1_events_total{type}`, `civ1_saves_total`, `civ1_event_streams_total`, `civ1_rooms`.
+
+|`POST /rooms`, `GET /rooms`, `DELETE /rooms/:id`
+|—
+|Room lifecycle.
+
+|`POST /rooms/:id/seats`
+|—
+|Host-only (`seat 0` token) seat-token minting.
+
+|`POST /rooms/:id/commands`
+|—
+|`{ seat, token, command, seq }` → `CommandResult`. `seq` makes retries idempotent.
+
+|`GET /rooms/:id/events?token=…&after=<seq>`
+|—
+|SSE stream; `after` replays the outbox for catch-up.
+
+|`GET /rooms/:id/state?token=…`
+|—
+|Full V5 save blob for a client mirror.
+
+|`POST /rooms/:id/save`, `POST /rooms/:id/load`
+|—
+|Explicit persistence.
+|===
+
+=== Ports, probes, lifecycle
+
+[cols="1,2"]
+|===
+|Container ports |`8787` (HTTP/SSE), `8788` (WS)
+|Service (compose) |`8787:8787`, `8788:8788`
+|Service (K3s) |NodePort `30787` / `30788`; ingress routes `/api` → `8787` and `/ws` → `8788`
+|Readiness |`GET /ready` (5 s period, 10 s initial delay)
+|Liveness |`GET /health` (10 s period, 15 s initial delay)
+|Requests / limits |`100m` / `256Mi` — `1000m` / `1Gi`
+|Replicas |2 base, HPA 2–6 on 60% CPU (4 observed under load, back to 2 at rest)
+|Graceful shutdown |`preStop: sleep 5`, `terminationGracePeriodSeconds: 30`, drain bounded by `SHUTDOWN_TIMEOUT_MS`
+|Strategy |`RollingUpdate`, `maxSurge: 1`, `maxUnavailable: 0`
+|===
+
+The container is stateless: every byte that must survive a pod goes to
+Postgres. That is what makes the rolling updates and the HPA safe — a new
+replica hydrates a room from the shared store on first use.
+
+== `postgres`
+
+* Upstream `postgres:16-alpine`, no custom image.
+* K3s: a **StatefulSet** with a `volumeClaimTemplates` PVC (2 Gi), a
+  headless Service (`clusterIP: None`) and a `pg_isready` readiness probe.
+* Compose: a plain service with the `pgdata` named volume on host port
+  `5433` (5432 is often already taken).
+* Schema: created by the server on first start; versioned migrations are
+  recorded in a `migrations` table and applied once.
+* What lives inside: `rooms`, `seats`, `saves` (the V5 blob plus indexed
+  `version`, `rng_state`, `disaster_rng_state`), `event_outbox`,
+  `migrations`.
+* Postgres is the single writer. It is *not* replicated; see
+  link:K3S_COMPLETION_PLAN.adoc[the plan], P1-7.
+
+=== Backup job
+
+`CronJob civ1-pg-backup` (daily 03:00) runs `pg_dump -Fc` into the
+`civ1-backups` PVC (5 Gi) mounted at `/backups`.
+
+[WARNING]
+====
+The job does not work under the current `NetworkPolicy`: the namespace has a
+default-deny egress policy and no rule matches the job pod, so DNS fails and
+`pg_dump` aborts with *“could not translate host name civ1-postgres”*
+(reproduced on the test cluster with `kubectl create job --from=cronjob/…`).
+See link:K3S_COMPLETION_PLAN.adoc[the plan], P0-2.
+====
+
+== Docker Compose topology
+
+[source]
+----
+host                                docker network (default)
+┌──────────────┐   :3000 ┌───────────────────────┐
+│ browser      │────────▶│ web (nginx)           │  renders /config.js
+└──────────────┘         │  GAME_SERVER_URL=     │
+                         │  http://localhost:8787│
+                         └───────────┬───────────┘
+                                     │ (the browser calls this directly)
+                         ┌───────────▼───────────┐
+                         │ server (:8787/:8788)  │  WORKERS=2
+                         │  PG_URL=…@postgres    │
+                         └───────────┬───────────┘
+                                     │ :5432
+                         ┌───────────▼───────────┐
+                         │ postgres:16-alpine    │  volume pgdata
+                         │  host port 5433       │
+                         └───────────────────────┘
+----
+
+[cols="1,2,2"]
+|===
+|Service |Ports |Depends on
+
+|`postgres`
+|`5433:5432`
+|—
+|`server`
+|`8787:8787`, `8788:8788`
+|`postgres` healthy (`pg_isready`), plus its own `/health` healthcheck
+|`web`
+|`3000:80`
+|`server` healthy
+|===
+
+Environment comes from `.env` (see `.env.example`); the compose defaults are
+development values and must be replaced.
+
+[WARNING]
+====
+`web` publishes **port 3000**, the same port as `npm run dev`. Stop the stack
+before running the dev server, or change the mapping.
+====
+
+== K3s topology
+
+[source]
+----
+                 ┌───────────── Traefik (kube-system) ─────────────┐
+  browser ──────▶│  civ1.local:443  /      → svc/civ1-web:80       │
+                 │                  /api   → svc/civ1-server:8787  │
+                 │                  /ws    → svc/civ1-server:8788  │
+                 └──────────────────────┬──────────────────────────┘
+                                        │  (namespace civ1, default-deny)
+                    ┌───────────────────┴───────────────────┐
+                    │                                       │
+        ┌───────────▼───────────┐               ┌───────────▼───────────┐
+        │ deploy/civ1-web ×2    │               │ deploy/civ1-server ×2–6│
+        │ nginx + PWA           │               │ HTTP/SSE + WS + rooms  │
+        │ ConfigMap: server URL │               │ HPA 60% CPU            │
+        └───────────────────────┘               └───────────┬───────────┘
+                                                            │ :5432
+                                                ┌───────────▼───────────┐
+                                                │ sts/civ1-postgres ×1  │
+                                                │ PVC 2Gi               │
+                                                └───────────┬───────────┘
+                                                            │
+                                                ┌───────────▼───────────┐
+                                                │ CronJob pg-backup     │
+                                                │ PVC 5Gi (currently    │
+                                                │ blocked by netpol)    │
+                                                └───────────────────────┘
+----
+
+[cols="2,2,3"]
+|===
+|Object |File |Notes
+
+|`Namespace civ1`
+|`namespace.yaml`
+|No Pod Security Admission labels yet (plan P1-10).
+
+|`StatefulSet civ1-postgres` + headless Service + PVC
+|`postgres.yaml`
+|`pg_isready` readiness, 100m/256Mi → 1000m/1Gi.
+
+|`PersistentVolumeClaim civ1-backups` + `CronJob civ1-pg-backup`
+|`postgres.yaml`
+|Daily dump to a PVC. Blocked by the default-deny policy (plan P0-2).
+
+|`Deployment civ1-server` + NodePort Service
+|`server.yaml`
+|Init container waits for Postgres; `/ready` and `/health` probes; preStop + 30 s grace; Prometheus scrape annotations.
+
+|`ConfigMap civ1-web-config` + `Deployment civ1-web` + NodePort Service
+|`web.yaml`
+|Runtime `GAME_SERVER_URL`; 2 replicas with topology spread.
+
+|`HorizontalPodAutoscaler civ1-server`
+|`hpa.yaml`
+|CPU 60%, min 2, max 6, 5-minute scale-down window. Observed: `cpu: 14%/60%`, 2 replicas at rest, 4 during a load test.
+
+|`NetworkPolicy` ×6
+|`networkpolicy.yaml`
+|Default deny, then web→server, server→postgres, DNS, kubelet/NodePort ingress. See the gaps below.
+
+|`Middleware strip-api` + `Ingress civ1`
+|`ingress.yaml`
+|Traefik, `websecure` entrypoint, TLS secret `civ1-tls`, host `civ1.local`.
+
+|Secrets `civ1-db`, `civ1-server`, `civ1-tls`
+|created out of band (`secrets.example.yaml`)
+|Never committed. `scripts/setup-k3s-test.sh` creates test values.
+|===
+
+=== Network policy matrix
+
+[cols="2,2,2"]
+|===
+|From |To |Allowed
+
+|Traefik (kube-system) |web:80, server:8787/8788 |yes
+|node / NodePort |web:80, server:8787/8788 |yes
+|web |server:8787 |yes
+|web |server:8788 |*no* — would matter only if the client used WS
+|server |postgres:5432 |yes
+|server |Postgres DNS (kube-system:53) |yes
+|backup job |anything |*no* — verified bug
+|any two pods not listed |— |denied (default)
+|===
+
+=== Ports, one page
+
+[cols="2,1,1,2"]
+|===
+|What |Compose |K3s |Notes
+
+|Client
+|`3000`
+|`30080` (NodePort), `443` via ingress
+|The only user-facing port.
+|Game server HTTP/SSE
+|`8787`
+|`30787`, `/api` via ingress
+|Commands, events, snapshots.
+|Game server WebSocket
+|`8788`
+|`30788`, `/ws` via ingress
+|Unused by the shipped client.
+|Postgres
+|`5433`
+|cluster-internal only
+|Deliberately not exposed in K3s.
+|K3s API
+|—
+|`16443`
+|Test cluster only; a real cluster uses `6443`.
+|===
+
+== Build and publish
+
+[source,bash]
+----
+# both images, from the repository root
+docker build -f packages/web/Dockerfile    -t civ1browser-web:local .
+docker build -f packages/server/Dockerfile -t civ1browser-server:local .
+----
+
+There is **no registry integration yet**. Compose builds locally; the K3s
+test script `docker save`s both images and imports them into each node's
+containerd. `imagePullPolicy: IfNotPresent` plus a `:local` tag means a node
+silently keeps an old image until it is imported again — see
+link:K3S_COMPLETION_PLAN.adoc[the plan], P0-3.
+
+== Container security posture (as built today)
+
+[cols="2,3"]
+|===
+|Property |State
+
+|Base images
+|`nginx:1.27-alpine`, `node:20-bookworm-slim`, `postgres:16-alpine` — all current, all upstream.
+
+|Root user
+|web: nginx master runs as root (upstream default). server: root. **No `securityContext` anywhere.**
+
+|Read-only root filesystem
+|Not set. nginx needs writable `/var/cache/nginx`, `/var/run`.
+
+|Capabilities
+|Not dropped. The K3s *test* containers are `--privileged` because they run a container runtime — that is test-only and must never be copied to production.
+
+|Secrets
+|Not in git (`.env` ignored, `k8s/secrets.example.yaml` is a template, `npm run check:secrets` gates literals). Created imperatively; no sealed-secrets/external-secrets.
+
+|Image scanning
+|None.
+
+|Network
+|Default-deny in the namespace, with the gaps listed above.
+|===
+
+Hardening is tracked in link:K3S_COMPLETION_PLAN.adoc[the plan], P1-8
+(non-root, dropped capabilities, read-only rootfs).
+
+== Where configuration lives
+
+[cols="2,2,2,2"]
+|===
+|Setting |Compose |K3s |Notes
+
+|Postgres credentials
+|`.env` → `POSTGRES_*`
+|Secret `civ1-db`
+|Same values must feed `PG_URL`.
+|Server DSN
+|`.env` → `PG_URL`
+|Secret `civ1-server` → `PG_URL`
+|—
+|Token signing key
+|`.env` → `GAME_SERVER_SECRET`
+|Secret `civ1-server` → `GAME_SERVER_SECRET`
+|Rotating it invalidates every outstanding seat token.
+|Browser-visible server URL
+|`GAME_SERVER_URL` on the `web` service
+|`ConfigMap civ1-web-config`
+|Must be reachable *from the browser*, not from inside the cluster.
+|Replica count
+|`WORKERS` inside one container
+|`replicas` + HPA
+|Two different scaling models.
+|Persistent data
+|named volume `pgdata`
+|PVCs (`data`, `civ1-backups`)
+|—
+|===

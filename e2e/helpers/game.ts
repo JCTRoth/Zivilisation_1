@@ -17,10 +17,9 @@ export async function openNewCampaign(page: Page): Promise<void> {
   // The front screen is the War Council hub; the wizard is one step behind it.
   // 30s, not 10s: the first load of a dev-server app can spend seconds
   // transforming modules, and a cold boot on a loaded CI runner blew the 10s
-  // budget often enough to fail the whole run (maxFailures: 1). The canvas
-  // wait below already allows 30s; the first paint is the same kind of wait.
-  await expect(page.getByRole('button', { name: 'New Campaign' })).toBeVisible({ timeout: 30_000 });
-  await page.getByRole('button', { name: 'New Campaign' }).click();
+  // budget often enough to fail the whole run (maxFailures: 1).
+  await expect(page.getByRole('button', { name: /New Campaign/ })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: /New Campaign/ }).click();
   await expect(page.locator('h2.modal-title')).toContainText('Zivilisation 1', { timeout: 30_000 });
 }
 

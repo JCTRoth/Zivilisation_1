@@ -1,12 +1,12 @@
 import { test, expect, Page } from '@playwright/test';
 import {
   startGame,
-  openNewCampaign,
   openSidePanel,
   closeSidePanel,
   openTopMenu,
   closeResearchPrompt,
   closeAutoEndOfferIfOpen,
+  openNewCampaign,
 } from './helpers/game';
 
 // ---------------------------------------------------------------------------
@@ -14,11 +14,9 @@ import {
 // ---------------------------------------------------------------------------
 
 test.describe('Game Setup', () => {
-  test('shows the War Council hub, then the setup wizard', async ({ page }) => {
+  test('shows the setup wizard after leaving the hub', async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('h2.modal-title')).toContainText('Zivilisation 1');
-    await expect(page.getByRole('button', { name: 'New Campaign' })).toBeVisible();
-    await page.getByRole('button', { name: 'New Campaign' }).click();
+    await openNewCampaign(page);
     await expect(page.getByText('Choose Your Civilization')).toBeVisible();
   });
 
@@ -79,9 +77,7 @@ test.describe('Main Game UI', () => {
   });
 
   test('displays turn counter', async ({ page }) => {
-    // The label and the number live in separate nodes ("Turn " + <strong>1</strong>),
-    // so match on the container's combined text rather than a single text node.
-    await expect(page.locator('.topbar-turn')).toContainText(/Turn\s+\d+/);
+    await expect(page.getByText(/Turn \d+/).first()).toBeVisible();
   });
 });
 
@@ -107,9 +103,7 @@ test.describe('Top Menu', () => {
   });
 
   test('right-clicking a unit opens the ORDERS context menu', async ({ page }) => {
-    // The council → wizard → board path needs a little more headroom on a
-    // cold dev server (the ORDERS scan itself is cheap, the boot is not).
-    test.setTimeout(45_000);
+    test.setTimeout(30_000);
     await startGame(page);
 
     const canvas = page.locator('.game-canvas canvas').first();
@@ -287,7 +281,7 @@ test.describe('Keyboard Shortcuts', () => {
     await page.locator('.game-canvas').first().click();
     await page.keyboard.press('Enter');
     // Either the turn advances or a confirm dialog appears — game should still be functional
-    await expect(page.locator('.topbar-turn')).toContainText(/Turn\s+\d+/);
+    await expect(page.getByText(/Turn \d+/).first()).toBeVisible();
   });
 });
 
@@ -336,25 +330,21 @@ test.describe('Onboarding modals', () => {
     await advanceTurns(page, 3);
 
     const research = page.locator('.research-required-modal');
-    // Hunt the prompt BY ITS TEXT over several turns: its shell can be visible
-    // a beat before the words render, a one-shot prompt can be dismissed
-    // between two visibility checks, and under CI load a turn or two can be
-    // swallowed by a blocking modal — so the loop keeps ending turns (the
-    // prompt re-opens every turn there is no research selected) until the
-    // words are actually on screen. End turns WITHOUT the helper's automatic
-    // prompt dismissal, so the one-shot modal stays open for the assertions.
     let seen = false;
-    for (let turn = 0; turn < 8 && !seen; turn++) {
-      seen = await research
-        .filter({ hasText: 'No Research Selected' })
-        .waitFor({ state: 'visible', timeout: 3_000 })
-        .then(() => true)
-        .catch(() => false);
-      if (seen) break;
+    for (let turn = 0; turn < 5 && !seen; turn++) {
+      // A late prompt from the previous turn: record it before clicking again.
+      if (await research.isVisible({ timeout: 1_000 }).catch(() => false)) {
+        seen = true;
+        break;
+      }
+      // End turns WITHOUT the helper's automatic prompt dismissal, so the
+      // one-shot modal is still open for the assertion.
       await endTurnKeepingModals(page);
+      seen = await research.isVisible({ timeout: 5_000 }).catch(() => false);
     }
 
-    expect(seen, 'the No Research Selected prompt appeared').toBe(true);
+    expect(seen).toBe(true);
+    await expect(research).toContainText('No Research Selected');
     await expect(research).toContainText('technology');
     await expect(research.getByRole('button', { name: /Choose Technology/ })).toBeVisible();
 
@@ -450,29 +440,6 @@ async function waitForModalClosed(page: Page): Promise<void> {
 }
 
 /**
- * The nomad envoy's parley is a backdrop modal: once a city stands and the
- * rounds pass, it opens and intercepts every top-bar click. "Pass in peace"
- * is state-light (it only sets the camp's departure timer), so the turn
- * helpers clear it the same way they clear the auto-end offer.
- */
-async function closeNomadParleyIfOpen(page: Page): Promise<void> {
-  // The audience renders TWO nested role="dialog" elements (the bootstrap
-  // modal and the component's own aria dialog), so the locator must pin the
-  // first — a multi-match isVisible() throws strict-mode and reads as
-  // "not there".
-  const parley = page
-    .locator('[role="dialog"]')
-    .filter({ hasText: 'Wanderers at your gate' })
-    .first();
-  if (await parley.isVisible().catch(() => false)) {
-    await parley
-      .getByRole('button', { name: /Pass in peace/ })
-      .click({ force: true })
-      .catch(() => {});
-  }
-}
-
-/**
  * End the current turn (click End Turn, confirm modal, wait for AI processing).
  * Skips the confirmation modal if `skipEndTurnConfirmation` is enabled.
  */
@@ -480,9 +447,8 @@ async function endTurn(page: Page): Promise<void> {
   // The one-time "Auto. turn ending" offer can be open from the previous turn
   // (it appears at turn AUTO_END_TURN_OFFER_TURN); its backdrop intercepts
   // clicks, so clear it before touching the top bar and again afterwards for
-  // the turn that triggers it. The nomad parley is a backdrop modal too.
+  // the turn that triggers it.
   await closeAutoEndOfferIfOpen(page);
-  await closeNomadParleyIfOpen(page);
 
   const modal = page.locator('[role="dialog"]').filter({ hasText: 'End Turn?' });
 
@@ -507,10 +473,8 @@ async function endTurn(page: Page): Promise<void> {
   await waitForModalClosed(page);
 
   // The offer may have opened during this turn's processing — close it before
-  // returning so the next click is not swallowed. The nomad envoy may have
-  // arrived during the same processing for the same reason.
+  // returning so the next click is not swallowed.
   await closeAutoEndOfferIfOpen(page);
-  await closeNomadParleyIfOpen(page);
 
   // From RESEARCH_UNLOCK_ROUND (5) on, ending a turn with no technology
   // selected pops the "No Research Selected" prompt a beat later. Handle it
@@ -526,33 +490,17 @@ async function endTurn(page: Page): Promise<void> {
  * Confirms the End Turn dialog and waits for control to return to the player.
  */
 async function endTurnKeepingModals(page: Page): Promise<void> {
-  // The nomad parley, if standing from an earlier round, must not block the
-  // top-bar click — it is state-light to dismiss (see
-  // closeNomadParleyIfOpen). The modals THIS helper protects (research
-  // prompt, auto-end offer) stay open.
-  await closeNomadParleyIfOpen(page);
   const modal = page.locator('[role="dialog"]').filter({ hasText: 'End Turn?' });
-  // Under CI load the confirm dialog can still be settling (entrance
-  // animation while the previous AI round churns the store) when we reach
-  // for its button: a plain click waits for Playwright's "stable" probe and
-  // then times out, even though the button's position is already final
-  // (only opacity/box noise moves the probe). The click is forced — the
-  // position it hits is where the button visually sits.
-  const confirm = () => modal.locator('.touch-btn--success').click({ force: true });
   if (await modal.isVisible().catch(() => false)) {
-    await confirm();
+    await modal.locator('.touch-btn--success').click();
   } else {
     await page.locator('.game-top-bar').getByRole('button', { name: 'End Turn' }).click();
     if (await modal.isVisible({ timeout: 2_000 }).catch(() => false)) {
-      await confirm();
+      await modal.locator('.touch-btn--success').click();
     }
   }
   await expect(page.locator('.game-top-bar .topbar-endturn')).toBeEnabled({ timeout: 30_000 });
   await waitForModalClosed(page);
-  // The envoy may have arrived during this turn's processing — clear it so
-  // the caller's next click (a prompt button, an assertion target) is not
-  // swallowed by the backdrop.
-  await closeNomadParleyIfOpen(page);
 }
 
 /**
@@ -601,45 +549,16 @@ async function forceFirstContact(page: Page): Promise<number> {
  *
  *  - "All Your Units Have Moved!" / "End Turn?" -> Cancel
  *  - "No Research Selected"                     -> Decide Later
- *  - "Wanderers at your gate" (nomad parley)    -> Pass in peace
  *
  * The second one is not a test artefact: research unlocks at
  * RESEARCH_UNLOCK_ROUND (5), and from then on ending a turn with nothing
  * selected opens a prompt. Left open it swallows every later click with
  * "…intercepts pointer events" — that is how the AI-city-founding test died.
- * The nomad parley appears the same way: once a city stands and the rounds
- * pass, the visitors arrive — dismissed here so tests keep their pace (the
- * engine state is unaffected: passing only sets the camp's departure timer).
  */
 const BLOCKING_DIALOGS: ReadonlyArray<{ text: string; button: string }> = [
   { text: 'End Turn?', button: 'Cancel' },
   { text: 'No Research Selected', button: 'Decide Later' },
   { text: 'Auto. turn ending', button: 'Got it' },
-  // The chronicle's story cards — blocking by design: the dawn at game
-  // start, then the illustrated world events. One Continue each (the first
-  // refusal rule of the nomad entries does not apply here: Continue moves
-  // the story on without any game consequence).
-  { text: 'The Dawn of Your People', button: 'Continue' },
-  { text: 'The Horde Takes', button: 'Continue' },
-  { text: 'The Nomads Join', button: 'Continue' },
-  // The nomads' plea for gold ("The Nomads Ask"): a broke tribe asks. The
-  // first refusal never angers any clan, so refusing keeps the run clean.
-  { text: 'The Nomads Ask', button: 'Refuse — no gold for wanderers' },
-  // The nomad city market ("The Nomad Market" eyebrow): a rich tribe's offer
-  // to buy one of your cities. It has no "Pass in peace" door — refuse it,
-  // which also blacklists that city so the offer cannot return this run.
-  { text: 'The Nomad Market', button: 'Refuse — the city stays yours' },
-  // A rival court bought a GROUP of nomad riders: an announcement with
-  // nothing to decide — one button to read it and move on (its eyebrow is
-  // deliberately NOT the parley's, so this entry cannot match a parley).
-  { text: 'Riders bought', button: 'End the audience' },
-  { text: 'Wanderers at your gate', button: 'Pass in peace' },
-  // The city-event story modal ("Washington is founded") opens the moment a
-  // settler founds a city. Escape alone cannot clear it: the following
-  // Ctrl+1 stacks the city screen on top, one Escape pops only that top
-  // modal, and the notice is left sitting over the canvas — every right-click
-  // in the tile scans below is then intercepted by it.
-  { text: 'is founded', button: 'Continue' },
 ];
 
 /**
@@ -651,9 +570,7 @@ const BLOCKING_DIALOGS: ReadonlyArray<{ text: string; button: string }> = [
 async function dismissBlockingDialogs(page: Page): Promise<void> {
   const visibleDialog = async (timeout: number) => {
     for (const dialog of BLOCKING_DIALOGS) {
-      // .first(): the audience nests two role="dialog" elements, and a
-      // multi-match isVisible() throws strict-mode (read as "not there").
-      const modal = page.locator('[role="dialog"]').filter({ hasText: dialog.text }).first();
+      const modal = page.locator('[role="dialog"]').filter({ hasText: dialog.text });
       if (await modal.isVisible({ timeout }).catch(() => false)) return { dialog, modal };
     }
     return null;
@@ -714,7 +631,7 @@ test.describe('AI Behavior', () => {
       await advanceTurns(page, 5);
 
       // Verify game progressed (turn counter > 1)
-      await expect(page.locator('.topbar-turn')).toContainText(/Turn\s+[2-9]\d*/);
+      await expect(page.getByText(/Turn [2-9]\d*/).first()).toBeVisible();
       // Game canvas still renders
       await expect(page.locator('.game-canvas canvas').first()).toBeVisible();
     });
@@ -895,7 +812,7 @@ test.describe('AI Behavior', () => {
 
       // Turn counter should show the game progressed significantly
       const topBarText = await page.locator('.game-top-bar').textContent() ?? '';
-      const turnMatch = topBarText.match(/Turn\s+(\d+)/);
+      const turnMatch = topBarText.match(/Turn (\d+)/);
       expect(turnMatch).not.toBeNull();
       expect(Number(turnMatch![1])).toBeGreaterThanOrEqual(8);
 
@@ -1052,7 +969,7 @@ test.describe('AI Behavior', () => {
 
       const topBar = page.locator('.game-top-bar');
       // Should show "Turn 1" and a year like "4000 BC"
-      await expect(topBar.locator('.topbar-turn')).toContainText(/Turn\s+\d+/);
+      await expect(topBar.getByText(/Turn \d+/)).toBeVisible();
       await expect(topBar.getByText(/BC/)).toBeVisible();
     });
 
@@ -1292,15 +1209,8 @@ test.describe('AI Behavior', () => {
       }
       expect(unitPos).not.toBeNull();
 
-      // Close the menu by clicking its backdrop. The ORDERS menu docks at the
-      // BOTTOM of the screen (up to 46dvh tall) and can grow past the viewport
-      // centre, so click the backdrop near its TOP edge — that point is always
-      // uncovered, and "clicking the backdrop closes the menu" is the
-      // behaviour under test either way. (Clicking the backdrop's centre made
-      // this test flaky in CI: a taller dock intercepted the click.)
-      await page
-        .locator('.unit-context-backdrop')
-        .click({ position: { x: Math.floor(box.width / 2), y: 24 } });
+      // Close the menu by clicking its backdrop.
+      await page.locator('.unit-context-backdrop').click();
       await expect(page.getByRole('button', { name: /Skip Turn/i })).not.toBeVisible();
 
       // Select the unit: movement mode is active and the cursor is a crosshair.
@@ -1335,7 +1245,7 @@ test.describe('AI Behavior', () => {
       expect(finalText).not.toBe(initialText);
 
       // Extract turn number from "Turn {n}"
-      const turnMatch = finalText?.match(/Turn\s+(\d+)/);
+      const turnMatch = finalText?.match(/Turn (\d+)/);
       expect(turnMatch).not.toBeNull();
       expect(Number(turnMatch![1])).toBeGreaterThanOrEqual(13);
 

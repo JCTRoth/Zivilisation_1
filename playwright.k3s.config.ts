@@ -25,6 +25,8 @@ export default defineConfig({
     baseURL: process.env.CIV1_WEB ?? 'http://localhost:31080',
     // HTTPS mode: map civ1.local to localhost without editing /etc/hosts.
     ignoreHTTPSErrors: process.env.CIV1_TLS === '1',
+    // The app follows the browser locale; pin English for stable assertions.
+    locale: 'en-US',
     headless: true,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',

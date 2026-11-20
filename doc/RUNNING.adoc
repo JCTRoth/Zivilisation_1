@@ -1,0 +1,392 @@
+= Running Civ1 Browser
+:revdate: 2026-11-20
+:toc:
+:toclevels: 3
+:sectnums:
+
+This is the practical guide: how to start the game, how to build it, how to
+run the installed PWA offline, how to start the multiplayer server, and what
+to do when something does not start.
+
+For *what* the game is and how it is built, see the
+link:../README.adoc[README]. For the offline design, see
+link:OFFLINE_PWA_PLAN.adoc[Offline Play & PWA].
+
+== What you are running
+
+The repository is an npm workspace with three packages:
+
+[cols="1,3"]
+|===
+|Package |Runs where
+
+|`packages/shared`
+|The simulation (`GameEngine`, rules, AI, map generator). Imported by both other packages — it is *not* a process.
+
+|`packages/web`
+|The React/Vite client. In single-player it runs the engine **in the browser tab**; it needs no server.
+
+|`packages/server`
+|The authoritative game server for multiplayer rooms. Optional for everything else.
+|===
+
+There are therefore two things you can start, and they are independent:
+
+* **the client** — always needed, and enough for single-player and offline play;
+* **the game server** — only for rooms shared with other players.
+
+== Prerequisites
+
+[cols="1,2"]
+|===
+|Tool |Why / notes
+
+|Node.js ≥ 18
+|`package.json` declares `"node": ">=18.0.0"`. Node 20 LTS is what CI and the container images use. `node --version` to check.
+
+|npm ≥ 9
+|The workspace (`packages/*`) is installed with one lockfile at the root.
+
+|git-lfs
+|The images are stored in Git LFS. `git lfs pull` before the first run, or the map art is missing.
+
+|Chromium (Playwright's)
+|Only for the e2e suites: `npx playwright install chromium`.
+
+|Python 3 + Pillow
+|Optional. Only for the asset tools (`tools/tile-generator`, `tools/pwa/generate_icons.py`).
+
+|Docker + Compose
+|Optional. Only for the container stack, the K3s cluster and the container smoke tests.
+|===
+
+== Quick start (development)
+
+[source,bash]
+----
+git clone https://github.com/JCTRoth/Zivilisation_1.git
+cd Zivilisation_1
+git lfs pull
+npm install
+
+npm run dev          # → http://localhost:3000
+----
+
+That is the whole single-player game. The Vite dev server serves the client,
+the engine runs in the tab, and **no game server is started or contacted**.
+
+[NOTE]
+====
+The service worker is deliberately *not* registered in `npm run dev` — it
+would cache the module graph and fight the hot-reloader. Offline
+behaviour is a production-build feature; see <<installed-pwa>>.
+====
+
+Useful URL parameters while developing:
+
+[cols="1,2"]
+|===
+|Parameter |Effect
+
+|`?quickstart` |Skip the War Council and start a default game immediately.
+|`?maptype=CLOSEUP_1V1&civs=2&seed=42` |Start a specific scenario; `seed` pins the map *and* the gameplay RNG.
+|`?noanim` |Disable movement/combat/camera animations (the e2e suite uses this).
+|`?lobby` |Open the multiplayer lobby (defaults to `http://localhost:8787`).
+|`?seat=0` |Join a room on an unauthenticated demo server.
+|===
+
+== Production build (local preview)
+
+[source,bash]
+----
+npm run build        # bundles into dist/
+npm run preview      # → http://localhost:4173
+----
+
+`dist/` is the deployable artifact: `index.html`, the hashed JS/CSS, the
+icons, `manifest.webmanifest` and the generated `sw.js`. Copy it to any
+static host; the container image does exactly that behind nginx.
+
+Differences between `npm run preview` and the container:
+
+[cols="1,2,2"]
+|===
+|Feature |`vite preview` |Container (nginx)
+
+|Serving
+|Serves `dist/` from disk
+|Serves `/usr/share/nginx/html` with an SPA fallback
+
+|Cache headers
+|`no-cache` for everything
+|Hashed assets immutable, `sw.js` and `index.html` revalidated, artwork 1 h — see `packages/web/nginx.conf`
+
+|`/config.js`
+|Absent — the lobby falls back to its default server URL
+|Generated at start-up from `$GAME_SERVER_URL` by `packages/web/docker-entrypoint.sh`
+|===
+
+== Running it as an installed PWA (offline) [[installed-pwa]]
+
+Anything that does not need other players runs with the network off once the
+app is installed. The only hard requirement is a *secure context*: browsers
+only register service workers over `https://` or `http://localhost`.
+
+=== Try it locally
+
+. Build and serve the production bundle:
++
+[source,bash]
+----
+npm run build
+npm run preview            # http://localhost:4173
+----
+. Open `http://localhost:4173` **once with the network on** and wait a moment.
+   The worker installs and precaches the shell (~5 MB).
+. Confirm it is active: *DevTools ▸ Application ▸ Service Workers* shows the
+   worker as *activated and is running*; *Cache Storage* shows
+   `civ1-shell-<hash>` and `civ1-runtime-<hash>`.
+. Install the app: Chrome/Edge — the install icon in the address bar, or
+   *⋮ ▸ Cast, save and share ▸ Install page as app*; Safari — *Share ▸ Add to
+   Home Screen*.
+. Launch it from the desktop/launcher, then switch the network off
+   (*DevTools ▸ Network ▸ Offline*, or literally disconnect).
+. The War Council still renders, a single-player game starts, plays and
+   saves. Reloading still works.
+
+[NOTE]
+====
+The **first** launch needs the network once: the service worker downloads the
+shell during `install`. The 38 MB of game artwork (tiles, music, sound
+effects, wonder art) is *not* precached — it is cached the first time you
+meet it. A brand-new map with a new tile set is therefore best opened once
+online.
+====
+
+=== Deploy it for real
+
+Serve the built `dist/` over HTTPS. The reference deployment is the nginx
+image in `packages/web/Dockerfile`:
+
+[source,bash]
+----
+docker build -f packages/web/Dockerfile -t civ1-web .
+docker run -p 3000:80 -e GAME_SERVER_URL=https://game.example.com civ1-web
+----
+
+The nginx config in that image is what makes the worker update correctly:
+`/sw.js` and `/index.html` are revalidated on every load, hashed assets are
+immutable, and the unhashed artwork gets a one-hour TTL.
+
+=== Where the saves live
+
+Campaigns are stored on the device in IndexedDB (`civ1` → `campaigns`),
+falling back to `localStorage` when IndexedDB is blocked or full. The
+engine's own slots (`civ1_savegame`, `civ1_autosave`) are entries in that
+library. `GAME ▸ Campaigns` lists them; `GAME ▸ Save Game` also downloads a
+`.json` file. Details: link:save-load-system.adoc[Save & Load System].
+
+=== Updating an installed app
+
+Navigations are network-first, so an online reload picks up a new deploy. When
+a new worker is installed while the old one still controls the page, the game
+shows *"A new version is ready"* and reloads only when the player accepts —
+a running game is never swapped out mid-turn.
+
+If a deploy is not picked up: *DevTools ▸ Application ▸ Service Workers* →
+*Update*, or *Unregister* and reload.
+
+== Running the game server (multiplayer)
+
+Only rooms that two or more humans share need this. Single-player never
+talks to it.
+
+[source,bash]
+----
+npm run dev:server
+# HTTP :8787 (commands, SSE events, snapshots)
+# WS   :8788
+# SQLite ./server.db
+----
+
+Then open `http://localhost:3000/?lobby`, create a room and hand out the
+minted join links — or drive the HTTP API directly:
+
+[source,bash]
+----
+curl -X POST localhost:8787/rooms -H 'content-type: application/json' \
+  -d '{"seed":42,"numberOfCivilizations":2}'
+# → {"ok":true,"id":"room_1","token":"<host token for seat 0>"}
+
+curl -X POST localhost:8787/rooms/room_1/seats -H 'content-type: application/json' \
+  -d '{"token":"<host token>","seats":[0,1]}'
+# → {"ok":true,"tokens":{"0":"…","1":"…"}}
+----
+
+Configuration is environment-only:
+
+[cols="1,2,1"]
+|===
+|Variable |Meaning |Default
+
+|`PORT` |HTTP port |`8787`
+|`WS_PORT` |WebSocket port |`8788`
+|`HOST` |Bind address (`0.0.0.0` in containers) |`127.0.0.1`
+|`GAME_SERVER_SECRET` |HMAC secret for signed seat tokens |`dev-secret` — *set a real one*
+|`DB_FILE` |SQLite file |`server.db`
+|`PG_URL` |Use Postgres instead of SQLite (multi-process) |unset
+|`WORKERS` |Node cluster workers (needs `PG_URL`) |`1`
+|===
+
+[WARNING]
+====
+`GAME_SERVER_SECRET` has an insecure default so local play works out of the
+box. Never expose a server without setting it.
+====
+
+=== Docker Compose (full stack)
+
+[source,bash]
+----
+cp .env.example .env          # then edit the passwords/secret
+docker compose up -d --build
+# web       http://localhost:3000
+# server    http://localhost:8787, ws :8788
+# postgres  localhost:5433
+----
+
+[NOTE]
+====
+The compose `web` service publishes port **3000**, which collides with
+`npm run dev`. Either stop the stack (`docker compose down`) before running
+the dev server, or change the published port in `docker-compose.yml`.
+====
+
+Each service is described in link:CONTAINERS.adoc[Containers and Deployed
+Topologies]: what is in the image, its ports, probes, resource limits and
+environment.
+
+=== Kubernetes (K3s)
+
+The repository ships a two-node K3s test cluster in privileged Docker
+containers, plus the manifests for the whole stack (Postgres with a PVC, two
+web replicas, a horizontally scaled server, TLS ingress and network
+policies):
+
+[source,bash]
+----
+./scripts/setup-k3s-test.sh
+# web      http://localhost:31080/
+# server   http://localhost:31787/health
+# https    https://civ1.local:30443/  (self-signed)
+
+CIV1_SERVER=http://localhost:31787 CIV1_WEB=http://localhost:31080 npm run test:k3s
+----
+
+The step-by-step walkthrough, the manual path, operating commands and the
+troubleshooting table are in link:K3S_SETUP.adoc[K3s Setup]. The verified
+state and the remaining production work are in
+link:K3S_COMPLETION_PLAN.adoc[K3s Completion Plan].
+
+[[tests]]
+== Tests
+
+[source,bash]
+----
+npm test               # Vitest — 263 files / 3051 tests, node environment
+npm run test:e2e       # Playwright — needs the dev server on :3000
+npm run test:offline   # Playwright — production build, network cut
+npm run test:k3s       # Playwright — against a live K3s stack
+npm run type-check     # tsc --noEmit
+npm run lint           # ESLint, max-warnings 0
+npm run knip           # unused exports / dependencies
+----
+
+`npm run test:offline` is self-contained: it builds the app and serves it with
+`scripts/static-server.mjs` on `:4173`, so it needs neither `npm run dev` nor
+a game server. It is the suite that proves the PWA claim.
+
+The e2e suites need Playwright's browser once:
+
+[source,bash]
+----
+npx playwright install chromium
+----
+
+`npm test` does not need a browser and does not touch the network.
+
+== Troubleshooting
+
+=== `npm run dev` starts but the page is an old build
+
+Something else is already listening on port 3000 — usually the compose or K3s
+`web` container.
+
+[source,bash]
+----
+ss -ltnp | grep :3000
+docker ps --format '{{.Names}}\t{{.Ports}}'
+----
+
+Stop the container (`docker compose down`) or run the dev server on another
+port (`npm run dev -- --port 3002`). Playwright's `webServer` reuses whatever
+answers on :3000, so a stale container silently becomes the thing under test —
+`e2e/setup/app-setup.spec.ts` checks the War Council specifically to catch
+that.
+
+=== The service worker serves an old version
+
+*Online reload first* — navigations are network-first, so this fixes almost
+every case. If it does not, *DevTools ▸ Application ▸ Service Workers* →
+*Update* or *Unregister*, then reload. The app also offers a *"A new version
+is ready — Reload"* banner when a new worker is waiting.
+
+=== Install is offered but the app does not work offline
+
+Check, in this order:
+
+. *DevTools ▸ Application ▸ Service Workers*: is the worker *activated*?
+. *Cache Storage*: does `civ1-shell-<hash>` contain `index.html` and the JS?
+. Was the page ever loaded with the network on? The shell is cached during
+  `install`; a first visit while offline cannot install it.
+. Is the page served over HTTPS or `http://localhost`? Other origins cannot
+  register a service worker.
+
+=== `TypeError: Failed to fetch` when creating a multiplayer room
+
+The browser cannot reach the game server. Check the base URL in the lobby, that
+`npm run dev:server` is running, and that the server's `PORT` matches. The
+worker never intercepts the game-server origin, so this is a plain network or
+CORS problem, not a caching one.
+
+=== Missing tiles or units (`404 /assets/units/unit_*.png`)
+
+Those sprites are generated, not committed:
+
+[source,bash]
+----
+npm run tiles:install
+----
+
+Then reload with a cache bypass (*DevTools ▸ Network ▸ Disable cache*), because
+the artwork is served with a one-hour cache and the service worker caches it
+on demand.
+
+=== Saves disappear when I switch browsers or devices
+
+By design: campaigns are on the device. Use `GAME ▸ Campaigns ▸ Export` to
+download a `.json` file and `Import from file` on the other device. The format
+is the same V5 blob the server persists.
+
+=== `QuotaExceededError` or "Device storage is full"
+
+The browser refused the save. The store steps down to `localStorage` and shows
+a warning; the campaign is still saved, but the size ceiling is now about
+5 MB. Free some space (delete old campaigns in `GAME ▸ Campaigns`) and reload.
+
+=== The dev server works but `npm run build` fails on types
+
+`npm run type-check` first — Vite does not type-check. The service-worker
+template (`packages/web/pwa/sw.template.js`) is intentionally excluded from
+`tsconfig.json`: it contains build-time placeholders, not runnable
+TypeScript.

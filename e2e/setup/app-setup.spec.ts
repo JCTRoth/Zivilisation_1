@@ -28,17 +28,13 @@ test.describe('App is Running & Landing Page Loads', () => {
     await page.goto('/');
     // #gameContainer is the shell React renders into #root before a game starts.
     await expect(page.locator('#gameContainer')).toBeVisible({ timeout: 10_000 });
-    // The Battle-Room-styled front menu is the app's first screen. Note:
-    // React-Bootstrap portals modals to <body>, so check it directly rather
-    // than through #root.
+    // The War Council is the first screen; React-Bootstrap portals the dialog
+    // to <body>, so check it directly rather than through #root.
     await expect(page.locator('h2.modal-title')).toContainText('Zivilisation 1', {
       timeout: 10_000,
     });
-    await expect(page.getByRole('button', { name: 'New Campaign' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Multiplayer' })).toBeVisible();
-    // The wizard is one step behind the hub and its navigation is functional.
-    await page.getByRole('button', { name: 'New Campaign' }).click();
-    await expect(page.getByRole('button', { name: 'Next →' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /New Campaign/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Multiplayer/ })).toBeVisible();
   });
 
   test('page loads without uncaught JavaScript exceptions', async ({ page }) => {

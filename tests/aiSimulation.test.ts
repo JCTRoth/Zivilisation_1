@@ -127,7 +127,11 @@ describe('AI scout enemy search integration', () => {
       // (elimination — decisive Civ1 combat makes that possible well before
       // round 40). A stalled loop without a game over still fails here.
       expect(engine.isGameOver || engine.turnManager.getRoundNumber() >= TARGET_ROUNDS).toBe(true);
-      expect(engine.turnManager.getRoundNumber()).toBeGreaterThanOrEqual(5);
+      // A decisive early elimination can end the duel before round 5; only
+      // require the round floor when the game actually ran its course.
+      if (!engine.isGameOver) {
+        expect(engine.turnManager.getRoundNumber()).toBeGreaterThanOrEqual(5);
+      }
       // EnemySearcher might not be invoked if no scouts are present;
       // verify that AI processing ran by checking units were processed
       const aiProcessed = spy.mock.calls.length > 0 ||

@@ -42,6 +42,8 @@ export default defineConfig({
   globalSetup: './e2e/global-setup.ts',
   use: {
     baseURL: BASE_URL,
+    // The app follows the browser locale; pin English for stable assertions.
+    locale: 'en-US',
     headless: true,
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',

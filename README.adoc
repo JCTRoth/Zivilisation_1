@@ -4,6 +4,17 @@
 
 = Civilization I Browser Game
 
+[source,bash]
+----
+npm install && npm run dev        # single-player, http://localhost:3000
+npm run build && npm run preview  # production build (installable PWA), :4173
+npm run dev:server                # multiplayer only, HTTP :8787 / WS :8788
+----
+
+New here? link:doc/RUNNING.adoc[Running Civ1 Browser] covers prerequisites,
+ports, the PWA install/offline walkthrough, the container stack, every test
+command and troubleshooting.
+
 == Repository layout
 
 The repo is an npm workspace with three packages:
@@ -53,6 +64,10 @@ the service worker is generated into `dist/sw.js` at build time by
 `packages/web/pwa/vite-plugin-pwa.mjs`. The worker is registered in
 production builds only — `npm run dev` is untouched.
 
+The step-by-step walkthrough (build, serve, install, cut the network,
+verify the caches) is in
+link:doc/RUNNING.adoc#installed-pwa[Running Civ1 Browser ▸ Running it as an installed PWA].
+
 === Where the saves live
 
 Campaigns are stored on the device in IndexedDB (`civ1` → `campaigns`), with a
@@ -85,6 +100,9 @@ dropping commands. A single-player game is never affected.
 npm run test:offline   # Playwright against the production build, network cut
 npm test               # unit tests, including tests/pwa/
 ----
+
+The suite is self-contained: it builds the app and serves it on `:4173`, so it
+needs neither the dev server nor a game server.
 
 == Multiplayer / server mode
 
@@ -194,7 +212,7 @@ CIV1_TLS=1 CIV1_SERVER=https://civ1.local:30443/api \
   npx playwright test --config playwright.k3s.config.ts
 ----
 
-Override the folder with `CIV1_SCREENSHOTS=/path/to/folder`. The suite surfaced a pre-existing issue: generated unit sprites under `/assets/units/unit_*.png` are absent in both compose and K3s (33 404s), so some icons look broken until `npm run tiles:install` is run with a generated tile set.
+Override the folder with `CIV1_SCREENSHOTS=/path/to/folder`. The suite surfaced a pre-existing issue: generated unit sprites and terrain variants (`/assets/units/unit_*.png`, `/assets/tiles/terrain_*_*.png`) are absent in both compose and K3s (about 160 harmless 404s — the client falls back to SVG/emoji and colour tiles). Running `npm run tiles:install` with a generated set removes them.
 
 Full verification results, the bugs found while testing multi-worker mode, and project-specific follow-up prompts are in link:doc/DEPLOYMENT_GAPS_AND_PROMPTS.adoc[Deployment verification and gaps].
 
@@ -597,14 +615,31 @@ cd Zivilisation_1
 git lfs pull
 
 npm install
-npx playwright install chromium
+npx playwright install chromium   # only needed for the e2e suites
 npm run dev        # http://localhost:3000
 ----
 
-Production build: `npm run build` → deploy `dist/` to any static host. A save
-is a versioned `.json` file you download and load back through the Game Menu;
-the autosave lives in `localStorage`, so it is bound to the browser profile
-that made it.
+That is the whole single-player game: the Vite dev server serves the client
+and the engine runs in the tab. No game server is started or contacted.
+
+To run the *built* app — including the installable, offline PWA — and the
+multiplayer server:
+
+[source,bash]
+----
+npm run build      # bundles into dist/
+npm run preview    # http://localhost:4173 — the production build
+npm run dev:server # multiplayer only: HTTP :8787, WS :8788
+----
+
+A save is a versioned `.json` file you can download and load back from the
+Game Menu, and campaigns are also kept on the device (IndexedDB) so
+`GAME ▸ Campaigns` can resume them without a network. See
+link:doc/save-load-system.adoc[Save & Load System].
+
+*Prerequisites, ports, the PWA install/offline walkthrough, Docker Compose,
+the test commands and troubleshooting live in
+link:doc/RUNNING.adoc[Running Civ1 Browser].*
 
 == Controls
 
@@ -625,7 +660,7 @@ npm run dev          # Vite dev server, port 3000
 npm run build        # production build
 npm run lint         # ESLint, max-warnings 0
 npm run type-check   # tsc --noEmit
-npm run test         # Vitest — 263 suites, 3,050 cases, node environment, no DOM
+npm run test         # Vitest — 263 files, 3,051 cases, node environment, no DOM
 npm run test:e2e     # Playwright (needs the dev server)
 npm run test:offline # Playwright against the production build, network cut
 npm run knip         # unused exports / dependencies
@@ -633,7 +668,9 @@ npm run knip         # unused exports / dependencies
 
 CI runs `type-check`, `lint`, `vitest` and `knip` on every push and PR
 (`.github/workflows/tests.yml`) and the Playwright suite separately
-(`playwright.yml`).
+(`playwright.yml`). The offline suite is self-contained — it builds the app
+and serves it on :4173 — and is documented in
+link:doc/RUNNING.adoc#tests[Running Civ1 Browser ▸ Tests].
 
 === Running the AI without a browser
 
@@ -683,6 +720,18 @@ the commit message which rule the number encodes.
 
 [[documentation]]
 == Documentation
+
+=== Getting started
+
+* link:doc/RUNNING.adoc[Running Civ1 Browser] — prerequisites, dev server, production build, the PWA install/offline walkthrough, the multiplayer server, Docker Compose, every test command, and troubleshooting
+* link:doc/OFFLINE_PWA_PLAN.adoc[Offline Play & PWA] — why offline play needs no second engine, the service worker rules, and the campaign library design
+
+=== Containers and deployment
+
+* link:doc/CONTAINERS.adoc[Containers and Deployed Topologies] — every container, what is inside it, ports, probes, resources, the Compose and K3s topologies, and where each setting lives
+* link:doc/K3S_SETUP.adoc[K3s Setup] — the two-node test cluster, the script and the manual path, TLS, verification, operating and troubleshooting
+* link:doc/K3S_COMPLETION_PLAN.adoc[K3s Completion Plan] — verified state, the gap register (P0–P2) and the phased plan to production
+* link:doc/DEPLOYMENT_GAPS_AND_PROMPTS.adoc[Deployment verification] — the original audit and the prompt log it was implemented from
 
 === Rules and mechanics
 
@@ -759,7 +808,7 @@ the commit message which rule the number encodes.
 Image prompts for the optional artwork (everything degrades to emoji /
 gradient fallbacks without them — generate one at a time, in any order):
 
-* link:src/game/engine/nomad/FACTIONS_README.md[Nomad Factions & Art] — the three peoples who visit you (Bedouin / Mongol / Sámi): where they come from in real history, how they play, and the image prompts for their 512×640 portraits; link:doc/NOMAD_ART_PROMPTS.adoc[art slot notes]
+* link:packages/shared/game/engine/nomad/FACTIONS_README.md[Nomad Factions & Art] — the three peoples who visit you (Bedouin / Mongol / Sámi): where they come from in real history, how they play, and the image prompts for their 512×640 portraits; link:doc/NOMAD_ART_PROMPTS.adoc[art slot notes]
 * link:doc/STORY_ART_PROMPTS.adoc[Story Screen Art] — the chronicle's wide 16:9 scenes: the dawn, a horde conquest, the nomad migration and the four city-chronicle moments
 
 === Working notes

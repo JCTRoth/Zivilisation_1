@@ -3,7 +3,7 @@
 > The prompts now live with the factions themselves, so history, temperament
 > and art are documented in ONE place:
 >
-> → link:../src/game/engine/nomad/FACTIONS_README.md[`src/game/engine/nomad/FACTIONS_README.md`]
+> → link:../packages/shared/game/engine/nomad/FACTIONS_README.md[`src/game/engine/nomad/FACTIONS_README.md`]
 > — the three peoples (Bedouin / Mongol / Sámi), how they play, the shared
 > style block and one prompt per faction.
 
