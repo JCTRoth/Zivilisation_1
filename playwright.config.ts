@@ -19,6 +19,10 @@ const isCI = !!process.env.CI;
 
 export default defineConfig({
   testDir: './e2e',
+  // The K3s suite needs a live cluster (and writes screenshots to the
+  // developer's Desktop folder), so it must never run as part of the
+  // ordinary suite. It has its own config: `npm run test:k3s`.
+  testIgnore: /k3s\/.*\.spec\.ts/,
   timeout: 60_000,
   expect: {
     timeout: 10_000,
@@ -54,7 +58,10 @@ export default defineConfig({
       // All feature tests. Depends on `setup` — a failed setup test skips
       // this entire project (fail-fast).
       name: 'chromium',
-      testIgnore: /setup\/.*\.spec\.ts/,
+      // Mirrors the top-level `testIgnore`: a project-level pattern replaces
+      // the config-level one, so the cluster suite has to be excluded here
+      // as well.
+      testIgnore: [/setup\/.*\.spec\.ts/, /k3s\/.*\.spec\.ts/],
       use: { ...devices['Desktop Chrome'] },
       dependencies: ['setup'],
     },
