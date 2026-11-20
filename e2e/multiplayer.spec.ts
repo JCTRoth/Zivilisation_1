@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, unlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 /**
@@ -11,13 +12,22 @@ import { join } from 'node:path';
  */
 const SERVER_PORT = 8790;
 const WS_PORT = 8791;
-const DB_FILE = join('/tmp/opencode', 'civ1-e2e-server.db');
+// `os.tmpdir()` always exists (CI included); a hard-coded path would make
+// the server fail to open its database and never become healthy.
+const DB_FILE = join(tmpdir(), 'civ1-e2e-server.db');
 // CIV1_SERVER / CIV1_WEB let the same spec run against an external stack
 // (docker compose or K3s NodePort) instead of spawning a local server.
 const SERVER = process.env.CIV1_SERVER ?? `http://127.0.0.1:${SERVER_PORT}`;
 const WEB_BASE = process.env.CIV1_WEB ?? '/';
 
+// This spec is heavier than the rest: it boots the authoritative server,
+// creates a room on the full 180x90 map and loads that room in two separate
+// browser contexts. The default 60 s budget is not enough for that on a
+// loaded CI runner.
+test.setTimeout(180_000);
+
 let server: ChildProcess | null = null;
+let serverLog = '';
 
 async function waitForHealth(): Promise<void> {
   const deadline = Date.now() + 20_000;
@@ -30,7 +40,9 @@ async function waitForHealth(): Promise<void> {
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  throw new Error('Game server did not become healthy');
+  throw new Error(
+    `Game server did not become healthy\n--- server log ---\n${serverLog}`,
+  );
 }
 
 test.beforeAll(async () => {
@@ -50,13 +62,26 @@ test.beforeAll(async () => {
       DB_FILE,
       GAME_SERVER_SECRET: 'e2e-secret',
     },
-    stdio: 'ignore',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    // Own process group: `npx` spawns the real server as a grandchild, and
+    // killing only `npx` leaves that grandchild holding the port and the
+    // database — which breaks the retry and every later run.
+    detached: true,
   });
+  server.stdout?.on('data', (chunk) => { serverLog += String(chunk); });
+  server.stderr?.on('data', (chunk) => { serverLog += String(chunk); });
   await waitForHealth();
 });
 
 test.afterAll(async () => {
-  server?.kill('SIGTERM');
+  if (server?.pid) {
+    // Negative pid → the whole process group.
+    try {
+      process.kill(-server.pid, 'SIGTERM');
+    } catch {
+      // already gone
+    }
+  }
   if (!process.env.CIV1_SERVER) {
     for (const suffix of ['', '-wal', '-shm']) {
       if (existsSync(DB_FILE + suffix)) unlinkSync(DB_FILE + suffix);

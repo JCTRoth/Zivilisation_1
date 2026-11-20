@@ -1,4 +1,6 @@
 import Database from 'better-sqlite3';
+import { mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 import type { SaveStore } from '../saveStore';
 import { SCHEMA_SQL } from './schema';
 import { RoomRepository } from './roomRepository';
@@ -16,6 +18,13 @@ export class SqlitePersistence {
   readonly rooms: RoomRepository;
 
   constructor(filename = ':memory:') {
+    // SQLite creates the database file, but not the directory holding it.
+    // Without this, a configured DB_FILE inside a fresh directory (a
+    // container volume, a CI workspace) fails with "Cannot open database
+    // because the directory does not exist".
+    if (filename !== ':memory:') {
+      mkdirSync(dirname(filename), { recursive: true });
+    }
     this.db = new Database(filename);
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');

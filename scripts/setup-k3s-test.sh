@@ -8,7 +8,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 NAME="civ1-k3s"
-KUBECONFIG_PATH="/tmp/opencode/k3s-test.yaml"
+TMP_ROOT="${TMPDIR:-/tmp}/civ1-k3s"
+mkdir -p "$TMP_ROOT"
+KUBECONFIG_PATH="$TMP_ROOT/k3s-test.yaml"
 DB_PASSWORD="civ1test"
 SERVER_SECRET="k3s-test-secret"
 
@@ -47,7 +49,7 @@ echo "[k3s] applying namespace"
 kubectl apply -f k8s/namespace.yaml >/dev/null
 
 echo "[k3s] creating self-signed TLS secret for civ1.local"
-CERT_DIR="/tmp/opencode/civ1-tls"
+CERT_DIR="$TMP_ROOT/civ1-tls"
 mkdir -p "$CERT_DIR"
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -keyout "$CERT_DIR/tls.key" -out "$CERT_DIR/tls.crt" \

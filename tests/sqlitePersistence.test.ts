@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { existsSync, unlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SqlitePersistence } from '@server/persistence/sqliteStore';
 import { RoomManager } from '@server/roomManager';
@@ -13,7 +14,9 @@ describe('SQLite persistence', () => {
   const open: SqlitePersistence[] = [];
 
   const newPersistence = (): SqlitePersistence => {
-    const file = join('/tmp/opencode', `civ1-persist-${files.length}-${Date.now()}.db`);
+    // `os.tmpdir()` rather than a hard-coded path: the directory has to
+    // exist on every machine that runs the suite (CI included).
+    const file = join(tmpdir(), `civ1-persist-${files.length}-${Date.now()}.db`);
     files.push(file);
     const persistence = new SqlitePersistence(file);
     open.push(persistence);

@@ -18,7 +18,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import { writeFileSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { useSeededRandom } from '../helpers/world';
 import GameEngine from '@shared/game/engine/GameEngine';
 import { BARBARIAN_CIV_ID } from '@shared/data/VillageConstants';
@@ -34,7 +35,7 @@ const SEEDS = (process.env.NAVAL_BENCH_SEEDS ?? '7')
   .filter((n) => Number.isFinite(n));
 const ROUNDS = Number(process.env.NAVAL_BENCH_ROUNDS ?? 20);
 const CIVS = Number(process.env.NAVAL_BENCH_CIVS ?? 4);
-const OUT = process.env.NAVAL_BENCH_OUT ?? '/tmp/opencode/naval/bench.json';
+const OUT = process.env.NAVAL_BENCH_OUT ?? join(tmpdir(), 'civ1-naval-bench', 'bench.json');
 
 /** One civilization's naval performance over the game. */
 interface CivMetrics {
