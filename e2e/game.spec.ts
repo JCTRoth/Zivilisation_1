@@ -1,6 +1,7 @@
 import { test, expect, Page } from '@playwright/test';
 import {
   startGame,
+  openNewCampaign,
   openSidePanel,
   closeSidePanel,
   openTopMenu,
@@ -13,14 +14,17 @@ import {
 // ---------------------------------------------------------------------------
 
 test.describe('Game Setup', () => {
-  test('shows the setup modal on load', async ({ page }) => {
+  test('shows the War Council hub, then the setup wizard', async ({ page }) => {
     await page.goto('/');
     await expect(page.locator('h2.modal-title')).toContainText('Zivilisation 1');
+    await expect(page.getByRole('button', { name: 'New Campaign' })).toBeVisible();
+    await page.getByRole('button', { name: 'New Campaign' }).click();
     await expect(page.getByText('Choose Your Civilization')).toBeVisible();
   });
 
   test('can select a civilization', async ({ page }) => {
     await page.goto('/');
+    await openNewCampaign(page);
     const aztecCard = page.locator('.setup-civ-card', { hasText: 'Aztecs' });
     await aztecCard.click();
     // Footer should reflect the selection
@@ -29,6 +33,7 @@ test.describe('Game Setup', () => {
 
   test('can navigate between setup steps', async ({ page }) => {
     await page.goto('/');
+    await openNewCampaign(page);
     // Step 1 → Step 2
     await page.getByRole('button', { name: /Next →/ }).click();
     await expect(page.getByText('Fine-tune Your Challenge')).toBeVisible();
@@ -39,6 +44,7 @@ test.describe('Game Setup', () => {
 
   test('shows game summary on step 2', async ({ page }) => {
     await page.goto('/');
+    await openNewCampaign(page);
     await page.getByRole('button', { name: /Next →/ }).click();
     await expect(page.locator('.setup-summary-title')).toHaveText('Your Setup');
     // Default civilization should be shown in summary

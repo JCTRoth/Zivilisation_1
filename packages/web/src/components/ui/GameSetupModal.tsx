@@ -6,6 +6,7 @@ import LeaderPortrait from './LeaderPortrait';
 import { useTranslation } from '../../i18n/useTranslation';
 import { translateDynamic, type TranslationKey } from '@shared/i18n/index';
 import LanguageSwitcher from './LanguageSwitcher';
+import BattleRoomStage from './BattleRoomStage';
 import { defaultNationIndexForBrowser } from '@shared/data/CivilizationByLanguage';
 import { tGovernmentName } from '@shared/i18n/dataNames';
 import '../../styles/gameModalShell.css';
@@ -138,6 +139,8 @@ function mapTypeBadge(mapType: string): string {
 
 type GameSetupModalProps = {
   show: boolean;
+  /** Return to the War Council hub without starting a game. */
+  onBack?: () => void;
   onStart: (settings: {
     playerCivilization: number;
     difficulty: string;
@@ -500,7 +503,7 @@ function MapSizeTool({ width, height, civCount, onChange }: MapSizeToolProps) {
   );
 }
 
-function GameSetupModal({ show, onStart }: GameSetupModalProps) {
+function GameSetupModal({ show, onStart, onBack }: GameSetupModalProps) {
   // Subscribes the whole wizard to language changes.
   const { t, language, setLanguage } = useTranslation();
   // Drag-to-scroll on empty areas of the war table (desktop convenience).
@@ -604,26 +607,6 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
   // seat picks one of the map's numbered points.
   const [spawnMode, setSpawnMode] = useState<'random' | 'fixed'>('random');
   const maxTeams = Math.max(2, Math.min(4, numCivilizations - 1));
-
-  // Look-around: the war room is a CSS 3D box; the pointer shifts its
-  // perspective origin a few degrees so the table and walls feel solid.
-  // Pure transforms — no textures, no images. Skipped for reduced motion.
-  const worldRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!show) return;
-    if (typeof window === 'undefined') return;
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
-    const onMove = (event: PointerEvent) => {
-      const el = worldRef.current;
-      if (!el) return;
-      const nx = event.clientX / window.innerWidth - 0.5;
-      const ny = event.clientY / window.innerHeight - 0.5;
-      el.style.setProperty('--setup-look-x', `${(nx * 4).toFixed(2)}deg`);
-      el.style.setProperty('--setup-look-y', `${(-ny * 2.5).toFixed(2)}deg`);
-    };
-    window.addEventListener('pointermove', onMove, { passive: true });
-    return () => window.removeEventListener('pointermove', onMove);
-  }, [show]);
 
   // AI-vs-AI scenarios are unwatchable without Dev Mode — force it on.
   useEffect(() => {
@@ -869,7 +852,7 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
     if (currentStep > 1) setCurrentStep(currentStep - 1);
   };
 
-  const handleStart = () => {
+  const handleStart = (): void => {
     // Everything the lobby decides, in slot order. `null` entries mean "the
     // engine picks" — a random unused faction, the nation's own colour, or an
     // auto spawn — so an untouched row behaves exactly like a plain game.
@@ -910,34 +893,25 @@ function GameSetupModal({ show, onStart }: GameSetupModalProps) {
 
   return (
     <div className="setup-screen" role="dialog" aria-modal="true" aria-label={t('setup.ariaDialog')}>
-      {/* Pure-CSS 3D war room: sky, receding walls, a tilted map table,
-          floating candle orbs. No image assets — only transforms and light. */}
-      <div className="setup-screen__world" ref={worldRef} aria-hidden="true">
-        <div className="setup-screen__sky" />
-        <div className="setup-screen__room">
-          <div className="setup-screen__wall setup-screen__wall--left" />
-          <div className="setup-screen__wall setup-screen__wall--right" />
-          <div className="setup-screen__table">
-            <span className="setup-screen__table-face" />
-            <span className="setup-screen__table-grid setup-screen__table-grid--near" />
-            <span className="setup-screen__table-grid setup-screen__table-grid--far" />
-            <span className="setup-screen__table-sheen" />
-          </div>
-          <div className="setup-screen__candles">
-            <i className="setup-candle setup-candle--a" />
-            <i className="setup-candle setup-candle--b" />
-            <i className="setup-candle setup-candle--c" />
-          </div>
-        </div>
-        <div className="setup-screen__horizon" />
-        <div className="setup-screen__glow" />
-        <div className="setup-screen__veil" />
-      </div>
+      {/* Pure-CSS 3D war room, shared with the hub, lobby and pause screens. */}
+      <BattleRoomStage />
 
       <div className="setup-screen__frame">
         {/* Nameplate — the seal of the room */}
         <header className="setup-nameplate">
-          <h2 className="modal-title">🏛️ Zivilisation 1</h2>
+          <div className="setup-nameplate__left">
+            {onBack && (
+              <button
+                type="button"
+                className="setup-nameplate__back"
+                onClick={onBack}
+                aria-label={t('warroom.backToCouncil')}
+              >
+                <span aria-hidden="true">←</span> {t('warroom.council')}
+              </button>
+            )}
+            <h2 className="modal-title">🏛️ Zivilisation 1</h2>
+          </div>
           <div className="setup-nameplate__right">
             <LanguageSwitcher value={language} onChange={setLanguage} compact />
             <span className="setup-nameplate__tag">{t('setup.nameplateTag')}</span>

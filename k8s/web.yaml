@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: civ1-web-config
+  namespace: civ1
+data:
+  GAME_SERVER_URL: "http://localhost:30787"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: civ1-web
+  namespace: civ1
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: civ1-web }
+  template:
+    metadata:
+      labels: { app: civ1-web }
+    spec:
+      containers:
+        - name: web
+          image: civ1browser-web:local
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: GAME_SERVER_URL
+              valueFrom:
+                configMapKeyRef: { name: civ1-web-config, key: GAME_SERVER_URL }
+          ports:
+            - { name: http, containerPort: 80 }
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests: { cpu: "50m", memory: "64Mi" }
+            limits: { cpu: "500m", memory: "256Mi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: civ1-web
+  namespace: civ1
+spec:
+  type: NodePort
+  selector: { app: civ1-web }
+  ports:
+    - { name: http, port: 80, targetPort: http, nodePort: 30080 }

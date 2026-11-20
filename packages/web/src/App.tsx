@@ -14,6 +14,7 @@ import GameCanvas from "./components/game/GameCanvas";
 import SettingsModal from "./components/ui/SettingsModal";
 import GameSetupModal from "./components/ui/GameSetupModal";
 import LobbyPanel from "./components/ui/LobbyPanel";
+import WarRoomMenu from "./components/ui/WarRoomMenu";
 import EndTurnConfirmModal from "./components/ui/EndTurnConfirmModal";
 import GameModals from "./components/ui/GameModals";
 import GameResultOverlay from "./components/ui/GameResultOverlay";
@@ -42,6 +43,7 @@ import { gameLogger } from "./utils/GameLogger";
 import { gameProgression } from "./utils/GameProgression";
 import type { TerrainTileRenderInfo } from "./game/rendering/MapRenderer";
 import { debugLog } from '@shared/utils/DevLog';
+import { readAutosaveMeta, type AutosaveMeta } from "./utils/Autosave";
 
 declare global {
   interface Window {
@@ -69,7 +71,12 @@ function App() {
   const [showHexDetail, setShowHexDetail] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showGameSetup, setShowGameSetup] = useState(true);
+  // The pre-game room has three faces: the War Council hub (menu), the
+  // single-player wizard and the multiplayer lobby. They share the 3D stage,
+  // so moving between them feels like turning to another table in one room.
+  const [setupView, setSetupView] = useState<'menu' | 'single' | 'multiplayer'>('menu');
   const [lobbyServer, setLobbyServer] = useState<string | null>(null);
+  const [autosaveMeta, setAutosaveMeta] = useState<AutosaveMeta | null>(() => readAutosaveMeta());
   const [showEndTurnConfirm, setShowEndTurnConfirm] = useState(false);
   const [confirmNewGame, setConfirmNewGame] = useState(false);
   const [confirmQuit, setConfirmQuit] = useState(false);
@@ -329,6 +336,54 @@ function App() {
     [actions],
   );
 
+  /**
+   * Resume the campaign in the browser save slots from the War Council.
+   *
+   * A fresh engine is created and asked to restore the selected slot. The
+   * load path already projects map/units/cities/civilizations into the store,
+   * so only the "game has started" shell state and the progression recorder
+   * still need wiring here. Nothing is generated and no settings are changed.
+   */
+  const handleContinueGame = useCallback(async () => {
+    const meta = readAutosaveMeta();
+    if (!meta) {
+      setAutosaveMeta(null);
+      return;
+    }
+    try {
+      const engine = new GameEngine(actions, webRuntime);
+      const loaded = await engine.loadGame(meta.slot);
+      if (!loaded) {
+        setError("Could not read the saved campaign.");
+        return;
+      }
+      actions.startGame();
+      actions.updateGameState({
+        mapGenerated: true,
+        currentTurn: engine.currentTurn,
+        currentYear: engine.currentYear,
+        humanPlayerIds: engine.gameSettings?.humanPlayerIds ?? [0],
+      });
+      gameProgression.startSession(engine, engine.gameSettings);
+      setGameEngine(engine);
+      setShowGameSetup(false);
+      setSetupView('menu');
+      actions.focusOnNextUnit();
+    } catch (e) {
+      console.error("[App] Continue campaign failed:", e);
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, [actions]);
+
+  // The council promises a current autosave whenever it is visible. Every
+  // route that returns to the menu (quit, result screen, reload) refreshes
+  // this, so the Continue card never shows stale metadata.
+  useEffect(() => {
+    if (!gameEngine && showGameSetup) {
+      setAutosaveMeta(readAutosaveMeta());
+    }
+  }, [gameEngine, showGameSetup]);
+
   // Quick-start mode: when the URL contains `?quickstart`, skip the setup
   // modal and launch directly into a game with sensible defaults and
   // developer mode enabled.  Useful for rapid iteration during development.
@@ -350,6 +405,7 @@ function App() {
     // single-player setup screen. Value-less `?lobby` uses the default URL.
     if (params.has('lobby')) {
       setLobbyServer(params.get('lobby') || 'http://localhost:8787');
+      setSetupView('multiplayer');
       window.history.replaceState(null, "", window.location.pathname);
       return;
     }
@@ -881,6 +937,7 @@ function App() {
     setIsEndTurnAutomatic(false);
     setGameEngine(null);
     setShowGameSetup(true);
+    setSetupView('menu');
   }, [actions, gameEngine]);
 
   // Handle hex examination (called from canvas)
@@ -925,6 +982,7 @@ function App() {
     setIsEndTurnAutomatic(false);
     setGameEngine(null);
     setShowGameSetup(true);
+    setSetupView('menu');
   };
 
   // Pause / resume the game. While paused, turn processing / AI actions are
@@ -1394,16 +1452,43 @@ function App() {
     );
   }
 
-  // Show game setup modal before game engine is created
+  // The pre-game room. One 3D War Council stage hosts three screens — the
+  // hub, the single-player wizard and the multiplayer lobby — plus the shared
+  // settings and help dialogs. Remote joins and URL scenarios skip this block
+  // entirely and open straight on the board.
   if (!gameEngine && showGameSetup) {
+    const showLobby = setupView === 'multiplayer' || lobbyServer !== null;
     return (
-      <div
-        id="gameContainer"
-        className="game-setup-screen vh-100 d-flex align-items-center justify-content-center text-white"
-      >
-        {lobbyServer
-          ? <LobbyPanel defaultServer={lobbyServer} />
-          : <GameSetupModal show={showGameSetup} onStart={handleGameStart} />}
+      <div id="gameContainer" className="game-setup-screen text-white">
+        {showLobby ? (
+          <LobbyPanel
+            defaultServer={lobbyServer ?? undefined}
+            onBack={() => {
+              setLobbyServer(null);
+              setSetupView('menu');
+            }}
+          />
+        ) : setupView === 'single' ? (
+          <GameSetupModal
+            show={showGameSetup}
+            onStart={handleGameStart}
+            onBack={() => setSetupView('menu')}
+          />
+        ) : (
+          <WarRoomMenu
+            autosave={autosaveMeta}
+            onNewCampaign={() => setSetupView('single')}
+            onMultiplayer={() => setSetupView('multiplayer')}
+            onContinue={() => void handleContinueGame()}
+            onSettings={() => setShowSettings(true)}
+            onHelp={() => actions.showDialog('help')}
+          />
+        )}
+
+        {/* The same dialogs the in-game menus open, so options and the field
+            manual are no longer unreachable until after a game has started. */}
+        <SettingsModal show={showSettings} onHide={() => setShowSettings(false)} />
+        <GameModals gameEngine={null} />
       </div>
     );
   }

@@ -128,6 +128,95 @@ describe('server transport', () => {
     expect(room.saveStore.get('seat_token_hash_2')).toBeTruthy();
   });
 
+  it('rejects a retried command with the same seat and sequence', async () => {
+    const transport = new HttpTransport({ port: 0, secret: 'secret' });
+    await transport.waitUntilReady();
+    transports.push(transport);
+    const room = new GameRoom({ id: 'idem', lobby: { seed: 12, numberOfCivilizations: 2 } });
+    rooms.push(room);
+    transport.register(room);
+    await room.start();
+
+    const token = createSeatToken('secret', 'idem', 0);
+    const post = (seq: number, tax: number) => fetch(`http://127.0.0.1:${transport.port}/rooms/idem/commands`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        token, seq,
+        command: { type: 'SET_RATES', tax, science: 100 - tax - 20, luxury: 20 },
+      }),
+    }).then((r) => r.json()) as Promise<{ ok: boolean; reason?: string }>;
+
+    expect(await post(1, 30)).toMatchObject({ ok: true });
+    // Same seq with a different payload returns the cached result: no second apply.
+    expect(await post(1, 99)).toMatchObject({ ok: true });
+    expect(room.engine.civilizations[0].taxRate).toBe(30);
+    expect(await post(2, 40)).toMatchObject({ ok: true });
+    expect(room.engine.civilizations[0].taxRate).toBe(40);
+  });
+
+  it('reports deep readiness separately from liveness', async () => {
+    const transport = new HttpTransport({ port: 0, readyCheck: async () => false });
+    await transport.waitUntilReady();
+    transports.push(transport);
+    const base = `http://127.0.0.1:${transport.port}`;
+    expect((await fetch(`${base}/health`)).status).toBe(200);
+    expect((await fetch(`${base}/ready`)).status).toBe(503);
+  });
+
+  it('sends a closed frame on SSE streams before shutdown', async () => {
+    const transport = new HttpTransport({ port: 0 });
+    await transport.waitUntilReady();
+    const room = new GameRoom({ id: 'drain', lobby: { seed: 2 } });
+    transport.register(room);
+    await room.start();
+
+    const response = await fetch(`http://127.0.0.1:${transport.port}/rooms/drain/events?seat=0`);
+    const reader = response.body!.getReader();
+    await transport.close(); // not in transports[] — afterEach must not close twice
+    const chunk = await reader.read();
+    expect(new TextDecoder().decode(chunk.value)).toContain('event: closed');
+  });
+
+  it('exposes Prometheus metrics and correlates a command with its log line', async () => {
+    const transport = new HttpTransport({ port: 0, secret: 'secret' });
+    await transport.waitUntilReady();
+    transports.push(transport);
+    const room = new GameRoom({ id: 'metrics', lobby: { seed: 4 } });
+    rooms.push(room);
+    transport.register(room);
+    await room.start();
+
+    const lines: string[] = [];
+    const originalWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: unknown) => {
+      lines.push(String(chunk));
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      await fetch(`http://127.0.0.1:${transport.port}/rooms/metrics/commands`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          token: createSeatToken('secret', 'metrics', 0), seq: 1,
+          command: { type: 'SET_RATES', tax: 20, science: 60, luxury: 20 },
+        }),
+      });
+    } finally {
+      process.stdout.write = originalWrite;
+    }
+    const commandLog = lines.map((l) => { try { return JSON.parse(l); } catch { return null; } })
+      .find((l) => l?.message === 'command');
+    expect(commandLog).toMatchObject({
+      level: 'info', roomId: 'metrics', commandSeq: 1, type: 'SET_RATES', ok: true,
+    });
+
+    const metricsText = await fetch(`http://127.0.0.1:${transport.port}/metrics`).then((r) => r.text());
+    const counter = Number(metricsText.match(/civ1_commands_total\{type="SET_RATES",result="ok"\} (\d+)/)?.[1] ?? 0);
+    expect(counter).toBeGreaterThan(0);
+    expect(metricsText).toContain('civ1_events_total{type="TURN_START"}');
+  });
+
   it('classifies seat ownership and event location', () => {
     const event = classifyEvent('COMBAT_HIT', {
       unit: { id: 'u1', civilizationId: 2, col: 7, row: 9 },

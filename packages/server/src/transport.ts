@@ -8,6 +8,8 @@ import { createSeatToken, verifySeatToken } from './auth';
 import type { SqlitePersistence } from './persistence/sqliteStore';
 import type { AsyncRoomStore, RoomEventBusSource } from './roomManager';
 import type { RoomEventBus } from './pubsub';
+import { metrics } from './metrics';
+import { logger } from './logger';
 
 /**
  * Minimal HTTP transport: commands in via POST, classified events out via
@@ -30,6 +32,8 @@ export interface TransportOptions {
   bus?: RoomEventBus;
   /** Unique id for this process on the shared bus. */
   sourceId?: RoomEventBusSource;
+  /** Deep readiness check (data store reachable). */
+  readyCheck?: () => Promise<boolean>;
 }
 
 interface EventStream {
@@ -45,8 +49,9 @@ export class HttpTransport {
   readonly rooms: RoomManager;
   private readonly secret?: string;
   private readonly persistence?: SqlitePersistence;
+  private readonly asyncStore?: AsyncRoomStore;
+  private readonly readyCheck?: () => Promise<boolean>;
   private readonly streams = new Set<EventStream>();
-  private nextStreamId = 0;
 
   constructor(options: TransportOptions = {}, rooms?: RoomManager) {
     this.rooms = rooms ?? new RoomManager(
@@ -56,6 +61,8 @@ export class HttpTransport {
     );
     this.secret = options.secret;
     this.persistence = options.persistence;
+    this.asyncStore = options.asyncPersistence;
+    this.readyCheck = options.readyCheck;
     this.server = createServer((req, res) => void this.handle(req, res));
     this.ready = new Promise((resolve, reject) => {
       this.server.once('error', reject);
@@ -83,6 +90,7 @@ export class HttpTransport {
   async close(): Promise<void> {
     for (const stream of this.streams) {
       stream.unsubscribe();
+      stream.res.write('event: closed\ndata: {"reason":"shutdown"}\n\n');
       stream.res.end();
     }
     this.streams.clear();
@@ -103,6 +111,24 @@ export class HttpTransport {
       return;
     }
     const url = new URL(req.url ?? '/', 'http://localhost');
+    if (url.pathname === '/ready') {
+      if (!this.readyCheck) {
+        this.json(res, 200, { ok: true });
+        return;
+      }
+      try {
+        const ok = await this.readyCheck();
+        this.json(res, ok ? 200 : 503, { ok });
+      } catch {
+        this.json(res, 503, { ok: false, reason: 'STORE_UNAVAILABLE' });
+      }
+      return;
+    }
+    if (url.pathname === '/metrics') {
+      res.writeHead(200, { 'content-type': 'text/plain; version=0.0.4' });
+      res.end(metrics.render(this.rooms.list().length));
+      return;
+    }
     if (url.pathname === '/health') {
       this.json(res, 200, { ok: true, rooms: this.rooms.list() });
       return;
@@ -134,7 +160,7 @@ export class HttpTransport {
         return;
       }
       if (action === 'state' && req.method === 'GET') {
-        const room = this.rooms.get(roomId);
+        const room = await this.rooms.getOrLoad(roomId);
         if (!room) return this.missingRoom(res);
         if (this.secret && verifySeatToken(
           this.secret,
@@ -150,19 +176,19 @@ export class HttpTransport {
         return;
       }
       if (action === 'save' && req.method === 'POST') {
-        const room = this.rooms.get(roomId);
+        const room = await this.rooms.getOrLoad(roomId);
         if (!room) return this.missingRoom(res);
         this.json(res, 200, { ok: room.flushSave() });
         return;
       }
       if (action === 'load' && req.method === 'POST') {
-        const room = this.rooms.get(roomId);
+        const room = await this.rooms.getOrLoad(roomId);
         if (!room) return this.missingRoom(res);
         this.json(res, 200, { ok: await room.engine.loadGame() });
         return;
       }
       if (action === 'events' && req.method === 'GET') {
-        this.handleEvents(roomId, url, req, res);
+        await this.handleEvents(roomId, url, req, res);
         return;
       }
     }
@@ -217,7 +243,7 @@ export class HttpTransport {
       this.json(res, 400, { ok: false, reason: 'BAD_SEATS' });
       return;
     }
-    const room = this.rooms.get(roomId);
+    const room = await this.rooms.getOrLoad(roomId);
     if (!room) return this.missingRoom(res);
 
     const tokens: Record<string, string> = {};
@@ -233,13 +259,14 @@ export class HttpTransport {
   }
 
   private async handleCommand(roomId: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const room = this.rooms.get(roomId);
+    const room = await this.rooms.getOrLoad(roomId);
     if (!room) return this.missingRoom(res);
     let seat: number | null;
     let command: unknown;
+    let commandSeq = 0;
     try {
       const parsed = JSON.parse(await this.readBody(req)) as {
-        seat?: number; token?: string; command?: unknown;
+        seat?: number; token?: string; command?: unknown; seq?: number;
       };
       // With auth configured the token is authoritative: a forged `seat`
       // field in the body changes nothing.
@@ -247,6 +274,7 @@ export class HttpTransport {
         ? verifySeatToken(this.secret, parsed.token ?? null, roomId)
         : Number(parsed.seat);
       command = parsed.command;
+      commandSeq = Number(parsed.seq) || 0;
       if (seat === null || !Number.isFinite(seat) || !command || typeof command !== 'object') {
         throw new Error('bad request');
       }
@@ -256,13 +284,13 @@ export class HttpTransport {
     }
     const result = room.submit({
       command: command as never,
-      context: { actorId: seat as number, turn: room.engine.currentTurn, seq: ++this.nextStreamId },
+      context: { actorId: seat as number, turn: room.engine.currentTurn, seq: commandSeq },
     });
     this.json(res, 200, result);
   }
 
-  private handleEvents(roomId: string, url: URL, req: IncomingMessage, res: ServerResponse): void {
-    const room = this.rooms.get(roomId);
+  private async handleEvents(roomId: string, url: URL, req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const room = await this.rooms.getOrLoad(roomId);
     if (!room) return this.missingRoom(res);
     const seat = this.secret
       ? verifySeatToken(this.secret, url.searchParams.get('token'), roomId)
@@ -274,19 +302,35 @@ export class HttpTransport {
     // `?after=seq` is a JSON catch-up request (reconnect without a snapshot).
     const afterParam = url.searchParams.get('after');
     if (afterParam !== null) {
-      if (!this.persistence) {
+      if (!this.persistence && !this.asyncStore) {
         this.json(res, 400, { ok: false, reason: 'NO_OUTBOX' });
         return;
       }
-      const after = Number(afterParam);
-      const events = this.persistence.rooms.readEvents(
-        roomId, Number.isFinite(after) ? after : 0,
-      ).filter((event) => room.visibility.isVisible({
-        type: event.type,
-        payload: event.payload,
-        civId: event.seat ?? undefined,
-      }, seat));
-      this.json(res, 200, { ok: true, events });
+      const after = Number.isFinite(Number(afterParam)) ? Number(afterParam) : 0;
+      if (this.persistence) {
+        const oldest = this.persistence.rooms.oldestEventSeq(roomId);
+        if (oldest > 0 && after + 1 < oldest) {
+          this.json(res, 200, { ok: false, reason: 'SNAPSHOT_REQUIRED' });
+          return;
+        }
+      } else if (this.asyncStore) {
+        const oldest = await this.asyncStore.oldestEventSeq(roomId);
+        if (oldest > 0 && after + 1 < oldest) {
+          this.json(res, 200, { ok: false, reason: 'SNAPSHOT_REQUIRED' });
+          return;
+        }
+      }
+      const events = this.persistence
+        ? this.persistence.rooms.readEvents(roomId, after)
+        : await this.asyncStore!.readEvents(roomId, after);
+      this.json(res, 200, {
+        ok: true,
+        events: events.filter((event) => room.visibility.isVisible({
+          type: event.type,
+          payload: event.payload,
+          civId: event.seat ?? undefined,
+        }, seat)),
+      });
       return;
     }
 
@@ -298,6 +342,8 @@ export class HttpTransport {
     // Flush headers now so the client knows it is connected before any event
     // is emitted (otherwise fetch waits for the first SSE frame).
     res.flushHeaders();
+    metrics.stream();
+    logger.info('event stream opened', { roomId, seat });
     const stream: EventStream = { res, roomId, seat, unsubscribe: () => undefined };
     stream.unsubscribe = room.addListener((event: OutboundEvent) => {
       if (!room.visibility.isVisible(event, seat)) return;

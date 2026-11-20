@@ -1,4 +1,38 @@
- * Implement Human and Human (on one computer) against AI vs AI game modes.
+Implement statistics for the Server that are presented to the Administrator via a txt file that is only accessible to the Administrator. The statistics should include the following information:
+* Number of active rooms
+* Number of active players
+* Number of unique players
+...
+...
+* Play times
+* List of IP addresses that have connected to the server
+...
+...
+
+------------
+
+Implement a clean up mechanism for the server that removes old rooms and players that have not been active for a certain period of time. The clean up mechanism should be configurable by the Administrator and should be able to run automatically at a specified interval.
+
+...
+
+List what protective meaures need to be taken to be protect the server from malicious attacks, such as DDoS attacks, SQL injection, and other common web vulnerabilities. Implement these protective measures in the server code and document them for the Administrator.
+Also other intrusion and fraud as well as break in should be protected against. The server should be able to detect and log any suspicious activity and alert the Administrator.
+E-Mail repots in supicious activity should be sent to the Administrator. The server should also have a mechanism to block IP addresses that are suspected of malicious activity.
+
+...
+
+Games that are not require game play against other players should be able to play offline when the Progressive web app is installed.
+How can this be achieved? The game should be able to run in a local environment without the need for a server connection. The game should be able to save the game state locally and allow the player to continue the game later. The game should also be able to load the game state from a local file.
+How can this be also done without source code dublication?
+Create a detailed plaing roast the user about details as well mayore questions and statgegic desicions as well implementation
+If you have unclear points or two options are very close in goodness and rank to you
+Make a full and detailed plan for the implementation
+lay out the plan in a .adoc file then start the implemnentation
+...
+
+
+
+* Implement Human and Human (on one computer) against AI vs AI game modes.
 * Implement End of game statistics that show the player how they did, enconmics, military, and science wise.
   (verified 2026-11-01: GameResultOverlay.tsx:341-427 + Act II chronicle)
 * Implement Civ1 ingame statistics screen that shows the player greatest cities in the worl, and there rank in the world wide demographics.

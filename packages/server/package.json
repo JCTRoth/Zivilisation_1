@@ -6,8 +6,10 @@
   "description": "Authoritative game rooms: commands in, classified events out.",
   "dependencies": {
     "@civ1/shared": "*",
-    "better-sqlite3": "^12.11.1",
     "pg": "^8.23.1",
     "ws": "^8.23.0"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^12.11.1"
   }
 }

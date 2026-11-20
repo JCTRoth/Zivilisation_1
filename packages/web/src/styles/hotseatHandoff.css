@@ -4,6 +4,9 @@
    ========================================================================== */
 
 .hotseat-handoff {
+  --setup-look-x: 0deg;
+  --setup-look-y: 0deg;
+
   position: fixed;
   inset: 0;
   z-index: 1100;
@@ -11,7 +14,12 @@
   align-items: center;
   justify-content: center;
   padding: 16px;
+  overflow: hidden;
   animation: hotseat-handoff-fade 0.25s ease-out;
+}
+
+.hotseat-handoff__stage {
+  opacity: 0.7;
 }
 
 @keyframes hotseat-handoff-fade {
@@ -22,9 +30,9 @@
 .hotseat-handoff__backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(6, 10, 16, 0.95);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background:
+    radial-gradient(70% 55% at 50% 45%, rgba(4, 7, 11, 0.32), rgba(3, 6, 10, 0.82) 78%),
+    rgba(4, 7, 11, 0.5);
 }
 
 .hotseat-handoff__card {
@@ -37,10 +45,16 @@
   max-width: 440px;
   width: 100%;
   padding: 40px 32px;
-  background: linear-gradient(145deg, #1a2332 0%, #0f1722 100%);
-  border: 1px solid rgba(212, 175, 55, 0.3);
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(240, 195, 60, 0.12), transparent 58%),
+    linear-gradient(145deg, rgba(26, 35, 50, 0.97) 0%, rgba(13, 20, 29, 0.98) 100%);
+  border: 1px solid rgba(240, 195, 60, 0.32);
   border-radius: 16px;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+  box-shadow:
+    0 24px 80px rgba(0, 0, 0, 0.66),
+    0 0 0 1px rgba(240, 195, 60, 0.08);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .hotseat-handoff__banner {
@@ -109,19 +123,19 @@
   margin-top: 8px;
   padding: 14px 40px;
   font-size: 1.15rem;
-  font-weight: 700;
-  color: #fff;
-  background: linear-gradient(135deg, #c0392b 0%, #a93226 100%);
-  border: 2px solid rgba(255, 255, 255, 0.15);
+  font-weight: 800;
+  color: #141006;
+  background: linear-gradient(135deg, #ffd75e 0%, #f0c33c 100%);
+  border: 1px solid rgba(255, 231, 164, 0.5);
   border-radius: 12px;
   cursor: pointer;
   transition: transform 0.12s ease, box-shadow 0.12s ease;
-  box-shadow: 0 4px 16px rgba(192, 57, 43, 0.4);
+  box-shadow: 0 6px 22px rgba(240, 195, 60, 0.32);
 }
 
 .hotseat-handoff__ready-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 24px rgba(192, 57, 43, 0.55);
+  box-shadow: 0 8px 28px rgba(240, 195, 60, 0.46);
 }
 
 .hotseat-handoff__ready-btn:active {

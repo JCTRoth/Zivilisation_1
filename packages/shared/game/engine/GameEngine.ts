@@ -368,6 +368,26 @@ export default class GameEngine {
     for (const deadline of due) deadline.run();
   }
 
+  /** Highest command seq accepted per seat — persisted for idempotent retries. */
+  private readonly commandSeqs = new Map<number, number>();
+
+  getLastCommandSeq(seat: number): number {
+    return this.commandSeqs.get(seat) ?? 0;
+  }
+
+  noteCommand(seat: number, seq: number): void {
+    this.commandSeqs.set(seat, Math.max(this.getLastCommandSeq(seat), seq));
+  }
+
+  /** Restore command sequences from a save blob (dupe protection after restart). */
+  restoreCommandSeqs(seqs: unknown): void {
+    if (!seqs || typeof seqs !== 'object') return;
+    for (const [seat, seq] of Object.entries(seqs as Record<string, unknown>)) {
+      const seatId = Number(seat);
+      if (Number.isFinite(seatId) && typeof seq === 'number') this.noteCommand(seatId, seq);
+    }
+  }
+
   private readonly idCounters = new Map<string, number>();
 
   /**
@@ -9437,6 +9457,7 @@ const occupiedLandmasses = new Set(
         // must replay identically, including combat and disaster rolls.
         rngState: this._rng.getState?.() ?? null,
         disasterRngState: this.disasterManager.getRngState(),
+        commandSeqs: Object.fromEntries(this.commandSeqs),
         currentTurn: this.currentTurn,
         currentYear: this.currentYear,
         activePlayer: this.activePlayer,
@@ -9497,13 +9518,18 @@ const occupiedLandmasses = new Set(
   }
 
   /**
-   * Load game state from localStorage
+   * Load game state from the save store.
+   *
+   * `slot` selects which stored campaign to restore. The manual save slot is
+   * the default (and the historical behaviour); the War Council's "Continue
+   * Campaign" passes `civ1_autosave` so resuming never overwrites the manual
+   * slot.
    */
-  async loadGame(): Promise<boolean> {
+  async loadGame(slot: string = 'civ1_savegame'): Promise<boolean> {
     try {
-      const json = this.saveStore.get('civ1_savegame');
+      const json = this.saveStore.get(slot);
       if (!json) {
-        console.warn('[GameEngine] No save game found');
+        console.warn(`[GameEngine] No save game found in slot "${slot}"`);
         return false;
       }
 
@@ -9547,6 +9573,7 @@ const occupiedLandmasses = new Set(
       if (typeof saveData.disasterRngState === 'number') {
         this.disasterManager.setRngState(saveData.disasterRngState);
       }
+      this.restoreCommandSeqs(saveData.commandSeqs);
       this.currentTurn = saveData.currentTurn;
       this.currentYear = saveData.currentYear;
       this.activePlayer = saveData.activePlayer;

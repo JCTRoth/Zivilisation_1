@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from '../../i18n/useTranslation';
+import BattleRoomStage from './BattleRoomStage';
 import '../../styles/hotseatHandoff.css';
 
 interface HotseatHandoffScreenProps {
@@ -32,6 +33,7 @@ export default function HotseatHandoffScreen({
       aria-modal="true"
       aria-label={t('hotseat.handoff.title')}
     >
+      <BattleRoomStage className="hotseat-handoff__stage" />
       <div className="hotseat-handoff__backdrop" />
       <div className="hotseat-handoff__card">
         <div

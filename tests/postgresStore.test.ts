@@ -20,13 +20,18 @@ describe('Postgres persistence adapter', () => {
     };
   };
 
-  it('creates JSONB tables with a row-lock-friendly schema', async () => {
+  it('applies migrations once and skips already-applied versions', async () => {
     const client = makeClient();
     const persistence = new PostgresPersistence(client);
     await persistence.initSchema();
-    expect(client.calls[0].text).toBe(POSTGRES_SCHEMA_SQL);
+    expect(client.calls.some((c) => c.text === POSTGRES_SCHEMA_SQL)).toBe(true);
+    expect(client.calls.some((c) => c.text.includes('INSERT INTO migrations'))).toBe(true);
     expect(POSTGRES_SCHEMA_SQL).toContain('JSONB NOT NULL');
     expect(POSTGRES_SCHEMA_SQL).toContain('PRIMARY KEY (room_id, seq)');
+
+    const appliedClient = makeClient([{ version: 1 }]);
+    await new PostgresPersistence(appliedClient).initSchema();
+    expect(appliedClient.calls.some((c) => c.text === POSTGRES_SCHEMA_SQL)).toBe(false);
   });
 
   it('writes and reads the save envelope with RNG state', async () => {

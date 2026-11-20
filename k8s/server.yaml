@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: civ1-server
+  namespace: civ1
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+  selector:
+    matchLabels: { app: civ1-server }
+  template:
+    metadata:
+      labels: { app: civ1-server }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8787"
+        prometheus.io/path: "/metrics"
+    spec:
+      terminationGracePeriodSeconds: 30
+      initContainers:
+        - name: wait-for-db
+          image: postgres:16-alpine
+          command: ["sh", "-c", "until pg_isready -h civ1-postgres -U civ1 -d civ1; do sleep 2; done"]
+      containers:
+        - name: server
+          image: civ1browser-server:local
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: HOST, value: "0.0.0.0" }
+            - { name: PORT, value: "8787" }
+            - { name: WS_PORT, value: "8788" }
+            - { name: WORKERS, value: "1" }
+            - name: PG_URL
+              valueFrom: { secretKeyRef: { name: civ1-server, key: PG_URL } }
+            - name: GAME_SERVER_SECRET
+              valueFrom: { secretKeyRef: { name: civ1-server, key: GAME_SERVER_SECRET } }
+          lifecycle:
+            preStop:
+              exec: { command: ["sh", "-c", "sleep 5"] }
+          ports:
+            - { name: http, containerPort: 8787 }
+            - { name: ws, containerPort: 8788 }
+          readinessProbe:
+            httpGet: { path: /ready, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits: { cpu: "1000m", memory: "1Gi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: civ1-server
+  namespace: civ1
+spec:
+  type: NodePort
+  selector: { app: civ1-server }
+  ports:
+    - { name: http, port: 8787, targetPort: http, nodePort: 30787 }
+    - { name: ws, port: 8788, targetPort: ws, nodePort: 30788 }

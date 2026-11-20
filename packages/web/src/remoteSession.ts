@@ -24,6 +24,7 @@ export interface RemoteSessionOptions {
 export function createRemoteSession(options: RemoteSessionOptions): GameSession {
   const { baseUrl, roomId, seat } = options;
   const url = `${baseUrl.replace(/\/$/, '')}/rooms/${encodeURIComponent(roomId)}/commands`;
+  let seq = 0;
 
   return {
     async send(command: Command): Promise<CommandResult> {
@@ -31,7 +32,7 @@ export function createRemoteSession(options: RemoteSessionOptions): GameSession 
         const response = await fetch(url, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ seat, token: options.token, command }),
+          body: JSON.stringify({ seat, token: options.token, command, seq: ++seq }),
         });
         const result = await response.json() as CommandResult;
         options.onResult?.(result);

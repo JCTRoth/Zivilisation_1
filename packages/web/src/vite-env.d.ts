@@ -1,3 +1,7 @@
+interface Window {
+  __CIV1_CONFIG__?: { gameServer?: string };
+}
+
 declare module '*.svg' {
   const content: string;
   export default content;

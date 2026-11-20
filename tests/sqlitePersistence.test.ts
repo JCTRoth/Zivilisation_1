@@ -5,7 +5,7 @@ import { SqlitePersistence } from '@server/persistence/sqliteStore';
 import { RoomManager } from '@server/roomManager';
 import { HttpTransport } from '@server/transport';
 import { createSeatToken } from '@server/auth';
-import type { GameRoom } from '@server/room';
+import { GameRoom } from '@server/room';
 
 /** Step 6: durable rooms, saves and RNG state across a server restart. */
 describe('SQLite persistence', () => {
@@ -91,6 +91,49 @@ describe('SQLite persistence', () => {
     expect(catchUp.events[0].seq).toBe(2);
 
     await transport.close();
+  });
+
+  it('trims the outbox and asks for a snapshot when a client is too old', async () => {
+    const persistence = newPersistence();
+    persistence.rooms.upsertRoom('trim', { seed: 3 });
+    for (let i = 1; i <= 3; i++) {
+      persistence.rooms.appendEvent('trim', i, null, 'TURN_START', { civilizationId: 0 });
+    }
+    persistence.rooms.trimOutbox('trim', 1);
+    expect(persistence.rooms.readEvents('trim', 0).map((e) => e.seq)).toEqual([2, 3]);
+    expect(persistence.rooms.oldestEventSeq('trim')).toBe(2);
+
+    const transport = new HttpTransport({ port: 0, persistence });
+    await transport.waitUntilReady();
+    const room = transport.rooms.get('trim');
+    expect(room).toBeTruthy();
+    const response = await fetch(
+      `http://127.0.0.1:${transport.port}/rooms/trim/events?seat=0&after=0`,
+    ).then((r) => r.json()) as { ok: boolean; reason?: string };
+    expect(response).toMatchObject({ ok: false, reason: 'SNAPSHOT_REQUIRED' });
+    await transport.close();
+  });
+
+  it('rejects a retried command after restart even without an in-memory cache', async () => {
+    const persistence = newPersistence();
+    persistence.rooms.upsertRoom('idem_restart', { seed: 6 });
+    const store = persistence.saveStoreFor('idem_restart');
+    const first = new GameRoom({ id: 'idem_restart', lobby: { seed: 6 }, saveStore: store });
+    await first.start();
+    const envelope = {
+      command: { type: 'SET_RATES', tax: 30, science: 50, luxury: 20 } as never,
+      context: { actorId: 0, turn: first.engine.currentTurn, seq: 7 },
+    };
+    expect(first.submit(envelope)).toMatchObject({ ok: true });
+    expect(first.engine.getLastCommandSeq(0)).toBe(7);
+    expect(first.flushSave()).toBe(true);
+    expect(JSON.parse(store.get('civ1_savegame')!).commandSeqs).toMatchObject({ '0': 7 });
+    first.stop();
+
+    const second = new GameRoom({ id: 'idem_restart', lobby: { seed: 6 }, saveStore: store });
+    await second.start();
+    expect(second.submit(envelope)).toMatchObject({ ok: false, reason: 'STALE_COMMAND' });
+    second.stop();
   });
 
   it('restores a room after a restart, including its command state and RNG stream', async () => {

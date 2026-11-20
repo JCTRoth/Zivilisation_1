@@ -51,11 +51,39 @@ CREATE TABLE IF NOT EXISTS event_outbox (
 CREATE INDEX IF NOT EXISTS idx_outbox_room ON event_outbox(room_id, seq);
 `;
 
+export interface Migration {
+  version: number;
+  name: string;
+  sql: string;
+}
+
+/** Add new entries here — never edit an already-applied migration. */
+export const POSTGRES_MIGRATIONS: Migration[] = [
+  { version: 1, name: 'initial schema', sql: POSTGRES_SCHEMA_SQL },
+];
+
 export class PostgresPersistence {
   constructor(private readonly client: PgClient) {}
 
+  /** Apply unapplied migrations exactly once (safe to call from many workers). */
   async initSchema(): Promise<void> {
-    await this.client.query(POSTGRES_SCHEMA_SQL);
+    await this.client.query(
+      `CREATE TABLE IF NOT EXISTS migrations (
+         version INTEGER PRIMARY KEY,
+         name TEXT NOT NULL,
+         applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+       )`,
+    );
+    const result = await this.client.query('SELECT version FROM migrations');
+    const applied = new Set(result.rows.map((row) => Number(row.version)));
+    for (const migration of POSTGRES_MIGRATIONS) {
+      if (applied.has(migration.version)) continue;
+      await this.client.query(migration.sql);
+      await this.client.query(
+        'INSERT INTO migrations (version, name) VALUES ($1, $2)',
+        [migration.version, migration.name],
+      );
+    }
   }
 
   async listRooms(): Promise<Array<{ id: string; lobby: LobbyConfig }>> {
@@ -71,6 +99,20 @@ export class PostgresPersistence {
   /** Alias used by the async RoomManager contract. */
   loadRooms(): Promise<Array<{ id: string; lobby: LobbyConfig }>> {
     return this.listRooms();
+  }
+
+  async loadRoom(id: string): Promise<{ id: string; lobby: LobbyConfig } | null> {
+    const result = await this.client.query(
+      'SELECT id, lobby_json FROM rooms WHERE id = $1', [id],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      id: String(row.id),
+      lobby: (typeof row.lobby_json === 'string'
+        ? JSON.parse(row.lobby_json)
+        : row.lobby_json) as LobbyConfig,
+    };
   }
 
   async upsertRoom(id: string, lobby: LobbyConfig): Promise<void> {
@@ -128,6 +170,36 @@ export class PostgresPersistence {
        VALUES ($1, $2, $3, $4, $5::jsonb)
        ON CONFLICT(room_id, seq) DO NOTHING`,
       [roomId, seq, seat, type, JSON.stringify(payload ?? null)],
+    );
+  }
+
+  async oldestEventSeq(roomId: string): Promise<number> {
+    const result = await this.client.query(
+      'SELECT COALESCE(MIN(seq), 0) AS seq FROM event_outbox WHERE room_id = $1',
+      [roomId],
+    );
+    return Number(result.rows[0]?.seq ?? 0);
+  }
+
+  async readEvents(roomId: string, after: number, limit = 100): Promise<Array<{
+    seq: number; seat: number | null; type: string; payload: unknown;
+  }>> {
+    const result = await this.client.query(
+      `SELECT seq, seat, type, payload FROM event_outbox
+       WHERE room_id = $1 AND seq > $2 ORDER BY seq LIMIT $3`,
+      [roomId, after, limit],
+    );
+    return result.rows.map((row) => ({
+      seq: Number(row.seq),
+      seat: row.seat === null ? null : Number(row.seat),
+      type: String(row.type),
+      payload: typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload,
+    }));
+  }
+
+  async trimOutbox(roomId: string, keepSeq: number): Promise<void> {
+    await this.client.query(
+      'DELETE FROM event_outbox WHERE room_id = $1 AND seq <= $2', [roomId, keepSeq],
     );
   }
 

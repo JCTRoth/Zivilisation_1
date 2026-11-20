@@ -1,25 +1,53 @@
 import { useState } from 'react';
+import { DIFFICULTY_LEVELS } from '@shared/data/GameData';
+import { useTranslation } from '../../i18n/useTranslation';
 import { createRoomWithSeats, joinUrl, type LobbyResult } from '../../lobbyApi';
+import BattleRoomStage from './BattleRoomStage';
+import LanguageSwitcher from './LanguageSwitcher';
+import '../../styles/gameSetupModal.css';
+
+interface LobbyPanelProps {
+  defaultServer?: string;
+  /** Return to the War Council hub. */
+  onBack?: () => void;
+}
 
 /**
- * Minimal multiplayer lobby (report step 5). Creates a server room, mints a
- * signed token per seat and shows one join link per player. The links are the
- * normal remote-mode URLs, so joining reuses the existing mirror-engine path.
+ * Multiplayer lobby, rendered as a table inside the War Council room.
+ *
+ * A host chooses the size and difficulty of the campaign, creates an
+ * authoritative server room, and receives one signed join link per seat.
+ * Joining a link boots the normal remote client exactly as before; this screen
+ * only replaces the bare Bootstrap card that used to be the lobby's whole
+ * presentation.
  */
-export default function LobbyPanel({ defaultServer }: { defaultServer?: string }) {
-  const [server, setServer] = useState(defaultServer ?? 'http://localhost:8787');
+export default function LobbyPanel({ defaultServer, onBack }: LobbyPanelProps) {
+  const { t, language, setLanguage } = useTranslation();
+  const [server, setServer] = useState(
+    defaultServer
+      ?? globalThis.window?.__CIV1_CONFIG__?.gameServer
+      ?? import.meta.env.VITE_GAME_SERVER
+      ?? 'http://localhost:8787',
+  );
   const [seats, setSeats] = useState(2);
+  const [difficulty, setDifficulty] = useState('PRINCE');
   const [result, setResult] = useState<LobbyResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [copiedSeat, setCopiedSeat] = useState<number | null>(null);
 
   const create = async () => {
     setBusy(true);
     setError(null);
+    setResult(null);
     try {
       setResult(await createRoomWithSeats(
         server,
-        { seed: undefined, numberOfCivilizations: Math.max(2, seats) },
+        {
+          seed: undefined,
+          numberOfCivilizations: Math.max(2, seats),
+          difficulty,
+        },
         Array.from({ length: seats }, (_, i) => i),
       ));
     } catch (e) {
@@ -29,46 +57,194 @@ export default function LobbyPanel({ defaultServer }: { defaultServer?: string }
     }
   };
 
+  const copyJoinUrl = async (seat: number) => {
+    if (!result) return;
+    const url = joinUrl(result, seat);
+    try {
+      await navigator.clipboard.writeText(new URL(url, window.location.href).toString());
+      setCopiedSeat(seat);
+      window.setTimeout(() => setCopiedSeat((current) => (current === seat ? null : current)), 1800);
+    } catch {
+      setError(t('warroom.copyFailed'));
+    }
+  };
+
   return (
-    <div className="card bg-dark text-white" style={{ maxWidth: 640 }}>
-      <div className="card-body">
-        <h2 className="h4 mb-3">Multiplayer lobby</h2>
-        <p className="text-muted small">
-          Create an authoritative room on the game server, then open one join link per player.
-        </p>
-        <label className="form-label">Server URL</label>
-        <input
-          className="form-control mb-2"
-          value={server}
-          onChange={(e) => setServer(e.target.value)}
-          disabled={busy}
-        />
-        <label className="form-label">Seats</label>
-        <input
-          type="number"
-          min={2}
-          max={7}
-          className="form-control mb-3"
-          value={seats}
-          onChange={(e) => setSeats(Math.max(2, Math.min(7, Number(e.target.value))))}
-          disabled={busy}
-        />
-        <button className="btn btn-primary" onClick={() => void create()} disabled={busy}>
-          {busy ? 'Creating…' : 'Create room'}
-        </button>
-        {error && <div className="alert alert-danger mt-3 mb-0">{error}</div>}
-        {result && (
-          <div className="mt-4">
-            <div className="small text-muted mb-2">Room <code>{result.roomId}</code></div>
-            {Array.from({ length: seats }, (_, seat) => (
-              <div key={seat} className="mb-2">
-                <a href={joinUrl(result, seat)} className="text-decoration-none">
-                  Join as seat {seat} →
-                </a>
-              </div>
-            ))}
+    <div
+      className="setup-screen war-room-lobby"
+      role="dialog"
+      aria-modal="true"
+      aria-label={t('warroom.lobbyAria')}
+    >
+      <BattleRoomStage />
+
+      <div className="setup-screen__frame">
+        <header className="setup-nameplate">
+          <div className="setup-nameplate__left">
+            {onBack && (
+              <button
+                type="button"
+                className="setup-nameplate__back"
+                onClick={onBack}
+                aria-label={t('warroom.backToCouncil')}
+              >
+                <span aria-hidden="true">←</span> {t('warroom.council')}
+              </button>
+            )}
+            <h2 className="modal-title">🏛️ Zivilisation 1</h2>
           </div>
-        )}
+          <div className="setup-nameplate__right">
+            <LanguageSwitcher value={language} onChange={setLanguage} compact />
+            <span className="setup-nameplate__tag">{t('warroom.tag')}</span>
+          </div>
+        </header>
+
+        <div className="setup-screen__scroll war-lobby__scroll">
+          <header className="setup-hero war-lobby__hero">
+            <div className="setup-hero__eyebrow">{t('warroom.lobbyEyebrow')}</div>
+            <h3 className="setup-hero__title">{t('warroom.lobbyTitle')}</h3>
+            <p className="setup-hero__lede">{t('warroom.lobbyLede')}</p>
+            <div className="setup-hero__rule" aria-hidden="true" />
+          </header>
+
+          <div className="setup-content war-lobby__content">
+            <section className="gm-section war-lobby__host" aria-labelledby="war-lobby-host-title">
+              <div className="gm-section-title" id="war-lobby-host-title">
+                {t('warroom.hostSection')}
+              </div>
+              <div className="war-lobby__form">
+                <label className="setup-setting">
+                  <span className="setup-setting__label">{t('warroom.server')}</span>
+                  <input
+                    className="setup-setting__control war-lobby__input"
+                    value={server}
+                    onChange={(e) => setServer(e.target.value)}
+                    disabled={busy}
+                    spellCheck={false}
+                  />
+                  <span className="setup-setting__hint">{t('warroom.serverHint')}</span>
+                </label>
+
+                <label className="setup-setting">
+                  <span className="setup-setting__label">
+                    {t('warroom.seats')} <span className="setup-setting__value">{seats}</span>
+                  </span>
+                  <input
+                    type="range"
+                    min={2}
+                    max={7}
+                    className="setup-setting__control"
+                    value={seats}
+                    onChange={(e) => setSeats(Math.max(2, Math.min(7, Number(e.target.value))))}
+                    disabled={busy}
+                  />
+                  <span className="setup-setting__hint">{t('warroom.seatsHint')}</span>
+                </label>
+
+                <label className="setup-setting">
+                  <span className="setup-setting__label">{t('warroom.difficulty')}</span>
+                  <select
+                    className="setup-setting__control war-lobby__input"
+                    value={difficulty}
+                    onChange={(e) => setDifficulty(e.target.value)}
+                    disabled={busy}
+                  >
+                    {Object.entries(DIFFICULTY_LEVELS).map(([id, data]) => (
+                      <option key={id} value={id}>{data.name}</option>
+                    ))}
+                  </select>
+                  <span className="setup-setting__hint">{t('warroom.difficultyHint')}</span>
+                </label>
+              </div>
+
+              <div className="war-lobby__actions">
+                <button
+                  type="button"
+                  className="touch-btn touch-btn--primary war-lobby__create"
+                  onClick={() => void create()}
+                  disabled={busy}
+                >
+                  <span aria-hidden="true">⚔️</span>{' '}
+                  {busy ? t('warroom.creating') : t('warroom.createRoom')}
+                </button>
+              </div>
+
+              {error && <div className="war-lobby__error" role="alert">{error}</div>}
+            </section>
+
+            {result && (
+              <section className="gm-section war-lobby__result" aria-labelledby="war-lobby-result-title">
+                <div className="gm-section-title" id="war-lobby-result-title">
+                  {t('warroom.roomReady')}
+                </div>
+                <p className="war-lobby__result-lede">{t('warroom.roomReadyHint')}</p>
+                <div className="war-lobby__room-code">
+                  <span>{t('warroom.roomCode')}</span>
+                  <code>{result.roomId}</code>
+                </div>
+                <div className="war-lobby__seats">
+                  {Array.from({ length: seats }, (_, seat) => (
+                    <div key={seat} className="war-lobby__seat">
+                      <a
+                        href={joinUrl(result, seat)}
+                        className="war-lobby__seat-link"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <span className="war-lobby__seat-number" aria-hidden="true">
+                          {seat === 0 ? '♛' : seat + 1}
+                        </span>
+                        <span>
+                          <strong>{t('warroom.joinSeat', { n: seat })}</strong>
+                          <span className="war-lobby__seat-role">
+                            {seat === 0 ? t('warroom.hostSeat') : t('warroom.guestSeat', { n: seat })}
+                          </span>
+                        </span>
+                      </a>
+                      <button
+                        type="button"
+                        className="war-lobby__copy"
+                        onClick={() => void copyJoinUrl(seat)}
+                      >
+                        {copiedSeat === seat ? t('warroom.copied') : t('warroom.copy')}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            <section className="gm-section war-lobby__guide" aria-labelledby="war-lobby-guide-title">
+              <div className="gm-section-title" id="war-lobby-guide-title">
+                {t('warroom.howItWorks')}
+              </div>
+              <ol className="war-lobby__steps">
+                <li>{t('warroom.stepHost')}</li>
+                <li>{t('warroom.stepShare')}</li>
+                <li>{t('warroom.stepOrders')}</li>
+              </ol>
+            </section>
+          </div>
+        </div>
+
+        <footer className="setup-footer war-lobby__footer">
+          <div className="setup-footer__selected">
+            <span className="setup-footer__swatch war-menu__footer-dot" aria-hidden="true" />
+            <span className="setup-footer__selected-label">{t('warroom.footerLabel')}</span>
+            <span className="setup-footer__selected-value">{t('warroom.multiplayer')}</span>
+          </div>
+          <div className="setup-footer__nav">
+            {onBack && (
+              <button
+                type="button"
+                className="touch-btn touch-btn--ghost setup-footer__button"
+                onClick={onBack}
+              >
+                {t('warroom.backToCouncil')}
+              </button>
+            )}
+          </div>
+        </footer>
       </div>
     </div>
   );

@@ -48,17 +48,22 @@ export class WsTransport {
   }
 
   async close(): Promise<void> {
-    for (const unsubscribe of this.unsubscribes.values()) unsubscribe();
+    for (const [socket, unsubscribe] of this.unsubscribes) {
+      unsubscribe();
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: 'closed', reason: 'shutdown' }));
+      }
+    }
     this.unsubscribes.clear();
     await new Promise<void>((resolve, reject) => {
       this.wss.close((err) => (err ? reject(err) : resolve()));
     });
   }
 
-  private onConnection(socket: WebSocket, url: string): void {
+  private async onConnection(socket: WebSocket, url: string): Promise<void> {
     const params = new URL(url, 'http://localhost').searchParams;
     const roomId = params.get('room');
-    const room = roomId ? this.rooms.get(roomId) : undefined;
+    const room = roomId ? await this.rooms.getOrLoad(roomId) : undefined;
     if (!room) {
       socket.close(4404, 'ROOM_NOT_FOUND');
       return;
@@ -86,7 +91,7 @@ export class WsTransport {
     });
 
     socket.on('message', (raw) => {
-      let message: { type?: string; command?: unknown; requestId?: string };
+      let message: { type?: string; command?: unknown; requestId?: string; seq?: number };
       try {
         message = JSON.parse(String(raw)) as typeof message;
       } catch {
@@ -99,7 +104,7 @@ export class WsTransport {
       }
       const result = room.submit({
         command: message.command as never,
-        context: { actorId: seat, turn: room.engine.currentTurn, seq: 0 },
+        context: { actorId: seat, turn: room.engine.currentTurn, seq: Number(message.seq) || 0 },
       });
       socket.send(JSON.stringify({ type: 'result', requestId: message.requestId, result }));
     });

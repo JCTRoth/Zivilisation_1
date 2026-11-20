@@ -1,0 +1,250 @@
+= Deployment verification, gaps and concrete follow-up prompts
+:revdate: 2026-11-20
+:toc:
+:toclevels: 3
+:sectnums:
+
+== What was actually verified on this machine
+
+=== Local Docker Compose stack
+
+Built from the repository root with `docker compose build`, started with `docker compose up -d`:
+
+* `web` — `curl -o /dev/null -w '%{http_code}' http://localhost:3000/` → `200`
+* `server` — `curl http://localhost:8787/health` → `{"ok":true,"rooms":[…]}`
+* `server` ran **two Node worker processes** (`WORKERS=2`) through the cluster primary; rooms created on one worker were lazily loaded by the other from Postgres.
+* Game API flow: `POST /rooms` → `POST /rooms/:id/seats` → `POST /rooms/:id/commands` with a signed seat token → `{ ok: true, command: 'SET_RATES' }`.
+* Database check: `saves` row with `version=5`, non-null `rng_state`, ~2.6 MB blob; `event_outbox` rows `TURN_START`, `TURN_START`, `GAME_SAVED`.
+* Restart check: after `docker compose up -d --build server`, the room list came back from Postgres with its state and RNG stream.
+
+=== K3s stack (single-node K3s inside privileged Docker)
+
+* K3s v1.31.4 running as container `civ1-k3s`, node `Ready`.
+* Images `civ1browser-server:local` / `civ1browser-web:local` imported into containerd with `docker save | docker exec -i civ1-k3s ctr -n k8s.io images import -`.
+* `kubectl apply -k k8s` created namespace, secrets, PVC, Postgres Deployment/Service, 2-replica server Deployment + NodePort 30787/30788, 2-replica web Deployment + NodePort 30080.
+* All pods `Running`/`Ready`; `curl http://localhost:30080/` → `200`; `curl http://localhost:30787/health` → `{"ok":true,"rooms":[]}`.
+* Same game API flow as above; DB rows verified with `kubectl exec -n civ1 deploy/civ1-postgres -- psql …`.
+* Browser test against the K3s stack:
+  `CIV1_SERVER=http://localhost:30787 CIV1_WEB=http://localhost:30080/ npx playwright test e2e/multiplayer.spec.ts`
+  → 5 passed (the lobby creates a room, two browser contexts join with minted seat tokens, both render the game).
+
+=== Bugs found and fixed while doing this
+
+. `CREATE TABLE IF NOT EXISTS` from several workers raced in Postgres (`pg_type` unique violation) → schema is now created once by the cluster primary before forking.
+. Server bound to `127.0.0.1` inside the container → added `HOST` env (compose/K8s set `0.0.0.0`).
+. Postgres container's host port 5432 was already taken → compose maps `5433:5432`.
+. Workers did not know rooms created by peers → `RoomManager.getOrLoad()` hydrates a room on demand from the shared store.
+. Room ids collided after restart (worker counter restarts at zero) → `createAsync()` derives a free id from the shared store.
+. Snapshots were written only to the room's in-memory store → `GameRoom.onSave` mirrors them to Postgres.
+. Worker crash-loops because Postgres was not ready → K8s init container waits for `pg_isready`.
+
+== K3s browser verification with screenshots
+
+A dedicated Playwright suite (`playwright.k3s.config.ts`, `e2e/k3s/k3s-smoke.spec.ts`) runs against the live K3s NodePorts and captures screenshots into `~/Desktop/civ1-k3s-screenshots` (folder created by the suite). Three tests pass:
+
+. *Full chain* — lobby screen, room creation with two minted seat tokens, two independent players joining, a seat-0 command, seat-1 snapshot, runtime config assertion, metrics/ready checks (screenshots 01-05).
+. *Game UI interactions* — rates modal, research panel, end turn on a K3s-served client (screenshots 06-09).
+. *Token binding* — a token for room B is rejected (401) against room A.
+
+Command: `CIV1_SERVER=http://localhost:31787 CIV1_WEB=http://localhost:31080 npm run test:k3s`.
+
+*Finding:* both compose and K3s return 404 for `/assets/units/unit_*.png` (33 requests) — these generated tile sprites are not committed and are absent until `npm run tiles:install` is run. It is pre-existing and not caused by the containerization.
+
+== Implementation status of the prompts
+
+[cols="1,3,2"]
+|===
+|Prompt |Status |Evidence
+
+|1. Runtime web config |Done |`config.js` + `docker-entrypoint.sh`, compose/K3s env, e2e asserts `window.__CIV1_CONFIG__`
+|2. Secrets management |Done |`.env.example`, env interpolation, `k8s/secrets.example.yaml`, `npm run check:secrets`
+|3. Slim production image |Done |SQLite is optional/dynamically imported; server image 660 MB -> 279 MB
+|4. Deep readiness |Done |`GET /ready` checks the data store; K3s readinessProbe uses it; test asserts 503/200
+|5. DB durability & migrations |Done |versioned migrations table, StatefulSet + PVC, pg_dump CronJob
+|6. Graceful shutdown |Done |SSE/WS `closed` frames, primary waits for workers, preStop + 30 s grace in K8s
+|7. Command idempotency |Done |per-seat seq cache + persisted high-water mark; tests for retry and post-restart retry
+|8. Outbox retention |Done |10k-event trim + `SNAPSHOT_REQUIRED` on too-old `?after`
+|9. Observability |Done |JSON log lines with seq correlation, Prometheus `/metrics`
+|10. Network policy & ingress |Done |default-deny policy + Traefik HTTPS ingress verified end-to-end (self-signed `civ1.local`)
+|11. Autoscaling / multi-node |Manifest ready |HPA applied; single-node test cluster (second agent not added)
+|12. Deeper deployed-topology e2e |Done |seat-0 command + seat-1 snapshot assertion in the spec
+|===
+
+Implemented items were verified with: `npm run type-check`, `npm run build`, `npm test` (3,011 passed), `npm run lint`, `npm run check:secrets`, and the multiplayer Playwright spec against docker compose (5 passed, including the cross-seat command/snapshot assertion). The remaining opt-in items (#10, #11) provide manifests only; they need a Traefik-enabled cluster and a TLS secret, and a second K3s node respectively.
+
+== Gaps and project-specific prompts
+
+Each prompt below is written so it can be handed to a coding agent working in this repository. Apply them in the order shown; each has a concrete acceptance test.
+
+=== 1. Runtime configuration for the web client (high)
+
+*Gap:* `VITE_GAME_SERVER` is baked into the JS at build time (`packages/web/Dockerfile`). The same image cannot be promoted from staging to production, and the K3s test needed a URL parameter to work.
+*Prompt:*
+[source,text]
+----
+In packages/web, add a runtime config file served by nginx:
+1. Add packages/web/public/config.js containing `window.__CIV1_CONFIG__ = { gameServer: "" };`.
+2. Add an nginx entrypoint (packages/web/docker-entrypoint.sh) that runs `envsubst` over a config template using $GAME_SERVER_URL, then starts nginx. Update packages/web/Dockerfile to COPY the template and ENTRYPOINT the script.
+3. Change LobbyPanel's default server to `window.__CIV1_CONFIG__?.gameServer || import.meta.env.VITE_GAME_SERVER || 'http://localhost:8787'`.
+4. Add GAME_SERVER_URL to docker-compose.yml and to k8s/web.yaml (env from a ConfigMap).
+5. Add a Playwright assertion that a joined lobby link points at the configured server without any URL parameter.
+Do not change the command layer or engine code.
+----
+*Acceptance:* one built web image works in compose and K3s with different servers; `window.__CIV1_CONFIG__.gameServer` is readable in the browser.
+
+=== 2. Secrets management (high)
+
+*Gap:* `docker-compose.yml` and `k8s/*.yaml` contain plaintext development secrets. `POSTGRES_PASSWORD` and `GAME_SERVER_SECRET` are checked into git.
+*Prompt:*
+[source,text]
+----
+Replace committed secrets:
+1. Add .env.example with POSTGRES_PASSWORD, GAME_SERVER_SECRET, PG_URL placeholders; keep .env ignored.
+2. Change docker-compose.yml to read `${POSTGRES_PASSWORD}` and `${GAME_SERVER_SECRET}` from the environment with sensible dev defaults documented in README.
+3. In k8s/, remove stringData secrets. Add k8s/secrets.example.yaml and instructions using `kubectl -n civ1 create secret generic civ1-db --from-literal=...` and the same for civ1-server. Document rotation of GAME_SERVER_SECRET and what happens to active tokens.
+4. Add a test/script `scripts/check-no-secrets.mjs` that fails if known secret literals appear in tracked YAML.
+----
+*Acceptance:* no live-looking secret strings remain in tracked files; `docker compose up` works with a copied .env; K3s deploy works after creating the two secrets.
+
+=== 3. Slim production image and native dependency (medium)
+
+*Gap:* both Dockerfiles install `python3 make g++` just to compile `better-sqlite3`, which the Postgres deployment never uses. Images are ~650 MB.
+*Prompt:*
+[source,text]
+----
+1. Make the SQLite import in packages/server/src/main.ts dynamic: only `await import('./persistence/sqliteStore')` when PG_URL is absent. Move `better-sqlite3` to optionalDependencies in packages/server/package.json.
+2. Create packages/server/Dockerfile as a multi-stage build: stage 1 installs all deps and compiles the server to JavaScript (add tsconfig.server.json with outDir and `tsc-alias` to rewrite @civ1/shared paths); stage 2 copies only dist + production deps, no compiler toolchain.
+3. Do the same for packages/web (already multi-stage) but install with `--ignore-scripts` in the build stage since no native addon is needed when better-sqlite3 is optional.
+4. Print both image sizes before and after in doc/DEPLOYMENT_GAPS_AND_PROMPTS.adoc.
+Keep `npm run dev:server` working unchanged for local development.
+----
+*Acceptance:* server image < 200 MB, K3s and compose still pass the smoke tests in this document.
+
+=== 4. Real readiness endpoint (medium)
+
+*Gap:* `/health` only proves the HTTP server is up; a worker with a broken DB connection still reports healthy.
+*Prompt:*
+[source,text]
+----
+Add `GET /ready` to packages/server/src/transport.ts. It must:
+- issue `SELECT 1` through PostgresPersistence when PG_URL is set,
+- return 503 with `{ok:false,reason:'DB_UNAVAILABLE'}` on failure,
+- return 200 when the data store is reachable.
+Point readinessProbe in k8s/server.yaml at /ready while keeping livenessProbe at /health. Add an integration test that stops the DB and asserts 503, then restores it and asserts 200.
+----
+*Acceptance:* killing Postgres makes server pods NotReady without restarting them.
+
+=== 5. Database durability and migrations (medium)
+
+*Gap:* schema is `CREATE TABLE IF NOT EXISTS` on every worker start; no migration history; single Postgres Deployment with a PVC and no backups.
+*Prompt:*
+[source,text]
+----
+1. Add packages/server/src/persistence/migrations/ with numbered SQL files and a `migrations` table recording applied versions. Run migrations once in the cluster primary (not workers).
+2. Convert civ1-postgres in k8s/ from Deployment to StatefulSet with volumeClaimTemplates, and set resource requests/limits.
+3. Add a CronJob `civ1-pg-backup` running pg_dump to a PVC, plus a documented restore command.
+4. Add a test that applies all migrations to a fresh database and asserts the v1 save format still loads.
+----
+*Acceptance:* upgrading the image twice does not re-run DDL, and a restore from the backup yields a game room that replays with the same RNG state.
+
+=== 6. Graceful shutdown and rolling updates (medium)
+
+*Gap:* cluster primary waits a fixed 2 seconds for workers; in-flight commands/SSE may be dropped during `kubectl rollout restart`.
+*Prompt:*
+[source,text]
+----
+In packages/server/src/main.ts:
+1. On SIGTERM, stop accepting new HTTP/WS connections, wait for each worker to report closed streams (add a `drain()` to HttpTransport/WsTransport), then exit. Add a configurable SHUTDOWN_TIMEOUT_MS (default 10s).
+2. In k8s/server.yaml add a preStop hook `sleep 5`, terminationGracePeriodSeconds: 30, and a RollingUpdate strategy with maxSurge=1/maxUnavailable=0.
+3. Add a test that opens an SSE stream, sends SIGTERM to the server, and asserts the stream receives a `closed` event before the socket closes.
+----
+*Acceptance:* rolling restart of the K3s deployment loses no commands and clients reconnect via `?after=seq` without a full snapshot.
+
+=== 7. Command idempotency across workers (high, gameplay correctness)
+
+*Gap:* `CommandContext.seq` is overwritten server-side (`RoomManager.submit` uses its own counter), so a retried command after a worker failover can apply twice — e.g. `DISBAND_UNIT` twice, or `PURCHASE_PRODUCTION` spending gold twice.
+*Prompt:*
+[source,text]
+----
+1. Change GameRoom.submit to accept the caller's seq and keep a per-seat `Map<number, CommandResult>` of the last N results (configurable, default 64). If the same (seat, seq) arrives again, return the cached result without re-running the engine.
+2. Make createRemoteSession generate a monotonic seq per seat (it currently sends 0 implicitly) and include it in the command body.
+3. Persist the seq cache in the save blob or outbox so it survives a worker restart; verify with a test that kills a worker after a command and retries it.
+4. Add a command-layer test asserting two identical (unitId, seq) MOVE_UNIT commands produce one move.
+Do not weaken the existing turn/ownership gates in GameEngine.submit.
+----
+*Acceptance:* duplicate delivery by the transport is harmless for every command type in packages/shared/types/commands.ts.
+
+=== 8. Event outbox retention and replay (medium)
+
+*Gap:* `event_outbox` grows forever; replay catch-up loads all events after a sequence with no lower bound.
+*Prompt:*
+[source,text]
+----
+1. Add a retention policy (default 24 h or 10k events per room) and a periodic cleanup job in packages/server/src/persistence/.
+2. Add `GET /rooms/:id/events?after=seq&since=seq` and document that a client whose last seq is older than the retained window must fall back to /state.
+3. Wire remoteGame.catchUp() to detect the fallback response and call refresh().
+4. Add a test that truncates the outbox and asserts the client recovers via snapshot.
+----
+*Acceptance:* a long-running room's outbox stays bounded and an offline client of any age reconnects correctly.
+
+=== 9. Observability (medium)
+
+*Gap:* logs are unstructured console output; no metrics; no way to correlate a command with the events it produced.
+*Prompt:*
+[source,text]
+----
+1. Add a structured logger in packages/server (JSON lines: ts, level, roomId, workerId, commandSeq, eventSeq) and replace console.log/warn/error in room.ts, transport.ts, roomManager.ts, pubsub.ts.
+2. Expose GET /metrics with counters: commands_total{type,result}, events_total{type}, rooms_active, saves_total, reconnect_total.
+3. Add Prometheus scrape annotations to k8s/server.yaml and a small Grafana-ready dashboard JSON in doc/dashboards/.
+4. Add a test that issues a command and asserts the log line contains the same commandSeq as the emitted event.
+----
+*Acceptance:* `kubectl logs -n civ1 deploy/civ1-server` produces parseable JSON and /metrics shows non-zero counters after a game command.
+
+=== 10. Network policy and ingress/TLS (medium)
+
+*Gap:* NodePort exposes services directly; no default-deny network policy; no TLS or host-based routing.
+*Prompt:*
+[source,text]
+----
+1. Add k8s/networkpolicy.yaml: default-deny ingress/egress in namespace civ1, then allow web->server (8787/8788), server->postgres (5432), DNS to kube-system, and NodePort/kubelet ingress to the app pods.
+2. Re-enable Traefik in the K3s container and add k8s/ingress.yaml routing civ1.local/ to civ1-web and civ1.local/api to civ1-server, with a self-signed TLS secret for local testing.
+3. Change web's runtime config to a same-origin `/api` URL in the ingress case, so no CORS is needed.
+4. Verify with `curl -k https://civ1.local/` and the existing multiplayer Playwright spec using CIV1_WEB/CIV1_SERVER env vars.
+----
+*Acceptance:* direct pod-to-pod traffic not in the policy is denied; the browser game works over HTTPS through the ingress.
+
+=== 11. Autoscaling and multi-node K3s (lower priority)
+
+*Gap:* the K3s test cluster is a single node in Docker and the server Deployment has a fixed replica count.
+*Prompt:*
+[source,text]
+----
+1. Add k8s/hpa.yaml with an HPA on civ1-server (CPU 60%, min 2, max 6) and document why it is safe: rooms are lazily hydrated from Postgres and events are distributed via LISTEN/NOTIFY.
+2. Document how to add a second K3s agent (`docker run … rancher/k3s agent --server https://… --token …`) and re-run the multiplayer spec with replicas spread across nodes.
+3. Add a note about Postgres being the single writer and what to change (managed Postgres or Patroni) before multi-node production.
+----
+*Acceptance:* `kubectl get hpa` shows the target, and a load test causes a scale-up without room loss.
+
+=== 12. Test coverage of the deployed topology (lower priority)
+
+*Gap:* Playwright covers lobby + join; it does not assert that a command from seat 0 reaches seat 1 through the event bus/projection, nor that the DB contains the save.
+*Prompt:*
+[source,text]
+----
+Extend e2e/multiplayer.spec.ts:
+1. After both pages are ready, issue a SET_RATES command from page A through the app's sendCommand path (expose a test-only `window.__civ1SendCommand` or click the rates modal).
+2. Assert page B's UI reflects the new rates without a reload, using the event/projection path.
+3. Query the server /state endpoint with the seat-1 token and assert the same rates; query Postgres via kubectl exec in a separate script and assert saves.version=5 and rng_state is not null.
+4. Run the spec in three modes: local spawned server, CIV1_SERVER pointing at docker compose, and CIV1_SERVER/CIV1_WEB pointing at K3s NodePorts. Record the commands in README.
+----
+*Acceptance:* one spec passes in all three modes and proves the chain browser -> server worker -> Postgres -> event bus -> other browser.
+
+== Remaining work
+
+All twelve prompts now have either an implementation or ready-to-enable manifests. Before a real deployment:
+
+. Enable `k8s/networkpolicy.yaml` and `k8s/ingress.yaml` in `k8s/kustomization.yaml` once Traefik and the `civ1-tls` secret exist, then re-run the e2e spec over HTTPS.
+. Apply `k8s/hpa.yaml`, add a second K3s agent and verify the multiplayer spec with replicas spread across nodes.
+. Replace the remaining development defaults in `.env` / created secrets with real credentials.
+
+Already closed: #1-#9, #12; #10 and #11 have manifests ready and are opt-in.

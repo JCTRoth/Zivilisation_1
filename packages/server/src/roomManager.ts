@@ -1,3 +1,4 @@
+import { logger } from "./logger";
 import { GameRoom } from './room';
 import type { LobbyConfig } from './lobby';
 import type { SaveStore } from './saveStore';
@@ -15,6 +16,7 @@ export type RoomEventBusSource = string;
 
 export interface AsyncRoomStore {
   loadRooms(): Promise<Array<{ id: string; lobby: LobbyConfig }>>;
+  loadRoom(id: string): Promise<{ id: string; lobby: LobbyConfig } | null>;
   loadBlob(roomId: string, slot: string): Promise<string | null>;
   upsertRoom(id: string, lobby: LobbyConfig): Promise<void>;
   saveBlob(roomId: string, slot: string, json: string): Promise<void>;
@@ -22,6 +24,11 @@ export interface AsyncRoomStore {
     roomId: string, seq: number, seat: number | null, type: string, payload: unknown,
   ): Promise<void>;
   lastEventSeq(roomId: string): Promise<number>;
+  oldestEventSeq(roomId: string): Promise<number>;
+  trimOutbox(roomId: string, keepSeq: number): Promise<void>;
+  readEvents(
+    roomId: string, after: number, limit?: number,
+  ): Promise<Array<{ seq: number; seat: number | null; type: string; payload: unknown }>>;
   removeRoom(id: string): Promise<void>;
 }
 
@@ -32,6 +39,7 @@ export interface AsyncRoomStore {
  */
 export class RoomManager {
   private readonly rooms = new Map<string, GameRoom>();
+  private readonly pendingRooms = new Map<string, Promise<GameRoom | undefined>>();
   private readonly sqlite?: SqlitePersistence;
   private readonly asyncStore?: AsyncRoomStore;
   private readonly bus: RoomEventBus;
@@ -74,8 +82,17 @@ export class RoomManager {
         this.sqlite?.rooms.appendEvent(id, seq, event.civId ?? null, event.type, event.payload);
         void this.asyncStore?.appendEvent(
           id, seq, event.civId ?? null, event.type, event.payload,
-        ).catch((error) => console.error('[RoomManager] event persist failed', error));
+        ).catch((error) => logger.error('event persist failed', { detail: String(error) }));
         void this.bus.publish({ roomId: id, event, sourceId: this.sourceId });
+      },
+      onSave: (slot, json) => {
+        void this.asyncStore?.saveBlob(id, slot, json)
+          .catch((error) => logger.error('save failed', { detail: String(error) }));
+      },
+      onTrimOutbox: (keepSeq) => {
+        this.sqlite?.rooms.trimOutbox(id, keepSeq);
+        void this.asyncStore?.trimOutbox(id, keepSeq)
+          .catch((error) => logger.error('outbox trim failed', { detail: String(error) }));
       },
     });
     this.rooms.set(id, room);
@@ -88,14 +105,22 @@ export class RoomManager {
     this.sqlite?.rooms.upsertRoom(roomId, lobby);
     if (this.asyncStore) {
       void this.asyncStore.upsertRoom(roomId, lobby)
-        .catch((error) => console.error('[RoomManager] room persist failed', error));
+        .catch((error) => logger.error('room persist failed', { detail: String(error) }));
     }
     return this.makeRoom(roomId, lobby, this.sqlite?.rooms.lastEventSeq(roomId) ?? 0);
   }
 
   /** Create and hydrate from an async store before the caller starts the room. */
   async createAsync(lobby: LobbyConfig, id?: string): Promise<GameRoom> {
-    const roomId = id ?? `room_${++this.nextId}`;
+    let roomId = id;
+    if (!roomId && this.asyncStore) {
+      // A fresh worker's counter starts at zero while the shared DB already
+      // holds rooms from previous processes: derive an unused id from it.
+      const existing = new Set((await this.asyncStore.loadRooms()).map((r) => r.id));
+      do { roomId = `room_${++this.nextId}`; } while (existing.has(roomId));
+    } else {
+      roomId = roomId ?? `room_${++this.nextId}`;
+    }
     if (this.rooms.has(roomId)) throw new Error(`ROOM_EXISTS: ${roomId}`);
     let startSeq = 0;
     if (this.asyncStore) {
@@ -121,7 +146,7 @@ export class RoomManager {
     if (this.rooms.has(room.id)) throw new Error(`ROOM_EXISTS: ${room.id}`);
     this.sqlite?.rooms.upsertRoom(room.id, room.lobby);
     void this.asyncStore?.upsertRoom(room.id, room.lobby)
-      .catch((error) => console.error('[RoomManager] room persist failed', error));
+      .catch((error) => logger.error('room persist failed', { detail: String(error) }));
     this.rooms.set(room.id, room);
   }
 
@@ -155,6 +180,32 @@ export class RoomManager {
     return this.rooms.get(id);
   }
 
+  /**
+   * Look up a room, loading it from the shared store if another process created
+   * it. Concurrent callers share one load promise so a worker never starts two
+   * engines for the same room.
+   */
+  async getOrLoad(id: string): Promise<GameRoom | undefined> {
+    const local = this.rooms.get(id);
+    if (local) return local;
+    if (!this.asyncStore) return undefined;
+    const pending = this.pendingRooms.get(id);
+    if (pending) return pending;
+    const loading = (async () => {
+      const record = await this.asyncStore!.loadRoom(id);
+      if (!record) return undefined;
+      const existing = this.rooms.get(id);
+      if (existing) return existing;
+      const startSeq = await this.asyncStore!.lastEventSeq(id);
+      const room = this.makeRoom(id, record.lobby, startSeq);
+      await this.hydrate(room, id);
+      await room.start();
+      return room;
+    })().finally(() => this.pendingRooms.delete(id));
+    this.pendingRooms.set(id, loading);
+    return loading;
+  }
+
   list(): Array<{ id: string; turn: number; started: boolean }> {
     return [...this.rooms.values()].map((room) => ({
       id: room.id,
@@ -170,7 +221,7 @@ export class RoomManager {
     this.rooms.delete(id);
     this.sqlite?.rooms.removeRoom(id);
     void this.asyncStore?.removeRoom(id)
-      .catch((error) => console.error('[RoomManager] room delete failed', error));
+      .catch((error) => logger.error('room delete failed', { detail: String(error) }));
     return true;
   }
 

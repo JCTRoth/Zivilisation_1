@@ -2284,3 +2284,594 @@ select.setup-setting__control:focus {
     border-left-width: 4px;
   }
 }
+
+/* ============================================================================
+   WAR COUNCIL HUB + MULTIPLAYER LOBBY
+   ----------------------------------------------------------------------------
+   The nameplate, hero, scroll surface and command bar are the setup screen's
+   own parts — these rules only dress the hub's three campaign cards, the two
+   utility entries, and the lobby's host/result tables. Everything inherits the
+   gold-on-navy war-room palette, so the front menu and the wizard are visibly
+   the same room.
+   ========================================================================== */
+
+/* ---- Nameplate: back to the council ------------------------------------- */
+
+.setup-nameplate__left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.setup-nameplate__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid rgba(240, 195, 60, 0.32);
+  border-radius: 999px;
+  background: rgba(240, 195, 60, 0.08);
+  color: rgba(240, 195, 60, 0.92);
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast, 120ms) var(--ease-out, ease-out),
+    border-color var(--dur-fast, 120ms) var(--ease-out, ease-out),
+    color var(--dur-fast, 120ms) var(--ease-out, ease-out);
+}
+
+.setup-nameplate__back:hover {
+  background: rgba(240, 195, 60, 0.16);
+  border-color: rgba(240, 195, 60, 0.62);
+  color: #ffe9a8;
+}
+
+.setup-nameplate__back:focus-visible {
+  outline: 2px solid var(--setup-gold);
+  outline-offset: 2px;
+}
+
+/* The council's buttons speak the room's language, not Bootstrap blue. */
+.setup-screen .touch-btn--primary,
+.setup-screen .touch-btn--success {
+  background: var(--setup-gold);
+  color: var(--setup-gold-ink);
+}
+
+.setup-screen .touch-btn--primary:hover,
+.setup-screen .touch-btn--success:hover {
+  background: #ffd75e;
+}
+
+/* ---- Hub layout ---------------------------------------------------------- */
+
+.war-menu__scroll > .war-menu__hero {
+  max-width: 1180px;
+}
+
+.war-menu__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.war-menu__card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 230px;
+  padding: 18px;
+  overflow: hidden;
+  text-align: left;
+  color: var(--color-text, #e8eef3);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 16px;
+  background:
+    radial-gradient(120% 100% at 0% 0%, rgba(255, 255, 255, 0.05), transparent 55%),
+    linear-gradient(180deg, rgba(20, 30, 42, 0.9), rgba(7, 12, 18, 0.94));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 14px 30px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  transition:
+    transform 160ms var(--ease-out, ease-out),
+    border-color 160ms var(--ease-out, ease-out),
+    box-shadow 160ms var(--ease-out, ease-out);
+}
+
+.war-menu__card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: linear-gradient(180deg, transparent, rgba(240, 195, 60, 0.55), transparent);
+  opacity: 0;
+  transition: opacity 160ms var(--ease-out, ease-out);
+}
+
+.war-menu__card:hover:not(:disabled),
+.war-menu__card:focus-visible {
+  transform: translateY(-2px);
+  border-color: rgba(240, 195, 60, 0.48);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 18px 40px rgba(0, 0, 0, 0.48),
+    0 0 0 1px rgba(240, 195, 60, 0.14);
+}
+
+.war-menu__card:hover:not(:disabled)::before,
+.war-menu__card:focus-visible::before {
+  opacity: 1;
+}
+
+.war-menu__card:focus-visible {
+  outline: 2px solid rgba(240, 195, 60, 0.8);
+  outline-offset: 2px;
+}
+
+.war-menu__card--primary {
+  border-color: rgba(240, 195, 60, 0.42);
+  background:
+    radial-gradient(120% 110% at 0% 0%, rgba(240, 195, 60, 0.18), transparent 58%),
+    linear-gradient(180deg, rgba(32, 38, 26, 0.85), rgba(10, 13, 10, 0.94));
+}
+
+.war-menu__card--continue:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+  filter: saturate(0.65);
+}
+
+.war-menu__seal {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  border: 1px solid rgba(240, 195, 60, 0.3);
+  background:
+    radial-gradient(circle at 35% 30%, rgba(240, 195, 60, 0.18), transparent 65%),
+    rgba(0, 0, 0, 0.38);
+  box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.55);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.war-menu__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.war-menu__eyebrow {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(240, 195, 60, 0.82);
+}
+
+.war-menu__title {
+  font-size: clamp(1.05rem, 2.4vw, 1.22rem);
+  font-weight: 800;
+  line-height: 1.18;
+  color: #f4f7fa;
+}
+
+.war-menu__lede {
+  font-size: 0.85rem;
+  line-height: 1.48;
+  color: rgba(232, 238, 243, 0.7);
+}
+
+.war-menu__meta {
+  display: inline-flex;
+  align-self: flex-start;
+  margin-top: 3px;
+  padding: 3px 9px;
+  border: 1px solid rgba(240, 195, 60, 0.32);
+  border-radius: 999px;
+  background: rgba(240, 195, 60, 0.09);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: rgba(255, 231, 164, 0.92);
+  font-variant-numeric: tabular-nums;
+}
+
+.war-menu__cta {
+  margin-top: auto;
+  padding-top: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(240, 195, 60, 0.92);
+}
+
+.war-menu__card:disabled .war-menu__cta {
+  color: rgba(232, 238, 243, 0.38);
+}
+
+/* ---- Utility row: settings + field manual -------------------------------- */
+
+.war-menu__utilities {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.war-menu__utility {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 16px;
+  text-align: left;
+  color: var(--color-text, #e8eef3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 13px;
+  background: linear-gradient(180deg, rgba(18, 27, 38, 0.82), rgba(6, 10, 15, 0.9));
+  cursor: pointer;
+  transition:
+    border-color 140ms var(--ease-out, ease-out),
+    background-color 140ms var(--ease-out, ease-out);
+}
+
+.war-menu__utility:hover {
+  border-color: rgba(240, 195, 60, 0.38);
+  background-color: rgba(240, 195, 60, 0.04);
+}
+
+.war-menu__utility:focus-visible {
+  outline: 2px solid rgba(240, 195, 60, 0.78);
+  outline-offset: 2px;
+}
+
+.war-menu__utility-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  font-size: 18px;
+}
+
+.war-menu__utility strong {
+  display: block;
+  font-size: 0.9rem;
+  color: #f0f4f8;
+}
+
+.war-menu__utility-hint {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.76rem;
+  line-height: 1.4;
+  color: rgba(232, 238, 243, 0.6);
+}
+
+.war-menu__footer-dot {
+  width: 9px;
+  height: 9px;
+  background: var(--setup-gold);
+  box-shadow: 0 0 10px rgba(240, 195, 60, 0.7);
+}
+
+.war-menu__footer-note {
+  font-size: 11.5px;
+  color: rgba(232, 238, 243, 0.5);
+  text-align: center;
+}
+
+/* ---- Multiplayer lobby --------------------------------------------------- */
+
+.war-lobby__scroll > .war-lobby__hero {
+  max-width: 1080px;
+}
+
+.war-lobby__content {
+  max-width: 1080px;
+}
+
+.war-lobby__form {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+}
+
+.war-lobby__input {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  color: var(--color-text, #e8eef3);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 9px;
+  background: rgba(4, 10, 16, 0.62);
+  font-family: inherit;
+  font-size: 0.86rem;
+}
+
+.war-lobby__input:focus {
+  outline: none;
+  border-color: rgba(240, 195, 60, 0.62);
+  box-shadow: 0 0 0 2px rgba(240, 195, 60, 0.16);
+}
+
+.war-lobby__input:disabled {
+  opacity: 0.6;
+}
+
+.war-lobby__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.war-lobby__create {
+  min-width: 210px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
+.war-lobby__error {
+  margin-top: 12px;
+  padding: 9px 12px;
+  border: 1px solid rgba(239, 90, 110, 0.5);
+  border-radius: 9px;
+  background: rgba(239, 90, 110, 0.12);
+  font-size: 0.82rem;
+  color: #ffd0d7;
+  overflow-wrap: anywhere;
+}
+
+.war-lobby__result-lede {
+  margin: -4px 0 12px;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: rgba(232, 238, 243, 0.65);
+}
+
+.war-lobby__room-code {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 12px;
+  padding: 5px 10px;
+  border: 1px solid rgba(240, 195, 60, 0.28);
+  border-radius: 8px;
+  background: rgba(240, 195, 60, 0.08);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(240, 195, 60, 0.86);
+}
+
+.war-lobby__room-code code {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: #f4f7fa;
+}
+
+.war-lobby__seats {
+  display: grid;
+  gap: 8px;
+}
+
+.war-lobby__seat {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.war-lobby__seat-link {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 10px 12px;
+  text-decoration: none;
+  color: var(--color-text, #e8eef3);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  transition:
+    border-color 130ms var(--ease-out, ease-out),
+    background-color 130ms var(--ease-out, ease-out);
+}
+
+.war-lobby__seat-link:hover {
+  border-color: rgba(240, 195, 60, 0.45);
+  background: rgba(240, 195, 60, 0.06);
+}
+
+.war-lobby__seat-number {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid rgba(240, 195, 60, 0.34);
+  background: rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+  font-weight: 800;
+  color: rgba(240, 195, 60, 0.92);
+}
+
+.war-lobby__seat-link strong {
+  display: block;
+  font-size: 0.84rem;
+  color: #f0f4f8;
+}
+
+.war-lobby__seat-role {
+  display: block;
+  margin-top: 1px;
+  font-size: 0.7rem;
+  color: rgba(232, 238, 243, 0.55);
+}
+
+.war-lobby__copy {
+  flex: 0 0 auto;
+  min-width: 70px;
+  padding: 0 12px;
+  border: 1px solid rgba(240, 195, 60, 0.3);
+  border-radius: 10px;
+  background: rgba(240, 195, 60, 0.08);
+  color: rgba(255, 231, 164, 0.92);
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background-color 130ms var(--ease-out, ease-out);
+}
+
+.war-lobby__copy:hover {
+  background: rgba(240, 195, 60, 0.18);
+}
+
+.war-lobby__steps {
+  counter-reset: war-lobby-step;
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.war-lobby__steps li {
+  counter-increment: war-lobby-step;
+  position: relative;
+  padding-left: 38px;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: rgba(232, 238, 243, 0.74);
+}
+
+.war-lobby__steps li::before {
+  content: counter(war-lobby-step);
+  position: absolute;
+  left: 0;
+  top: -1px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid rgba(240, 195, 60, 0.35);
+  background: rgba(240, 195, 60, 0.08);
+  font-size: 10.5px;
+  font-weight: 800;
+  color: rgba(240, 195, 60, 0.9);
+}
+
+/* ---- Responsive ---------------------------------------------------------- */
+
+@media (max-width: 1020px) {
+  .war-menu__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .war-menu__card--primary {
+    grid-column: 1 / -1;
+    min-height: 0;
+  }
+}
+
+@media (max-width: 860px) {
+  .war-lobby__form {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .war-lobby__form .setup-setting:first-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 719.98px) {
+  .setup-nameplate__left {
+    gap: 8px;
+  }
+
+  .setup-nameplate__back {
+    min-height: 28px;
+    padding: 3px 8px;
+    font-size: 9px;
+  }
+
+  .setup-nameplate__back span {
+    display: none;
+  }
+
+  .war-menu__grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .war-menu__card {
+    min-height: 0;
+    padding: 14px;
+    border-radius: 13px;
+  }
+
+  .war-menu__seal {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    font-size: 20px;
+  }
+
+  .war-menu__utilities {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 9px;
+    margin-top: 10px;
+  }
+
+  .war-menu__footer-note {
+    display: none;
+  }
+
+  .war-lobby__form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .war-lobby__form .setup-setting:first-child {
+    grid-column: auto;
+  }
+
+  .war-lobby__actions {
+    justify-content: stretch;
+  }
+
+  .war-lobby__create {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .war-lobby__seat {
+    flex-direction: column;
+  }
+
+  .war-lobby__copy {
+    min-height: 34px;
+  }
+}

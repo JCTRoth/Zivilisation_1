@@ -2348,7 +2348,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
       lede={t('gm.help.lede' as TranslationKey)}
       actions={
         <button type="button" className="touch-btn touch-btn--primary" onClick={handleCloseDialog}>
-          {t('gm.help.backToMap' as TranslationKey)}
+          {gameEngine ? t('gm.help.backToMap' as TranslationKey) : t('common.close')}
         </button>
       }
     >

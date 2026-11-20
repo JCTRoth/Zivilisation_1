@@ -1,6 +1,7 @@
 import { test, expect, Page } from '@playwright/test';
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { openNewCampaign } from './helpers/game';
 
 /**
  * AI vs AI (Computer vs Computer) feature tests.
@@ -29,8 +30,10 @@ const LOG_DIR = join(process.cwd(), 'game-logs');
 async function startAIVsAIGame(page: Page): Promise<void> {
   await page.goto('/', { waitUntil: 'networkidle' });
 
+  // War Council hub → single-player wizard.
+  await openNewCampaign(page);
+
   // Step 1 – Civilization selection (default is pre-selected)
-  await expect(page.locator('h2.modal-title')).toContainText('Zivilisation 1', { timeout: 10_000 });
   await page.getByRole('button', { name: 'Next →' }).click();
 
   // Step 2 – Game settings: choose the Computer vs Computer map type
@@ -67,6 +70,7 @@ test.describe('AI vs AI (Computer vs Computer)', () => {
 
   test('offers the Computer vs Computer map type in the setup wizard', async ({ page }) => {
     await page.goto('/');
+    await openNewCampaign(page);
     await page.getByRole('button', { name: 'Next →' }).click();
     await expect(page.getByText('Fine-tune Your Challenge')).toBeVisible();
 
@@ -77,6 +81,7 @@ test.describe('AI vs AI (Computer vs Computer)', () => {
 
   test('shows the auto-play summary when Computer vs Computer is selected', async ({ page }) => {
     await page.goto('/');
+    await openNewCampaign(page);
     await page.getByRole('button', { name: 'Next →' }).click();
     await expect(page.getByText('Fine-tune Your Challenge')).toBeVisible();
 

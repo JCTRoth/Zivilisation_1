@@ -5,9 +5,16 @@
    same card frame, same hero band (artwork slot + eyebrow / title / lede),
    same gold accent rule and fixed action bar — under pause-* names, because
    this is an overlay, not a bootstrap dialog.
+
+   The backdrop is the same 3D War Council room the front menu uses, so pausing
+   puts the player back in the council rather than in a grey dialog over the
+   map. The board itself is dimmed behind the room.
    ========================================================================== */
 
 .pause-screen {
+  --setup-look-x: 0deg;
+  --setup-look-y: 0deg;
+
   position: fixed;
   inset: 0;
   z-index: 1080;
@@ -15,10 +22,15 @@
   align-items: center;
   justify-content: center;
   padding: 16px;
-  background: rgba(8, 12, 16, 0.88);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  overflow: hidden;
+  background:
+    radial-gradient(70% 60% at 50% 40%, rgba(6, 10, 16, 0.35), rgba(2, 4, 7, 0.88) 78%),
+    rgba(4, 7, 11, 0.72);
   animation: pause-screen-fade 0.18s ease-out;
+}
+
+.pause-screen__stage {
+  opacity: 0.78;
 }
 
 /* While the game is over the result overlay (a bootstrap modal, z-index 1050)
@@ -36,21 +48,27 @@
 
 .pause-screen__panel {
   position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
-  width: min(440px, 100%);
+  width: min(460px, 100%);
   max-height: calc(100dvh - 32px);
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  scrollbar-color: rgba(240, 195, 60, 0.35) transparent;
   color: var(--color-text, #e8eef3);
-  background: linear-gradient(180deg, #1a242f 0%, #131b24 100%);
-  border: 1px solid var(--color-border-strong, #3d5163);
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgba(240, 195, 60, 0.11), transparent 58%),
+    linear-gradient(180deg, rgba(24, 35, 46, 0.96) 0%, rgba(14, 21, 29, 0.97) 100%);
+  border: 1px solid rgba(240, 195, 60, 0.26);
   border-radius: var(--radius-lg, 16px);
   box-shadow:
-    0 28px 64px rgba(0, 0, 0, 0.62),
+    0 28px 64px rgba(0, 0, 0, 0.68),
+    0 0 0 1px rgba(240, 195, 60, 0.08),
     0 2px 0 rgba(255, 255, 255, 0.05) inset;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 /* ---- Hero band ---------------------------------------------------------- */

@@ -131,6 +131,8 @@ type CommandRejectionReason =
   /** The subject exists but belongs to somebody else. */
   | 'NOT_YOUR_UNIT'
   | 'NOT_YOUR_CITY'
+  /** A command with this seat/seq was already handled (possibly by another worker). */
+  | 'STALE_COMMAND'
   /** The command type is not part of the protocol. */
   | 'UNKNOWN_COMMAND'
   /** The engine refused it while applying (defensive — rules reject inline). */

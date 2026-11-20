@@ -1,5 +1,6 @@
 import React from 'react';
 import { useTranslation } from '../../i18n/useTranslation';
+import BattleRoomStage from './BattleRoomStage';
 import '../../styles/pauseScreen.css';
 
 interface PauseScreenProps {
@@ -55,6 +56,7 @@ const PauseScreen: React.FC<PauseScreenProps> = ({
       aria-modal="true"
       aria-label={gameOver ? gameOverTitle : t('pause.gamePaused')}
     >
+      <BattleRoomStage className="pause-screen__stage" />
       <div className="pause-screen__panel">
         <header className="pause-screen__hero">
           <div className="pause-screen__art">

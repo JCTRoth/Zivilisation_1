@@ -199,7 +199,7 @@ Path aliases: `@/*` → `packages/web/src/*`, `@shared/*` → `packages/shared/*
 
 |`npm run type-check` |Clean (no diagnostics)
 |`npm run build` |Succeeds (~17 s). Only the pre-existing Rollup warning about chunks >500 kB.
-|`npm test` |3,005 passed, 0 failed, 3,005 total across 257 files
+|`npm test` |3,011 passed, 0 failed, 3,011 total across 257 files
 |`npm run lint` |0 errors, 0 warnings (exits 0)
 |`npx playwright test e2e/multiplayer.spec.ts` |5 passed (4 setup + multiplayer spec)
 |===
@@ -243,6 +243,10 @@ Stage and commit the files listed in "Git state" above. Type-check, unit/integra
 .Provision a staging Postgres instance, set `PG_URL` on two server processes with a shared secret, and open one seat in each.
 .Assert a command from process A produces an event in process B's SSE/WS stream and that both mirrors converge.
 *Done when:* the two-process scenario passes against a real database.
+
+== Deployment and operations
+
+The server now runs multi-processed (`WORKERS`, Node cluster) with Postgres `LISTEN/NOTIFY` fan-out; rooms are lazily hydrated from the shared store so any worker can serve any room. The first six deployment-improvement prompts have been implemented (runtime web config, secret hygiene, slim images, deep readiness, graceful shutdown and command idempotency); see link:DEPLOYMENT_GAPS_AND_PROMPTS.adoc[the deployment status table]. Docker Compose and K3s manifests are in the repository root and `k8s/`. Both topologies were deployed and tested on the development machine from the web client down to Postgres; see link:DEPLOYMENT_GAPS_AND_PROMPTS.adoc[Deployment verification, gaps and concrete prompts] for the exact commands, results, bugs fixed and the recommended follow-up work.
 
 == Appendix — architecture diagrams
 

@@ -5,6 +5,8 @@ import { InMemorySaveStore, type SaveStore } from './saveStore';
 import { engineFogFilter, type OutboundEvent, type VisibilityFilter } from './fog';
 import { classifyEvent } from './classify';
 import type { CommandEnvelope } from './commands';
+import { metrics } from './metrics';
+import { logger } from './logger';
 
 export interface RoomOptions {
   id: string;
@@ -17,6 +19,10 @@ export interface RoomOptions {
   onEvent?: (event: OutboundEvent, seq: number) => void;
   /** Sequence to continue from when restoring a room with an outbox. */
   startEventSeq?: number;
+  /** Mirror a successful save to an async store (multi-process mode). */
+  onSave?: (slot: string, json: string) => void;
+  /** Periodic outbox retention callback. */
+  onTrimOutbox?: (keepSeq: number) => void;
 }
 
 /**
@@ -35,11 +41,13 @@ export class GameRoom {
   readonly visibility: VisibilityFilter;
 
   private timer: ReturnType<typeof setInterval> | null = null;
-  private seq = 0;
   private readonly autoSave: boolean;
   private dirty = false;
   private eventSeq: number;
+  private readonly commandResults = new Map<string, CommandResult>();
   private readonly onEvent?: (event: OutboundEvent, seq: number) => void;
+  private readonly onSave?: (slot: string, json: string) => void;
+  private readonly onTrimOutbox?: (keepSeq: number) => void;
   private readonly listeners = new Set<(event: OutboundEvent) => void>();
 
   constructor(options: RoomOptions) {
@@ -49,6 +57,8 @@ export class GameRoom {
     this.autoSave = options.autoSave ?? true;
     this.eventSeq = options.startEventSeq ?? 0;
     this.onEvent = options.onEvent;
+    this.onSave = options.onSave;
+    this.onTrimOutbox = options.onTrimOutbox;
     this.engine = new GameEngine(null, headlessRuntime, this.saveStore);
     this.visibility = options.visibility ?? engineFogFilter(this.engine);
     // Every engine event is classified once here, then filtered per seat by
@@ -68,7 +78,7 @@ export class GameRoom {
     if (this.saveStore.get('civ1_savegame') === null) {
       await this.engine.initialize(settingsFromLobby(this.lobby));
     } else if (!await this.engine.loadGame()) {
-      console.warn(`[GameRoom] ${this.id} had an invalid save — starting fresh`);
+      logger.warn('invalid save, starting fresh', { roomId: this.id });
       await this.engine.initialize(settingsFromLobby(this.lobby));
     }
     this.timer = setInterval(() => this.tick(), GameEngine.TICK_MS);
@@ -88,22 +98,44 @@ export class GameRoom {
 
   private emit(event: OutboundEvent): void {
     const sequenced: OutboundEvent = { ...event, seq: ++this.eventSeq };
+    metrics.event(event.type);
+    logger.info('event', { roomId: this.id, eventSeq: this.eventSeq, type: event.type });
     this.onEvent?.(sequenced, this.eventSeq);
     for (const listener of this.listeners) listener(sequenced);
   }
 
   /** Server-side identity gate: the context comes from the connection, never the payload. */
   submit(envelope: CommandEnvelope): CommandResult {
-    const result = this.engine.submit(envelope.command, {
-      ...envelope.context,
-      seq: ++this.seq,
+    const { actorId, seq } = envelope.context;
+    const key = `${actorId}:${seq}`;
+    const cached = this.commandResults.get(key);
+    if (cached) return cached;
+    // A seq at or below the persisted high-water mark was already applied,
+    // possibly on another worker or before a restart.
+    if (seq > 0 && seq <= this.engine.getLastCommandSeq(actorId)) {
+      return { ok: false, reason: 'STALE_COMMAND' };
+    }
+
+    const result = this.engine.submit(envelope.command, { ...envelope.context, seq });
+    metrics.command(envelope.command.type, result.ok ? 'ok' : 'rejected');
+    logger.info('command', {
+      roomId: this.id, commandSeq: seq, type: envelope.command.type, ok: result.ok,
     });
+    if (seq > 0) this.engine.noteCommand(actorId, seq);
+    this.commandResults.set(key, result);
+    if (this.commandResults.size > 256) {
+      this.commandResults.delete(this.commandResults.keys().next().value as string);
+    }
     if (result.ok && this.autoSave) this.dirty = true;
     return result;
   }
 
   private tick(): void {
     this.engine.advanceTick();
+    // Keep at most 10k events; a client older than that needs a snapshot.
+    if (this.onTrimOutbox && this.eventSeq > 10_000 && this.engine.currentTick % 600 === 0) {
+      this.onTrimOutbox(this.eventSeq - 10_000);
+    }
     if (this.dirty && this.autoSave && this.engine.currentTick % AUTOSAVE_EVERY_TICKS === 0) {
       this.flushSave();
     }
@@ -113,7 +145,13 @@ export class GameRoom {
   flushSave(): boolean {
     if (!this.engine.isInitialized) return false;
     const ok = this.engine.saveGame();
-    if (ok) this.dirty = false;
+    if (ok) metrics.save();
+    if (ok) {
+      const slot = 'civ1_savegame';
+      const json = this.saveStore.get(slot);
+      if (json && this.onSave) this.onSave(slot, json);
+      this.dirty = false;
+    }
     return ok;
   }
 

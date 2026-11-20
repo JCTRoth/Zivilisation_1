@@ -43,6 +43,91 @@ Open the client with `?server=http://localhost:8787&room=room_1&token=<seat toke
 
 Architecture diagrams (xdot-readable Graphviz DOT): link:doc/diagrams/README.adoc[doc/diagrams/README.adoc].
 
+=== Containers and K3s
+
+Secrets are never committed: copy `.env.example` to `.env` for compose, and create the two K3s secrets in the cluster with the commands in `k8s/secrets.example.yaml`. Run `npm run check:secrets` to verify no credentials leaked into manifests.
+
+Local full stack (Postgres + two server workers + web):
+
+[source,bash]
+----
+docker compose build
+docker compose up -d
+curl http://localhost:8787/health
+curl -o /dev/null -w '%{http_code}' http://localhost:3000/
+docker compose down
+----
+
+Single-node K3s test cluster (K3s runs in a privileged Docker container because passwordless sudo is not available on the dev machine):
+
+[source,bash]
+----
+docker run -d --privileged --name civ1-k3s -p 6443:6443 -p 30080:30080 \
+  -p 30787:30787 -p 30788:30788 rancher/k3s:v1.31.4-k3s1 server \
+  --disable=servicelb --write-kubeconfig-mode 644
+docker cp civ1-k3s:/etc/rancher/k3s/k3s.yaml /tmp/opencode/k3s.yaml
+docker tag civ1browser-server civ1browser-server:local
+docker tag civ1browser-web civ1browser-web:local
+docker save civ1browser-server:local | docker exec -i civ1-k3s ctr -n k8s.io images import -
+docker save civ1browser-web:local | docker exec -i civ1-k3s ctr -n k8s.io images import -
+KUBECONFIG=/tmp/opencode/k3s.yaml kubectl apply -k k8s
+KUBECONFIG=/tmp/opencode/k3s.yaml kubectl get pods -n civ1
+curl http://localhost:30787/health
+curl -o /dev/null -w '%{http_code}' http://localhost:30080/
+----
+
+The K3s Postgres is a StatefulSet with a PVC; a nightly `pg_dump` CronJob writes to the `civ1-backups` PVC. Restore with:
+[source,bash]
+----
+KUBECONFIG=/tmp/opencode/k3s.yaml kubectl -n civ1 exec deploy/civ1-postgres -- \
+  sh -c 'pg_restore -U civ1 -d civ1 /backups/<dump-file>'
+----
+
+Run the browser end-to-end test against either stack:
+
+[source,bash]
+----
+# local compose (browser on :3000, server on :8787)
+npx playwright test e2e/multiplayer.spec.ts
+# K3s NodePorts
+CIV1_SERVER=http://localhost:30787 CIV1_WEB=http://localhost:30080/ \
+  npx playwright test e2e/multiplayer.spec.ts
+----
+
+=== Reproducible K3s test cluster
+
+The self-contained cluster can be rebuilt with one command (it uses alternate ports so it coexists with a host K3s):
+
+[source,bash]
+----
+bash scripts/setup-k3s-test.sh
+# API :16443 | web :31080 | server :31787 / WS :31788
+----
+
+=== Dedicated K3s Playwright suite with screenshots
+
+`playwright.k3s.config.ts` targets the K3s NodePorts and writes a screenshot of every significant step to `~/Desktop/civ1-k3s-screenshots` (created automatically). It covers the full chain (lobby -> two seats -> command -> Postgres -> metrics/ready) plus real UI interactions (rates modal, research panel, end turn):
+
+[source,bash]
+----
+# test K3s cluster on alternate ports (host K3s owns 6443/30787)
+CIV1_SERVER=http://localhost:31787 CIV1_WEB=http://localhost:31080 npm run test:k3s
+# screenshots: ~/Desktop/civ1-k3s-screenshots/01-*.png ... 09-*.png
+----
+
+The same suite also runs through the Traefik HTTPS ingress (self-signed cert, `civ1.local` resolved via Chromium's host-resolver rule — no `/etc/hosts` change needed):
+
+[source,bash]
+----
+CIV1_TLS=1 CIV1_SERVER=https://civ1.local:30443/api \
+  CIV1_WEB=https://civ1.local:30443 CIV1_API=http://localhost:31787 \
+  npx playwright test --config playwright.k3s.config.ts
+----
+
+Override the folder with `CIV1_SCREENSHOTS=/path/to/folder`. The suite surfaced a pre-existing issue: generated unit sprites under `/assets/units/unit_*.png` are absent in both compose and K3s (33 404s), so some icons look broken until `npm run tiles:install` is run with a generated tile set.
+
+Full verification results, the bugs found while testing multi-worker mode, and project-specific follow-up prompts are in link:doc/DEPLOYMENT_GAPS_AND_PROMPTS.adoc[Deployment verification and gaps].
+
 **Overall Assessment** +
 Zivilisation_1 is not a perfect clone, but it is not trying to be one. +
 It is a spiritual successor that takes the core concepts of Civilisation and reimagines them for a modern audience. +

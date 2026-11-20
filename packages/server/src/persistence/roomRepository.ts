@@ -47,6 +47,20 @@ export class RoomRepository {
     return row?.token_hash ?? null;
   }
 
+  /** Oldest retained sequence (0 when empty). */
+  oldestEventSeq(roomId: string): number {
+    const row = this.db.prepare(
+      'SELECT COALESCE(MIN(seq), 0) AS seq FROM event_outbox WHERE room_id = ?',
+    ).get(roomId) as { seq: number };
+    return Number(row.seq) || 0;
+  }
+
+  /** Drop events at or below `keepSeq` (retention window). */
+  trimOutbox(roomId: string, keepSeq: number): void {
+    this.db.prepare('DELETE FROM event_outbox WHERE room_id = ? AND seq <= ?')
+      .run(roomId, keepSeq);
+  }
+
   /** Last persisted event sequence, so a restored room does not reuse ids. */
   lastEventSeq(roomId: string): number {
     const row = this.db.prepare(

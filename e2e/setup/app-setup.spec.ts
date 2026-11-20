@@ -24,16 +24,20 @@ test.describe('App is Running & Landing Page Loads', () => {
     await expect(page).toHaveTitle(/Zivilisation 1/);
   });
 
-  test('React app mounts and renders the game shell', async ({ page }) => {
+  test('React app mounts and renders the War Council hub', async ({ page }) => {
     await page.goto('/');
     // #gameContainer is the shell React renders into #root before a game starts.
     await expect(page.locator('#gameContainer')).toBeVisible({ timeout: 10_000 });
-    // The setup wizard is the app's first screen ("dashboard"). Note: React-
-    // Bootstrap portals modals to <body>, so check it directly rather than #root.
+    // The Battle-Room-styled front menu is the app's first screen. Note:
+    // React-Bootstrap portals modals to <body>, so check it directly rather
+    // than through #root.
     await expect(page.locator('h2.modal-title')).toContainText('Zivilisation 1', {
       timeout: 10_000,
     });
-    // The wizard's navigation is functional.
+    await expect(page.getByRole('button', { name: 'New Campaign' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Multiplayer' })).toBeVisible();
+    // The wizard is one step behind the hub and its navigation is functional.
+    await page.getByRole('button', { name: 'New Campaign' }).click();
     await expect(page.getByRole('button', { name: 'Next →' })).toBeVisible();
   });
 

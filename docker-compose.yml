@@ -1,0 +1,54 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-civ1}
+      POSTGRES_USER: ${POSTGRES_USER:-civ1}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-in-env}
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U civ1 -d civ1"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  server:
+    build:
+      context: .
+      dockerfile: packages/server/Dockerfile
+    environment:
+      PG_URL: ${PG_URL:-postgres://civ1:change-me-in-env@postgres:5432/civ1}
+      GAME_SERVER_SECRET: ${GAME_SERVER_SECRET:-change-me-in-env}
+      WORKERS: "2"
+      HOST: "0.0.0.0"
+      PORT: "8787"
+      WS_PORT: "8788"
+    ports:
+      - "8787:8787"
+      - "8788:8788"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  web:
+    build:
+      context: .
+      dockerfile: packages/web/Dockerfile
+    environment:
+      GAME_SERVER_URL: http://localhost:8787
+    ports:
+      - "3000:80"
+    depends_on:
+      server:
+        condition: service_healthy
+
+volumes:
+  pgdata:
