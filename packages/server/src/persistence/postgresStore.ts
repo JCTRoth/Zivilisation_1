@@ -51,14 +51,14 @@ CREATE TABLE IF NOT EXISTS event_outbox (
 CREATE INDEX IF NOT EXISTS idx_outbox_room ON event_outbox(room_id, seq);
 `;
 
-export interface Migration {
+interface Migration {
   version: number;
   name: string;
   sql: string;
 }
 
 /** Add new entries here — never edit an already-applied migration. */
-export const POSTGRES_MIGRATIONS: Migration[] = [
+const POSTGRES_MIGRATIONS: Migration[] = [
   { version: 1, name: 'initial schema', sql: POSTGRES_SCHEMA_SQL },
 ];
 

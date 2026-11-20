@@ -32,6 +32,7 @@ import {
   NOMAD_TRADE_ROUTE_LIMIT,
   type NomadPersonality,
 } from '../../../data/NomadConstants';
+import { rngInt } from '../Rng';
 
 /** What the tribe is currently about. */
 export type NomadStance = 'roads' | 'treasury' | 'market' | 'steel' | 'bribery';
@@ -119,7 +120,7 @@ export class NomadAI {
     let best: NomadStance = REVIEW_ORDER[0];
     let bestScore = -Infinity;
     for (const stance of REVIEW_ORDER) {
-      const score = scoreStance(stance, s) + Math.floor(random() * 2);
+      const score = scoreStance(stance, s) + rngInt(random, 0, 1);
       if (score > bestScore) {
         best = stance;
         bestScore = score;

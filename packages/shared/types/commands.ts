@@ -56,7 +56,7 @@ export type SimpleCommandName =
   | 'DEMOTE_SPECIALIST'
   | 'CONVERT_TILE_SPECIALIST';
 
-export interface SimpleCommandOutcome {
+interface SimpleCommandOutcome {
   ok: true;
   command: SimpleCommandName;
   applied: boolean;

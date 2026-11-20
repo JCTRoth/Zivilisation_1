@@ -64,13 +64,13 @@ export interface Preset {
 }
 
 /** One asset kind the abstract generator can plan. */
-export interface PromptAssetVariant {
+interface PromptAssetVariant {
   variant: number;
   prompt: string;
   keywords?: Record<string, string>;
 }
 
-export interface PromptAsset {
+interface PromptAsset {
   kind: 'terrain' | 'feature' | 'unit';
   id: string;
   spec?: string;

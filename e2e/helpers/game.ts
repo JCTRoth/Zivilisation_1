@@ -59,7 +59,7 @@ export async function startGame(page: Page): Promise<void> {
  * at game start; a horde/migration card mid-game). No-op when nothing is
  * open — AI-vs-AI runs queue no cards at all.
  */
-export async function closeStoryCardIfOpen(page: Page): Promise<void> {
+async function closeStoryCardIfOpen(page: Page): Promise<void> {
   const card = page.locator('.modal-dialog.story-modal');
   try {
     await card.waitFor({ state: 'visible', timeout: 5_000 });

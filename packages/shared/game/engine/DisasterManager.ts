@@ -52,7 +52,7 @@ import { isWonderId } from '../../data/WonderData';
 import type { City, Civilization } from '../../types/game';
 import type GameEngine from './GameEngine';
 import { isPalaceBuilding, storedBuildingId } from './BuildingEffects';
-import { mulberry32, type Rng } from './Rng';
+import { mulberry32, rngPick, type Rng } from './Rng';
 
 export type CityDisasterKind =
   | 'famine'
@@ -330,7 +330,7 @@ export class DisasterManager {
   private destroyRandomBuilding(city: City): string | null {
     const candidates = this.destroyableBuildings(city);
     if (candidates.length === 0) return null;
-    const id = candidates[Math.floor(this.random() * candidates.length)];
+    const id = rngPick(this.random, candidates);
     const stored: unknown = city.buildings;
     if (stored instanceof Set) {
       stored.delete(id);

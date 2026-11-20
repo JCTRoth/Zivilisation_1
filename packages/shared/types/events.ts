@@ -21,10 +21,10 @@ export interface OutboundEvent {
 }
 
 /** Fields carried by every event on the wire. */
-export type EventBase = Pick<OutboundEvent, 'civId' | 'col' | 'row' | 'seatOnly' | 'scope'>;
+type EventBase = Pick<OutboundEvent, 'civId' | 'col' | 'row' | 'seatOnly' | 'scope'>;
 
 /** Payloads the client knows how to apply incrementally. */
-export interface ProjectablePayloads {
+interface ProjectablePayloads {
   TURN_START: { currentTurn?: number; civilizationId?: number; playerId?: number };
   TURN_END: { currentTurn?: number; civilizationId?: number };
   UNIT_MOVED: { unit: Partial<Unit> & { id: string } };

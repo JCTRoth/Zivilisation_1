@@ -33,7 +33,7 @@ export function mulberry32(seed: number): Rng {
 }
 
 /** Gameplay rolls use a stream distinct from terrain generation and setup. */
-export const RNG_SALT = 0x51ee;
+const RNG_SALT = 0x51ee;
 
 export function createGameplayRng(seed: number): Rng {
   return mulberry32(seed ^ RNG_SALT);

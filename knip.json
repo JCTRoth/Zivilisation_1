@@ -2,16 +2,23 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "workspaces": {
     "packages/shared": {
-      "entry": ["index.ts", "game/engine/GameEngine.ts"]
+      "entry": ["game/engine/GameEngine.ts"]
     },
     "packages/web": {
-      "entry": ["index.html", "src/Main.tsx", "src/App.tsx"]
+      "entry": ["index.html", "src/App.tsx"]
     },
     "packages/server": {
       "entry": ["src/index.ts"]
     }
   },
-  "entry": ["tests/**/*.test.ts", "e2e/**/*.spec.ts", "e2e/**/*.ts", "scripts/**/*.mjs"],
+  "entry": ["tests/**/*.test.ts", "e2e/**/*.ts"],
   "project": ["packages/**/*.{ts,tsx}", "tests/**/*.ts", "e2e/**/*.ts"],
+  "ignore": [
+    "scripts/**/*.mjs",
+    "tools/tile-generator/**",
+    "vitest.diag.config.ts",
+    "packages/web/config.template.js",
+    "packages/web/public/config.js"
+  ],
   "ignoreBinaries": ["magick"]
 }
