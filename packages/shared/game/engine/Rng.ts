@@ -10,18 +10,26 @@
  * `useSeededRandom`) and ordinary browser games working unchanged; the server
  * and `?seed=` lobbies always pin it.
  */
-export type Rng = () => number;
+export interface Rng {
+  (): number;
+  /** Internal state, when the stream is a deterministic PRNG (not Math.random). */
+  getState?(): number;
+  setState?(state: number): void;
+}
 
 /** Mulberry32 — small, fast, deterministic, good enough for gameplay rolls. */
 export function mulberry32(seed: number): Rng {
   let a = seed >>> 0;
-  return () => {
+  const rng: Rng = () => {
     a = (a + 0x6d2b79f5) >>> 0;
     let t = a;
     t = Math.imul(t ^ (t >>> 15), t | 1);
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+  rng.getState = () => a;
+  rng.setState = (state: number) => { a = state >>> 0; };
+  return rng;
 }
 
 /** Gameplay rolls use a stream distinct from terrain generation and setup. */

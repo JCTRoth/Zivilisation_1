@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { makeEngine, type TestWorld } from './helpers/world';
 import GameEngine from '@shared/game/engine/GameEngine';
 import { mulberry32 } from '@shared/game/engine/Rng';
+import { headlessRuntime } from '@shared/ports/runtime';
 
 /**
  * Split blocker 1 — one engine RNG, seeded from the lobby seed.
@@ -44,6 +45,22 @@ describe('engine-owned RNG', () => {
     expect(await build()).toEqual(['u_1', 'u_2']);
   });
 
+  it('resumes the exact RNG stream after a save/load round-trip', async () => {
+    const slots = new Map<string, string>();
+    const store = {
+      get: (key: string) => slots.get(key) ?? null,
+      set: (key: string, value: string) => { slots.set(key, value); },
+    };
+    const engine = new GameEngine(null, headlessRuntime, store);
+    await engine.initialize({ numberOfCivilizations: 2, mapType: 'CLOSEUP_1V1', rngSeed: 77 });
+    expect(engine.saveGame()).toBe(true);
+
+    const expected = Array.from({ length: 8 }, () => engine.rng());
+    const loaded = new GameEngine(null, headlessRuntime, store);
+    expect(await loaded.loadGame()).toBe(true);
+    expect(Array.from({ length: 8 }, () => loaded.rng())).toEqual(expected);
+  });
+
   it('rolls combat from the engine RNG, not the ambient Math.random', async () => {
     const fight = async (roll: number): Promise<number> => {
       const world = await makeEngine({ rngSeed: 1 });
@@ -63,6 +80,18 @@ describe('engine-owned RNG', () => {
 
     // 0.01 always wins the roll for the attacker; 0.99 always loses it.
     expect(await fight(0.01)).toBeLessThan(await fight(0.99));
+  });
+
+  it('resolves pacing sleeps on the simulation clock when enabled', async () => {
+    const engine = new GameEngine(null);
+    engine.enableTickClock();
+    let resolved = false;
+    const wait = engine.sleep(350).then(() => { resolved = true; });
+    expect(resolved).toBe(false);
+    for (let i = 0; i < engine.ticksFor(350); i++) engine.advanceTick();
+    await wait;
+    expect(resolved).toBe(true);
+    expect(engine.currentTick).toBe(engine.ticksFor(350));
   });
 
   it('runs corpse-removal deadlines off simulation ticks when the clock is enabled', async () => {

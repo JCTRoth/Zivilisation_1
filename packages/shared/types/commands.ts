@@ -1,4 +1,5 @@
 import type { ProductionItem } from './game';
+import type { DiplomatActionResult } from '../game/engine/DiplomacyTypes';
 
 /**
  * COMMAND LAYER — the typed protocol between the UI and the game engine.
@@ -35,6 +36,34 @@ interface ProductionCommandOutcome {
 }
 
 /**
+ * One player intent that maps to a single engine method with a boolean-ish
+ * outcome. The transport only needs to know whether it applied and, if not,
+ * why — the engine remains the single source of the actual rules.
+ */
+export type SimpleCommandName =
+  | 'FORTIFY_UNIT'
+  | 'UNFORTIFY_UNIT'
+  | 'SLEEP_UNIT'
+  | 'WAKE_UNIT'
+  | 'SKIP_UNIT'
+  | 'DISBAND_UNIT'
+  | 'BUILD_IMPROVEMENT'
+  | 'SET_RESEARCH'
+  | 'DEPLOY_FISHING_NET'
+  | 'RECALL_FISHING_BOAT'
+  | 'CLEAR_TRADE_ROUTE'
+  | 'PROMOTE_SPECIALIST'
+  | 'DEMOTE_SPECIALIST'
+  | 'CONVERT_TILE_SPECIALIST';
+
+export interface SimpleCommandOutcome {
+  ok: true;
+  command: SimpleCommandName;
+  applied: boolean;
+  reason?: string;
+}
+
+/**
  * Identity of the acting seat for one command. `turn` is the round the sender
  * believed it was acting in, `seq` a per-actor monotonic counter that makes
  * retries idempotent.
@@ -58,7 +87,37 @@ export type Command =
     }
   | { type: 'FOUND_CITY'; settlerId: string }
   | { type: 'TEAM_COORDINATE_ATTACK'; col: number; row: number }
-  | { type: 'TEAM_DEFEND_CITY'; cityId: string };
+  | { type: 'TEAM_DEFEND_CITY'; cityId: string }
+  // Unit orders
+  | { type: 'FORTIFY_UNIT'; unitId: string }
+  | { type: 'UNFORTIFY_UNIT'; unitId: string }
+  | { type: 'SLEEP_UNIT'; unitId: string }
+  | { type: 'WAKE_UNIT'; unitId: string }
+  | { type: 'SKIP_UNIT'; unitId: string }
+  | { type: 'DISBAND_UNIT'; unitId: string }
+  | { type: 'BUILD_IMPROVEMENT'; unitId: string; improvement: string }
+  | { type: 'DEPLOY_FISHING_NET'; unitId: string }
+  | { type: 'RECALL_FISHING_BOAT'; unitId: string }
+  | { type: 'ESTABLISH_TRADE_ROUTE'; unitId: string }
+  | { type: 'CLEAR_TRADE_ROUTE'; unitId: string }
+  | { type: 'EXECUTE_DIPLOMAT_ACTION'; unitId: string; targetCivId: number; action: string }
+  // City / empire orders
+  | { type: 'SET_RESEARCH'; civId: number; techId: string; savedProgress?: number }
+  | { type: 'PROMOTE_SPECIALIST'; cityId: string; specialistType: string }
+  | { type: 'DEMOTE_SPECIALIST'; cityId: string; specialistIndex: number }
+  | {
+      type: 'CONVERT_TILE_SPECIALIST';
+      cityId: string;
+      col: number;
+      row: number;
+      specialistType: string | null;
+    }
+  // Production queue
+  | { type: 'PURCHASE_PRODUCTION'; cityId: string; item: ProductionItem }
+  | { type: 'REMOVE_QUEUE_ITEM'; cityId: string; index: number }
+  | { type: 'MOVE_QUEUE_ITEM'; cityId: string; fromIndex: number; toIndex: number }
+  | { type: 'PROMOTE_QUEUE_ITEM'; cityId: string; index: number }
+  | { type: 'MOVE_CURRENT_PRODUCTION_DOWN'; cityId: string };
 
 /** Why the authority refused a command. Exhaustive, machine-readable. */
 type CommandRejectionReason =
@@ -91,4 +150,13 @@ export type CommandResult =
   | { ok: true; command: 'FOUND_CITY'; founded: boolean }
   | { ok: true; command: 'TEAM_COORDINATE_ATTACK' }
   | { ok: true; command: 'TEAM_DEFEND_CITY' }
+  | SimpleCommandOutcome
+  | {
+      ok: true;
+      command: 'PURCHASE_PRODUCTION' | 'REMOVE_QUEUE_ITEM' | 'MOVE_QUEUE_ITEM'
+        | 'PROMOTE_QUEUE_ITEM' | 'MOVE_CURRENT_PRODUCTION_DOWN';
+      production: ProductionCommandOutcome;
+    }
+  | { ok: true; command: 'ESTABLISH_TRADE_ROUTE'; result: { success: boolean; gold?: number; reason?: string } }
+  | { ok: true; command: 'EXECUTE_DIPLOMAT_ACTION'; result: DiplomatActionResult }
   | CommandRejection;

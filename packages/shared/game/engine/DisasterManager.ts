@@ -52,6 +52,7 @@ import { isWonderId } from '../../data/WonderData';
 import type { City, Civilization } from '../../types/game';
 import type GameEngine from './GameEngine';
 import { isPalaceBuilding, storedBuildingId } from './BuildingEffects';
+import { mulberry32, type Rng } from './Rng';
 
 export type CityDisasterKind =
   | 'famine'
@@ -138,7 +139,7 @@ export class DisasterManager {
    * () => 0`) to drive outcomes without touching the global `Math.random`
    * stream that seeded AI tests depend on.
    */
-  random: () => number = Math.random;
+  random: Rng = Math.random;
   private gameEngine: GameEngine;
 
   constructor(gameEngine: GameEngine) {
@@ -153,14 +154,16 @@ export class DisasterManager {
 
   /** Pin the private stream from the lobby seed (called by engine.initialize). */
   reseed(seed: number): void {
-    let a = (seed ^ 0x9e3779b9) >>> 0;
-    this.random = () => {
-      a = (a + 0x6d2b79f5) >>> 0;
-      let t = a;
-      t = Math.imul(t ^ (t >>> 15), t | 1);
-      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
+    this.random = mulberry32(seed ^ 0x9e3779b9);
+  }
+
+  /** RNG state for save/load — a loaded game resumes the same disaster stream. */
+  getRngState(): number | null {
+    return this.random.getState?.() ?? null;
+  }
+
+  setRngState(state: number): void {
+    this.random.setState?.(state);
   }
 
   /**

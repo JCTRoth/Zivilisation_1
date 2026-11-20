@@ -2548,7 +2548,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           if (unitAt.isSleeping) {
             console.log(`[CLICK] Clicking sleeping unit ${unitAt.id} - waking it`);
             actions.setSelectedUnitIds?.([]);
-            gameEngine?.unitWake?.(unitAt.id);
+            void sendCommand({ type: 'WAKE_UNIT', unitId: unitAt.id });
             triggerRender();
             return;
           }
@@ -2674,29 +2674,37 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
               if (isRightClick) {
                 const specs = fullCity.specialists ?? [];
                 const idx = specs.lastIndexOf(hit.type);
-                if (idx >= 0 && gameEngine.demoteSpecialistToWorker(fullCity.id, idx)) {
-                  actions?.addNotification?.({
-                    type: 'info',
-                    message: t("canvas.specialistReturned" as TranslationKey, {
-                      city: cityAt.name,
-                      specialist: hit.type,
-                    }),
-                  });
-                  triggerRender();
+                if (idx >= 0) {
+                  void sendCommand({ type: 'DEMOTE_SPECIALIST', cityId: fullCity.id, specialistIndex: idx })
+                    .then((result) => {
+                      if (result.ok && 'applied' in result && result.applied) {
+                        actions?.addNotification?.({
+                          type: 'info',
+                          message: t("canvas.specialistReturned" as TranslationKey, {
+                            city: cityAt.name,
+                            specialist: hit.type,
+                          }),
+                        });
+                        triggerRender();
+                      }
+                    });
                 }
                 return;
               }
-              const ok = gameEngine.promoteCitizenToSpecialist(fullCity.id, hit.type);
-              console.log(
-                `[CLICK] Specialist icon ${hit.type} under ${cityAt.name} — ${ok ? 'converted' : 'no free hand'}`,
-              );
-              if (!ok && actions?.addNotification) {
-                actions.addNotification({
-                  type: "warning",
-                  message: t("canvas.noCitizenFree" as TranslationKey),
+              void sendCommand({ type: 'PROMOTE_SPECIALIST', cityId: fullCity.id, specialistType: hit.type })
+                .then((result) => {
+                  const ok = result.ok && 'applied' in result && result.applied;
+                  console.log(
+                    `[CLICK] Specialist icon ${hit.type} under ${cityAt.name} — ${ok ? 'converted' : 'no free hand'}`,
+                  );
+                  if (!ok && actions?.addNotification) {
+                    actions.addNotification({
+                      type: "warning",
+                      message: t("canvas.noCitizenFree" as TranslationKey),
+                    });
+                  }
+                  triggerRender();
                 });
-              }
-              triggerRender();
               return;
             }
           }
@@ -3026,7 +3034,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       case "fortify":
         if (unit && gameEngine?.unitFortify) {
           console.log(`[ContextMenu] Fortifying unit ${unit.id}`);
-          gameEngine.unitFortify(unit.id);
+          void sendCommand({ type: 'FORTIFY_UNIT', unitId: unit.id });
           if (actions?.updateUnits)
             actions.updateUnits(getAllUnitsFromEngine());
           if (actions?.addNotification)
@@ -3040,7 +3048,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       case "mobilize":
         if (unit && gameEngine?.unfortifyUnit) {
           console.log(`[ContextMenu] Mobilizing unit ${unit.id}`);
-          gameEngine.unfortifyUnit(unit.id);
+          void sendCommand({ type: 'UNFORTIFY_UNIT', unitId: unit.id });
           if (actions?.updateUnits)
             actions.updateUnits(getAllUnitsFromEngine());
           if (actions?.addNotification)
@@ -3053,55 +3061,58 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
 
       case "deploy_fishing_net":
         if (unit && gameEngine?.deployFishingNet) {
-          const deployed = gameEngine.deployFishingNet(unit.id);
           if (actions?.updateUnits)
             actions.updateUnits(getAllUnitsFromEngine());
-          if (actions?.addNotification)
-            actions.addNotification(
-              deployed
-                ? {
-                    type: "success",
-                    message: t("canvas.toastFishingNetDeployed" as TranslationKey, { unit: unit.type }),
-                  }
-                : { type: "warning", message: t("canvas.cannotDeployFishingNet" as TranslationKey) },
-            );
+          void sendCommand({ type: 'DEPLOY_FISHING_NET', unitId: unit.id }).then((result) => {
+            if (actions?.addNotification)
+              actions.addNotification(
+                result.ok && 'applied' in result && result.applied
+                  ? {
+                      type: "success",
+                      message: t("canvas.toastFishingNetDeployed" as TranslationKey, { unit: unit.type }),
+                    }
+                  : { type: "warning", message: t("canvas.cannotDeployFishingNet" as TranslationKey) },
+              );
+          });
         }
         break;
 
       case "remove_fishing_net":
         if (unit && gameEngine?.recallFishingBoat) {
-          const recalled = gameEngine.recallFishingBoat(unit.id);
           if (actions?.updateUnits)
             actions.updateUnits(getAllUnitsFromEngine());
-          if (actions?.addNotification)
-            actions.addNotification(
-              recalled
-                ? {
-                    type: "info",
-                    message: t("canvas.toastReturningToPort" as TranslationKey, { unit: unit.type }),
-                  }
-                : { type: "warning", message: t("canvas.noFishingRoute" as TranslationKey) },
-            );
+          void sendCommand({ type: 'RECALL_FISHING_BOAT', unitId: unit.id }).then((result) => {
+            if (actions?.addNotification)
+              actions.addNotification(
+                result.ok && 'applied' in result && result.applied
+                  ? {
+                      type: "info",
+                      message: t("canvas.toastReturningToPort" as TranslationKey, { unit: unit.type }),
+                    }
+                  : { type: "warning", message: t("canvas.noFishingRoute" as TranslationKey) },
+              );
+          });
         }
         break;
 
       case "establish_trade_ship_route":
         if (unit && gameEngine?.establishTradeShipRoute) {
-          const res = gameEngine.establishTradeShipRoute(unit.id);
           if (actions?.updateUnits)
             actions.updateUnits(getAllUnitsFromEngine());
-          if (actions?.addNotification)
-            actions.addNotification(
-              res.success
-                ? { type: "success", message: `Trade route opened for ${unit.type}` }
-                : { type: "warning", message: `Cannot establish a trade route here (not on a different harbour)` },
-            );
+          void sendCommand({ type: 'ESTABLISH_TRADE_ROUTE', unitId: unit.id }).then((result) => {
+            if (actions?.addNotification)
+              actions.addNotification(
+                result.ok && 'result' in result && result.result.success
+                  ? { type: "success", message: `Trade route opened for ${unit.type}` }
+                  : { type: "warning", message: `Cannot establish a trade route here (not on a different harbour)` },
+              );
+          });
         }
         break;
 
       case "cancel_trade_ship_route":
         if (unit && gameEngine?.clearTradeShipRoute) {
-          gameEngine.clearTradeShipRoute(unit.id);
+          void sendCommand({ type: 'CLEAR_TRADE_ROUTE', unitId: unit.id });
           if (actions?.updateUnits)
             actions.updateUnits(getAllUnitsFromEngine());
         }
@@ -3111,7 +3122,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
         if (unit && gameEngine) {
           if (unit.isSleeping && gameEngine.unitWake) {
             console.log(`[ContextMenu] Wake action for unit ${unit.id}`);
-            gameEngine.unitWake(unit.id);
+            void sendCommand({ type: 'WAKE_UNIT', unitId: unit.id });
             if (actions?.updateUnits)
               actions.updateUnits(getAllUnitsFromEngine());
             if (actions?.addNotification)
@@ -3121,7 +3132,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
               });
           } else if (gameEngine.unitSleep) {
             console.log(`[ContextMenu] Sleep action for unit ${unit.id}`);
-            gameEngine.unitSleep(unit.id);
+            void sendCommand({ type: 'SLEEP_UNIT', unitId: unit.id });
             if (actions?.updateUnits)
               actions.updateUnits(getAllUnitsFromEngine());
             if (actions?.addNotification)
@@ -3136,7 +3147,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       case "skip_turn":
         if (unit && gameEngine?.skipUnit) {
           console.log(`[ContextMenu] Skipping turn for unit ${unit.id}`);
-          gameEngine.skipUnit(unit.id);
+          void sendCommand({ type: 'SKIP_UNIT', unitId: unit.id });
           if (actions?.updateUnits)
             actions.updateUnits(getAllUnitsFromEngine());
           if (actions?.addNotification)
@@ -3216,8 +3227,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
       case "build_road":
         if (unit && gameEngine?.buildImprovement) {
           console.log(`[ContextMenu] Build road action for unit ${unit.id}`);
-          const result = gameEngine.buildImprovement(unit.id, "road");
-          if (result) {
+          void sendCommand({ type: 'BUILD_IMPROVEMENT', unitId: unit.id, improvement: "road" }).then((result) => {
+            if (result.ok && 'applied' in result && result.applied) {
             if (actions?.updateUnits)
               actions.updateUnits(getAllUnitsFromEngine());
             if (actions?.updateMap) actions.updateMap(gameEngine.map);
@@ -3226,13 +3237,14 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                 type: "success",
                 message: buildStartedMessage(gameEngine, unit, "road"),
               });
-          } else {
+            } else {
             if (actions?.addNotification)
               actions.addNotification({
                 type: "warning",
                 message: t("canvas.cannotBuildRoad" as TranslationKey),
               });
-          }
+            }
+          });
         }
         break;
 
@@ -3241,8 +3253,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           console.log(
             `[ContextMenu] Build irrigation action for unit ${unit.id}`,
           );
-          const result = gameEngine.buildImprovement(unit.id, "irrigation");
-          if (result) {
+          void sendCommand({ type: 'BUILD_IMPROVEMENT', unitId: unit.id, improvement: "irrigation" }).then((result) => {
+            if (result.ok && 'applied' in result && result.applied) {
             if (actions?.updateUnits)
               actions.updateUnits(getAllUnitsFromEngine());
             if (actions?.updateMap) actions.updateMap(gameEngine.map);
@@ -3251,21 +3263,22 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                 type: "success",
                 message: buildStartedMessage(gameEngine, unit, "irrigation"),
               });
-          } else {
+            } else {
             if (actions?.addNotification)
               actions.addNotification({
                 type: "warning",
                 message: t("canvas.cannotBuildIrrigation" as TranslationKey),
               });
-          }
+            }
+          });
         }
         break;
 
       case "build_mine":
         if (unit && gameEngine?.buildImprovement) {
           console.log(`[ContextMenu] Build mine action for unit ${unit.id}`);
-          const result = gameEngine.buildImprovement(unit.id, "mine");
-          if (result) {
+          void sendCommand({ type: 'BUILD_IMPROVEMENT', unitId: unit.id, improvement: "mine" }).then((result) => {
+            if (result.ok && 'applied' in result && result.applied) {
             if (actions?.updateUnits)
               actions.updateUnits(getAllUnitsFromEngine());
             if (actions?.updateMap) actions.updateMap(gameEngine.map);
@@ -3274,13 +3287,14 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                 type: "success",
                 message: buildStartedMessage(gameEngine, unit, "mines"),
               });
-          } else {
+            } else {
             if (actions?.addNotification)
               actions.addNotification({
                 type: "warning",
                 message: t("canvas.cannotBuildMine" as TranslationKey),
               });
-          }
+            }
+          });
         }
         break;
 
@@ -3289,8 +3303,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           console.log(
             `[ContextMenu] Build railroad action for unit ${unit.id}`,
           );
-          const result = gameEngine.buildImprovement(unit.id, "railroad");
-          if (result) {
+          void sendCommand({ type: 'BUILD_IMPROVEMENT', unitId: unit.id, improvement: "railroad" }).then((result) => {
+            if (result.ok && 'applied' in result && result.applied) {
             if (actions?.updateUnits)
               actions.updateUnits(getAllUnitsFromEngine());
             if (actions?.updateMap) actions.updateMap(gameEngine.map);
@@ -3299,13 +3313,14 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                 type: "success",
                 message: buildStartedMessage(gameEngine, unit, "railroad"),
               });
-          } else {
+            } else {
             if (actions?.addNotification)
               actions.addNotification({
                 type: "warning",
                 message: t("canvas.cannotBuildRailroad" as TranslationKey),
               });
-          }
+            }
+          });
         }
         break;
 
@@ -3332,15 +3347,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
           console.log(
             `[ContextMenu] Disbanding unit ${unit.id} (${unit.type})`,
           );
-          if (gameEngine && typeof gameEngine.disbandUnit === "function") {
-            gameEngine.disbandUnit(unit.id);
-          } else if (actions?.updateUnits) {
-            // Fallback: remove unit directly from store
-            const allUnits = getAllUnitsFromEngine();
-            actions.updateUnits(
-              allUnits.filter((u: { id: string }) => u.id !== unit.id),
-            );
-          }
+          void sendCommand({ type: 'DISBAND_UNIT', unitId: unit.id });
           if (actions?.addNotification) {
             actions.addNotification({
               type: "info",
@@ -3406,19 +3413,15 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             break;
           }
 
-          const result = gameEngine.executeDiplomatAction(
-            unit.id,
-            engineAction,
-            diplomatInfo.targetCivId,
-            {
-              cityId: diplomatInfo.cityId,
-              unitId: diplomatInfo.unitId,
-              goldAmount: typeof data?.goldAmount === "number" ? data.goldAmount : undefined,
-              techOffered: typeof data?.techOffered === "string" ? data.techOffered : undefined,
-              techRequested: typeof data?.techRequested === "string" ? data.techRequested : undefined,
-              embargoTargetId: typeof data?.embargoTargetId === "number" ? data.embargoTargetId : undefined,
-            },
-          );
+          void sendCommand({
+            type: 'EXECUTE_DIPLOMAT_ACTION',
+            unitId: unit.id,
+            targetCivId: diplomatInfo.targetCivId,
+            action: engineAction,
+          }).then((commandResult) => {
+            const result = commandResult.ok && commandResult.command === 'EXECUTE_DIPLOMAT_ACTION' && 'result' in commandResult
+              ? commandResult.result
+              : { success: false as const, reason: commandResult.ok === false ? commandResult.reason : 'ILLEGAL' };
           if (actions?.updateUnits)
             actions.updateUnits(getAllUnitsFromEngine());
           if (actions?.updateCivilizations)
@@ -3499,6 +3502,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                 message: result?.reason || t("canvas.diplomatActionFailed" as TranslationKey),
               });
           }
+          });
         }
         break;
       }

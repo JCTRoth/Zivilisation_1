@@ -348,9 +348,12 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
     if (firstResearchable) {
       const saved = useGameStore.getState().techProgress[firstResearchable] ?? 0;
       // The engine owns the opening-round lock and says no while it is closed.
-      if (!ge.setResearch(0, firstResearchable, saved)) {
-        notify('info', t('gm.research.locked' as TranslationKey));
-      }
+      void sendCommand({ type: 'SET_RESEARCH', civId: 0, techId: firstResearchable, savedProgress: saved })
+        .then((result) => {
+          if (result.ok && 'applied' in result && !result.applied) {
+            notify('info', t('gm.research.locked' as TranslationKey));
+          }
+        });
       actions.updateCivilizations([...(ge.civilizations || [])]);
     }
   };
@@ -448,7 +451,7 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
               onClick={() => {
                 if (gameEngine) {
                   const saved = techProgress[nextTechId] ?? 0;
-                  gameEngine.setResearch(0, nextTechId, saved);
+                  void sendCommand({ type: 'SET_RESEARCH', civId: 0, techId: nextTechId, savedProgress: saved });
                   actions.updateCivilizations([...(gameEngine.civilizations || [])]);
                 }
                 actions.dismissTechNotification();
@@ -2833,17 +2836,15 @@ const GameModals = ({ gameEngine }: { gameEngine?: GameEngine | null }) => {
                             type="button"
                             className="btn btn-outline-danger btn-sm queue-action-btn"
                             title={t('gm.production.removeTitle' as TranslationKey)}
-                            onClick={(e) => {
+                            onClick={async (e) => {
                               e.stopPropagation();
-                              if (!gameEngine) return;
-                              const engine = gameEngine as GameEngine & { removeCityQueueItem?: (cityId: string, index: number) => { success?: boolean; removed?: { name?: string }; reason?: string } | null };
-                              if (typeof engine.removeCityQueueItem !== 'function') return;
-                              const res = engine.removeCityQueueItem(selectedCity.id, i);
-                              if (res && res.success) {
-                                if (typeof gameEngine.getAllCities === 'function') actions.updateCities(gameEngine.getAllCities());
+                              const res = await sendCommand({ type: 'REMOVE_QUEUE_ITEM', cityId: selectedCity.id, index: i });
+                              const outcome = res.ok && 'production' in res ? res.production : { success: false, reason: res.ok === false ? res.reason : 'UNKNOWN_COMMAND' };
+                              if (outcome.success) {
+                                if (typeof gameEngine?.getAllCities === 'function') actions.updateCities(gameEngine.getAllCities());
                                 setSelectedQueueIndex(null);
                               } else {
-                                actions.addNotification({ type: 'warning', message: t('gm.production.removeFailed' as TranslationKey, { reason: res?.reason || t('gm.production.unknownReason' as TranslationKey) }) });
+                                actions.addNotification({ type: 'warning', message: t('gm.production.removeFailed' as TranslationKey, { reason: outcome.reason || t('gm.production.unknownReason' as TranslationKey) }) });
                               }
                             }}
                           >

@@ -75,7 +75,7 @@ import { AIResearch } from './AI/AIResearch';
 import MapGenerator from './MapGenerator/MapGenerator';
 import { MIN_CITY_CENTER_DISTANCE } from './SettlementEvaluator';
 import type { GameActions, Unit, City, CityGovernorMode, Civilization, VillageResult, Technology, ProductionItem, TradeRoute, SpecialistType } from '../../types/game';
-import type { Command, CommandContext, CommandResult } from '../../types/commands';
+import type { Command, CommandContext, CommandRejection, CommandResult, SimpleCommandName } from '../../types/commands';
 import { debugLog } from '../../utils/DevLog';
 
 
@@ -331,14 +331,32 @@ export default class GameEngine {
     this.tickClockEnabled = true;
   }
 
+  /** True when a server room is driving this engine with `advanceTick()`. */
+  get usesTickClock(): boolean {
+    return this.tickClockEnabled;
+  }
+
+  /** Schedule a callback on the simulation clock; returns a cancel handle. */
+  scheduleTickDeadline(ticks: number, run: () => void): () => void {
+    const deadline = { tick: this.currentTick + ticks, run };
+    this.tickDeadlines.push(deadline);
+    return () => {
+      this.tickDeadlines = this.tickDeadlines.filter((d) => d !== deadline);
+    };
+  }
+
+  /** Convert a millisecond budget into whole simulation ticks. */
+  ticksFor(ms: number): number {
+    return Math.max(1, Math.ceil(ms / GameEngine.TICK_MS));
+  }
+
   /** Defer a corpse removal by the animation window, in sim time when pinned. */
   scheduleCorpseRemoval(run: () => void): void {
     if (!this.tickClockEnabled) {
       setTimeout(run, DEFEATED_UNIT_REMOVAL_DELAY_MS);
       return;
     }
-    const ticks = Math.ceil(DEFEATED_UNIT_REMOVAL_DELAY_MS / GameEngine.TICK_MS);
-    this.tickDeadlines.push({ tick: this.currentTick + ticks, run });
+    this.scheduleTickDeadline(this.ticksFor(DEFEATED_UNIT_REMOVAL_DELAY_MS), run);
   }
 
   /** Advance simulation time and run every deadline that has come due. */
@@ -918,8 +936,19 @@ export default class GameEngine {
     return false;
   }
 
-  // Small helper: sleep for ms milliseconds
+  /**
+   * Visual pacing only. The browser uses a wall-clock timer; a tick-driven
+   * server resolves the wait after `ms` of simulation time instead, so an AI
+   * turn cannot finish sooner on a fast machine and diverge from a replay.
+   * A tick-driven engine MUST be advanced by `advanceTick()` or these waits
+   * never resolve — `GameRoom` owns that loop.
+   */
   sleep(ms: number): Promise<void> {
+    if (this.tickClockEnabled) {
+      return new Promise((resolve) => {
+        this.scheduleTickDeadline(this.ticksFor(ms), resolve);
+      });
+    }
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
@@ -7352,6 +7381,31 @@ const occupiedLandmasses = new Set(
       return { ok: false, reason: 'NOT_YOUR_TURN' };
     }
 
+    const ownedUnit = (unitId: string): { unit: Unit } | { rejection: CommandRejection } => {
+      const unit = this.units.find((u) => u.id === unitId);
+      if (!unit) return { rejection: { ok: false, reason: 'UNIT_NOT_FOUND' } };
+      if (unit.civilizationId !== context.actorId) {
+        return { rejection: { ok: false, reason: 'NOT_YOUR_UNIT' } };
+      }
+      return { unit };
+    };
+    const ownedCity = (cityId: string): { city: City } | { rejection: CommandRejection } => {
+      const city = this.cities.find((c) => c.id === cityId);
+      if (!city) return { rejection: { ok: false, reason: 'CITY_NOT_FOUND' } };
+      if (city.civilizationId !== context.actorId) {
+        return { rejection: { ok: false, reason: 'NOT_YOUR_CITY' } };
+      }
+      return { city };
+    };
+    const simple = (name: SimpleCommandName, applied: boolean, reason?: string): CommandResult => ({
+      ok: true, command: name, applied, reason,
+    });
+    const unitOrder = (name: SimpleCommandName, unitId: string, apply: (unit: Unit) => boolean): CommandResult => {
+      const found = ownedUnit(unitId);
+      if ('rejection' in found) return found.rejection;
+      return simple(name, apply(found.unit));
+    };
+
     switch (command.type) {
       case 'MOVE_UNIT': {
         const unit = this.units.find((u) => u.id === command.unitId);
@@ -7402,6 +7456,114 @@ const occupiedLandmasses = new Set(
           return { ok: false, reason: 'ILLEGAL', details: 'NO_TEAM_TO_CALL' };
         }
         return { ok: true, command: 'TEAM_DEFEND_CITY' };
+      }
+
+      // ── Unit orders ──────────────────────────────────────────────────
+      case 'FORTIFY_UNIT':
+        return unitOrder('FORTIFY_UNIT', command.unitId, () => this.unitFortify(command.unitId));
+      case 'UNFORTIFY_UNIT':
+        return unitOrder('UNFORTIFY_UNIT', command.unitId, () => this.unfortifyUnit(command.unitId));
+      case 'SLEEP_UNIT':
+        return unitOrder('SLEEP_UNIT', command.unitId, () => this.unitSleep(command.unitId));
+      case 'WAKE_UNIT':
+        return unitOrder('WAKE_UNIT', command.unitId, () => this.unitWake(command.unitId));
+      case 'SKIP_UNIT':
+        return unitOrder('SKIP_UNIT', command.unitId, () => this.skipUnit(command.unitId));
+      case 'DISBAND_UNIT':
+        return unitOrder('DISBAND_UNIT', command.unitId, () => this.disbandUnit(command.unitId));
+      case 'BUILD_IMPROVEMENT':
+        return unitOrder(
+          'BUILD_IMPROVEMENT', command.unitId,
+          () => this.buildImprovement(command.unitId, command.improvement),
+        );
+      case 'DEPLOY_FISHING_NET':
+        return unitOrder('DEPLOY_FISHING_NET', command.unitId, () => this.deployFishingNet(command.unitId));
+      case 'RECALL_FISHING_BOAT':
+        return unitOrder('RECALL_FISHING_BOAT', command.unitId, () => this.recallFishingBoat(command.unitId));
+      case 'CLEAR_TRADE_ROUTE':
+        return unitOrder('CLEAR_TRADE_ROUTE', command.unitId, () => {
+          this.clearTradeShipRoute(command.unitId);
+          return true;
+        });
+      case 'ESTABLISH_TRADE_ROUTE': {
+        const found = ownedUnit(command.unitId);
+        if ('rejection' in found) return found.rejection;
+        const result = this.establishTradeShipRoute(command.unitId);
+        return { ok: true, command: 'ESTABLISH_TRADE_ROUTE', result };
+      }
+      case 'EXECUTE_DIPLOMAT_ACTION': {
+        const found = ownedUnit(command.unitId);
+        if ('rejection' in found) return found.rejection;
+        if (command.targetCivId === context.actorId) {
+          return { ok: false, reason: 'ILLEGAL', details: 'CANNOT_TARGET_OWN_CIV' };
+        }
+        const result = this.executeDiplomatAction(command.unitId, command.action, command.targetCivId);
+        return { ok: true, command: 'EXECUTE_DIPLOMAT_ACTION', result };
+      }
+
+      // ── City / empire orders ─────────────────────────────────────────
+      case 'SET_RESEARCH': {
+        if (command.civId !== context.actorId) return { ok: false, reason: 'NOT_YOUR_TURN' };
+        if (!this.civilizations[context.actorId]) return { ok: false, reason: 'CIV_NOT_FOUND' };
+        return simple(
+          'SET_RESEARCH',
+          this.setResearch(command.civId, command.techId, command.savedProgress ?? 0),
+        );
+      }
+      case 'PROMOTE_SPECIALIST': {
+        const found = ownedCity(command.cityId);
+        if ('rejection' in found) return found.rejection;
+        return simple(
+          'PROMOTE_SPECIALIST',
+          this.promoteCitizenToSpecialist(command.cityId, command.specialistType as never),
+        );
+      }
+      case 'DEMOTE_SPECIALIST': {
+        const found = ownedCity(command.cityId);
+        if ('rejection' in found) return found.rejection;
+        return simple(
+          'DEMOTE_SPECIALIST',
+          this.demoteSpecialistToWorker(command.cityId, command.specialistIndex),
+        );
+      }
+      case 'CONVERT_TILE_SPECIALIST': {
+        const found = ownedCity(command.cityId);
+        if ('rejection' in found) return found.rejection;
+        return simple(
+          'CONVERT_TILE_SPECIALIST',
+          this.convertTileCitizenToSpecialist(
+            command.cityId, command.col, command.row, command.specialistType as never,
+          ),
+        );
+      }
+
+      // ── Production queue ─────────────────────────────────────────────
+      case 'PURCHASE_PRODUCTION':
+      case 'REMOVE_QUEUE_ITEM':
+      case 'MOVE_QUEUE_ITEM':
+      case 'PROMOTE_QUEUE_ITEM':
+      case 'MOVE_CURRENT_PRODUCTION_DOWN': {
+        const found = ownedCity(command.cityId);
+        if ('rejection' in found) return found.rejection;
+        let production;
+        switch (command.type) {
+          case 'PURCHASE_PRODUCTION':
+            production = this.purchaseCityProduction(command.cityId, command.item);
+            break;
+          case 'REMOVE_QUEUE_ITEM':
+            production = this.removeCityQueueItem(command.cityId, command.index);
+            break;
+          case 'MOVE_QUEUE_ITEM':
+            production = this.moveCityQueueItem(command.cityId, command.fromIndex, command.toIndex);
+            break;
+          case 'PROMOTE_QUEUE_ITEM':
+            production = this.promoteQueuedItemToCurrent(command.cityId, command.index);
+            break;
+          case 'MOVE_CURRENT_PRODUCTION_DOWN':
+            production = this.moveCurrentProductionDown(command.cityId);
+            break;
+        }
+        return { ok: true, command: command.type, production };
       }
 
       default:
@@ -9271,6 +9433,10 @@ const occupiedLandmasses = new Set(
         version: 5,
         timestamp: Date.now(),
         gameSettings: this.gameSettings,
+        // Resume the exact RNG streams after load: same save + same commands
+        // must replay identically, including combat and disaster rolls.
+        rngState: this._rng.getState?.() ?? null,
+        disasterRngState: this.disasterManager.getRngState(),
         currentTurn: this.currentTurn,
         currentYear: this.currentYear,
         activePlayer: this.activePlayer,
@@ -9370,6 +9536,17 @@ const occupiedLandmasses = new Set(
 
       // ── Restore state from save ──
       this.gameSettings = saveData.gameSettings;
+      if (typeof saveData.rngState === 'number') {
+        // A fresh engine's default stream delegates to Math.random and has no
+        // state: install a real PRNG first, then restore the saved position.
+        this.seedRng(this.gameSettings?.rngSeed ?? saveData.rngState);
+        this._rng.setState?.(saveData.rngState);
+      } else if (typeof this.gameSettings?.rngSeed === 'number') {
+        this.seedRng(this.gameSettings.rngSeed);
+      }
+      if (typeof saveData.disasterRngState === 'number') {
+        this.disasterManager.setRngState(saveData.disasterRngState);
+      }
       this.currentTurn = saveData.currentTurn;
       this.currentYear = saveData.currentYear;
       this.activePlayer = saveData.activePlayer;

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { sendCommand } from '../../../session';
 import { Button, Badge, ProgressBar, Tab, Tabs } from 'react-bootstrap';
 import { CityModalLogic } from './CityModalLogic';
 import { ModalUtils } from './ModalUtils';
@@ -142,10 +143,10 @@ const CityModal: React.FC<CityModalProps> = ({
    * already queued/built, missing tech, …) are reported instead of silently
    * doing nothing.
    */
-  const handleQueueProduction = (itemType: string | null) => {
+  const handleQueueProduction = async (itemType: string | null) => {
     const item = buildProductionItem(itemType);
     if (!item) return;
-    const result = logic.setProduction(item, true);
+    const result = await logic.setProduction(item, true);
     if (result.success === false && actions?.addNotification) {
       actions.addNotification({ type: 'warning', message: t('city.notify.cannotQueue', { item: item.name, reason: productionFailureText(result.reason) }) });
     } else if (actions?.addNotification) {
@@ -526,8 +527,8 @@ const CityModal: React.FC<CityModalProps> = ({
                             className="queue-action-btn"
                             title={t('city.queue.buildNextFirst')}
                             disabled={!logic.hasQueueItems()}
-                            onClick={() => {
-                              const result = logic.moveCurrentProductionDown();
+                            onClick={async () => {
+                              const result = await logic.moveCurrentProductionDown();
                               if (result.success === false && actions?.addNotification) {
                                 actions.addNotification({
                                   type: 'warning',
@@ -585,11 +586,11 @@ const CityModal: React.FC<CityModalProps> = ({
                                 ? t('city.queue.buildThisFirst')
                                 : t('city.queue.nothingProduced')
                               : t('city.queue.moveUp')}
-                            onClick={(e) => {
+                            onClick={async (e) => {
                               e.stopPropagation();
                               if (i === 0) {
                                 // Swap with the item being produced right now.
-                                const result = logic.promoteQueueItem(0);
+                                const result = await logic.promoteQueueItem(0);
                                 if (result.success === false && actions?.addNotification) {
                                   actions.addNotification({
                                     type: 'warning',
@@ -598,18 +599,18 @@ const CityModal: React.FC<CityModalProps> = ({
                                 }
                                 return;
                               }
-                              logic.moveQueueItem(i, i - 1);
+                              void logic.moveQueueItem(i, i - 1);
                             }}>
                             <i className="bi bi-arrow-up"></i>
                           </button>
                           <button type="button" className="queue-action-btn" disabled={i === logic.getQueueItems().length - 1}
                             title={t('city.queue.moveDown')}
-                            onClick={(e) => { e.stopPropagation(); logic.moveQueueItem(i, i + 1); }}>
+                            onClick={(e) => { e.stopPropagation(); void logic.moveQueueItem(i, i + 1); }}>
                             <i className="bi bi-arrow-down"></i>
                           </button>
                           <button type="button" className="queue-action-btn queue-action-btn--danger"
                             title={t('city.queue.removeFromQueue')}
-                            onClick={(e) => { e.stopPropagation(); logic.removeQueueItem(i); }}>
+                            onClick={(e) => { e.stopPropagation(); void logic.removeQueueItem(i); }}>
                             <i className="bi bi-trash"></i>
                           </button>
                         </div>
@@ -1070,12 +1071,11 @@ const CityModal: React.FC<CityModalProps> = ({
                             <button
                               type="button"
                               className="city-specialist-demote-all-btn city-section-action"
-                              onClick={() => {
+                              onClick={async () => {
                                 let demoted = 0;
                                 for (let i = specs.length - 1; i >= 0; i--) {
-                                  if (gameEngine.demoteSpecialistToWorker(selectedCity.id, i)) {
-                                    demoted++;
-                                  }
+                                  const r = await sendCommand({ type: 'DEMOTE_SPECIALIST', cityId: selectedCity.id, specialistIndex: i });
+                                  if (r.ok && 'applied' in r && r.applied) demoted++;
                                 }
                                 if (demoted > 0) {
                                   actions?.addNotification?.({
@@ -1112,8 +1112,9 @@ const CityModal: React.FC<CityModalProps> = ({
                                   className="city-specialist-btn city-specialist-btn-add"
                                   disabled={!canAdd}
                                   title={canAdd ? t('city.specialists.promoteTitle', { name: def.name }) : t('city.specialists.noCitizens')}
-                                  onClick={() => {
-                                    if (gameEngine.promoteCitizenToSpecialist(selectedCity.id, type)) {
+                                  onClick={async () => {
+                                    const r = await sendCommand({ type: 'PROMOTE_SPECIALIST', cityId: selectedCity.id, specialistType: type });
+                                    if (r.ok && 'applied' in r && r.applied) {
                                       actions?.addNotification?.({
                                         type: 'info',
                                         message: t('city.notify.specialistPromoted', { city: selectedCity.name, name: def.name }),
@@ -1133,9 +1134,12 @@ const CityModal: React.FC<CityModalProps> = ({
                                   className="city-specialist-btn city-specialist-btn-remove"
                                   disabled={!canRemove}
                                   title={canRemove ? t('city.specialists.demoteTitle', { name: def.name }) : t('city.specialists.noneAssigned')}
-                                  onClick={() => {
+                                  onClick={async () => {
                                     const idx = specs.lastIndexOf(type);
-                                    if (idx >= 0 && gameEngine.demoteSpecialistToWorker(selectedCity.id, idx)) {
+                                    const r = idx >= 0
+                                      ? await sendCommand({ type: 'DEMOTE_SPECIALIST', cityId: selectedCity.id, specialistIndex: idx })
+                                      : null;
+                                    if (r?.ok && 'applied' in r && r.applied) {
                                       actions?.addNotification?.({
                                         type: 'info',
                                         message: t('city.notify.specialistDemoted', { city: selectedCity.name, name: def.name }),
@@ -1583,15 +1587,13 @@ const CityModal: React.FC<CityModalProps> = ({
         onAddToQueue={(key) => {
           handleQueueProduction(key);
         }}
-        onPurchase={(_key, item) => {
-          if (gameEngine && typeof gameEngine.purchaseCityProduction === 'function') {
-            gameEngine.purchaseCityProduction(selectedCity.id, item);
-            if (actions?.addNotification) {
-              actions.addNotification({
-                type: 'success',
-                message: t('city.notify.purchased', { name: item.name, amount: item.cost })
-              });
-            }
+        onPurchase={async (_key, item) => {
+          const result = await logic.purchaseProduction(item);
+          if (result.success && actions?.addNotification) {
+            actions.addNotification({
+              type: 'success',
+              message: t('city.notify.purchased', { name: item.name, amount: item.cost })
+            });
           }
           setShowProductionModal(false);
         }}

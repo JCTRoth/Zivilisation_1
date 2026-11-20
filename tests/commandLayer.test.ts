@@ -181,6 +181,75 @@ describe('Command layer', () => {
     });
   });
 
+  describe('unit orders', () => {
+    it('fortifies the acting seat\'s own unit', () => {
+      const unit = warriorNear('cmd_fortify');
+      const result = engine.submit({ type: 'FORTIFY_UNIT', unitId: unit.id }, ctx());
+      expect(result.ok).toBe(true);
+      if (result.ok && 'applied' in result) expect(result.applied).toBe(true);
+      expect(unit.isFortified).toBe(true);
+    });
+
+    it('refuses to fortify another civilization\'s unit', () => {
+      const enemy = world.spawnUnit({
+        id: 'cmd_fortify_foreign', type: 'warrior', civilizationId: 1, col: 5, row: 5,
+      });
+      const result = engine.submit({ type: 'FORTIFY_UNIT', unitId: enemy.id }, ctx());
+      expect(isCommandRejection(result) && result.reason).toBe('NOT_YOUR_UNIT');
+    });
+
+    it('routes build improvement through the rules engine', () => {
+      const unit = warriorNear('cmd_build');
+      const result = engine.submit(
+        { type: 'BUILD_IMPROVEMENT', unitId: unit.id, improvement: 'road' },
+        ctx(),
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok && 'applied' in result) expect(typeof result.applied).toBe('boolean');
+    });
+
+    it('routes diplomacy through the engine with an explicit result', () => {
+      const unit = world.spawnUnit({
+        id: 'cmd_diplomat', type: 'diplomat', col: 5, row: 5,
+      });
+      const result = engine.submit(
+        { type: 'EXECUTE_DIPLOMAT_ACTION', unitId: unit.id, targetCivId: 1, action: 'greet' },
+        ctx(),
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok && 'result' in result) expect(result.result.success).toBe(false); // no adjacent target
+    });
+  });
+
+  describe('empire orders', () => {
+    it('only lets the acting seat set its own research', () => {
+      const ok = engine.submit({ type: 'SET_RESEARCH', civId: 0, techId: 'pottery' }, ctx());
+      expect(ok.ok).toBe(true);
+      const foreign = engine.submit({ type: 'SET_RESEARCH', civId: 1, techId: 'pottery' }, ctx());
+      expect(isCommandRejection(foreign) && foreign.reason).toBe('NOT_YOUR_TURN');
+    });
+
+    it('refuses to reorder the production queue of somebody else\'s city', () => {
+      const origin = world.units.find((u) => u.civilizationId === 0)!;
+      const enemyCity = world.settle('Rivalburg', origin.col, origin.row, 1);
+      const result = engine.submit(
+        { type: 'REMOVE_QUEUE_ITEM', cityId: enemyCity.id, index: 0 },
+        ctx(),
+      );
+      expect(isCommandRejection(result) && result.reason).toBe('NOT_YOUR_CITY');
+    });
+
+    it('refuses to demote a specialist in somebody else\'s city', () => {
+      const origin = world.units.find((u) => u.civilizationId === 0)!;
+      const enemyCity = world.settle('Otherburg', origin.col, origin.row, 1);
+      const result = engine.submit(
+        { type: 'DEMOTE_SPECIALIST', cityId: enemyCity.id, specialistIndex: 0 },
+        ctx(),
+      );
+      expect(isCommandRejection(result) && result.reason).toBe('NOT_YOUR_CITY');
+    });
+  });
+
   describe('session', () => {
     it('builds the acting context from the human seat and applies the command', async () => {
       const unit = warriorNear('sess_move');

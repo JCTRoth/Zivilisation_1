@@ -1,4 +1,5 @@
 import React, { useMemo, useCallback } from 'react';
+import { sendCommand } from '../../session';
 import { useGameStore } from '../../stores/GameStore';
 import { CIVILIZATIONS } from '@shared/data/GameData';
 import { TILE_SIZE } from '@shared/data/TerrainData';
@@ -535,9 +536,12 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
                           }
                           aria-label={t('side.specialistRemoveAria', { name: specName })}
                           disabled={count === 0 || !gameEngine}
-                          onClick={() => {
+                          onClick={async () => {
                             const idx = specialists.lastIndexOf(type);
-                            if (idx >= 0 && gameEngine?.demoteSpecialistToWorker(city.id, idx)) {
+                            const r = idx >= 0
+                              ? await sendCommand({ type: 'DEMOTE_SPECIALIST', cityId: city.id, specialistIndex: idx })
+                              : null;
+                            if (r?.ok && 'applied' in r && r.applied) {
                               actions?.addNotification?.({
                                 type: 'info',
                                 message: t('side.specialistRemovedNotice', { city: city.name, name: specName }),
@@ -568,9 +572,16 @@ const SidePanel: React.FC<{ gameEngine?: GameEngine | null }> = ({ gameEngine })
                               : t('side.specialistPromoteDisabled')
                           }
                           aria-label={t('side.specialistPromoteAria', { name: specName })}
-                          onClick={(e) => {
+                          onClick={async (e) => {
                             e.stopPropagation();
-                            if (gameEngine?.convertTileCitizenToSpecialist(city.id, tile.col, tile.row, type)) {
+                            const r = await sendCommand({
+                              type: 'CONVERT_TILE_SPECIALIST',
+                              cityId: city.id,
+                              col: tile.col,
+                              row: tile.row,
+                              specialistType: type,
+                            });
+                            if (r.ok && 'applied' in r && r.applied) {
                               actions?.addNotification?.({
                                 type: 'info',
                                 message: t('side.specialistPromotedNotice', {

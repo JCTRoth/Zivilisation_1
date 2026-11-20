@@ -20,6 +20,7 @@
     "paths": {
       "@/*": ["./packages/web/src/*"],
       "@shared/*": ["./packages/shared/*"],
+      "@server/*": ["./packages/server/src/*"],
       "@civ1/shared": ["./packages/shared/index.ts"],
       "@civ1/shared/*": ["./packages/shared/*"]
     }

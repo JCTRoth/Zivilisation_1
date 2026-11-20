@@ -5,6 +5,7 @@ import {CityUtils} from "@shared/utils/CityUtils";
 import { FISHER_BOAT_STORAGE, fisherCatchValue, fisherFoodPerFish } from '@shared/data/UnitConstants';
 import type { City, Civilization, ProductionItem, TradeRoute, Unit } from '@shared/types/game';
 import GameEngine from '@shared/game/engine/GameEngine';
+import { sendCommand } from '../../../session';
 
 export class CityModalLogic {
   private readonly city: City;
@@ -139,54 +140,56 @@ export class CityModalLogic {
     return (civ.resources.gold || 0) >= cost;
   }
 
-  purchaseProduction(item: ProductionItem): void {
-    if (this.gameEngine && this.gameEngine.purchaseCityProduction) {
-      this.gameEngine.purchaseCityProduction(this.city.id, item);
-    }
+  private async productionResult(
+    result: Awaited<ReturnType<typeof sendCommand>>,
+  ): Promise<{ success: boolean; reason?: string }> {
+    if (result.ok === false) return { success: false, reason: result.reason };
+    if (!('production' in result)) return { success: false, reason: 'UNKNOWN_COMMAND' };
+    return { success: result.production.success, reason: result.production.reason };
   }
 
-  setProduction(item: ProductionItem, queue: boolean = false): { success: boolean; reason?: string } {
-    if (this.gameEngine && this.gameEngine.productionManager) {
-      return this.gameEngine.productionManager.setCityProduction(this.city.id, item, queue);
-    }
-    return { success: false, reason: 'production_manager_unavailable' };
+  async purchaseProduction(item: ProductionItem): Promise<{ success: boolean; reason?: string }> {
+    return this.productionResult(
+      await sendCommand({ type: 'PURCHASE_PRODUCTION', cityId: this.city.id, item }),
+    );
   }
 
-  removeQueueItem(index: number): void {
-    if (this.gameEngine && this.gameEngine.productionManager) {
-      this.gameEngine.productionManager.removeCityQueueItem(this.city.id, index);
-      // ProductionManager now handles updating currentProduction automatically
-    }
+  async setProduction(item: ProductionItem, queue: boolean = false): Promise<{ success: boolean; reason?: string }> {
+    return this.productionResult(
+      await sendCommand({ type: 'SET_CITY_PRODUCTION', cityId: this.city.id, item, queue }),
+    );
   }
 
-  moveQueueItem(fromIndex: number, toIndex: number): void {
-    if (this.gameEngine && this.gameEngine.productionManager) {
-      this.gameEngine.productionManager.moveCityQueueItem(this.city.id, fromIndex, toIndex);
-    }
+  async removeQueueItem(index: number): Promise<{ success: boolean; reason?: string }> {
+    return this.productionResult(
+      await sendCommand({ type: 'REMOVE_QUEUE_ITEM', cityId: this.city.id, index }),
+    );
+  }
+
+  async moveQueueItem(fromIndex: number, toIndex: number): Promise<{ success: boolean; reason?: string }> {
+    return this.productionResult(
+      await sendCommand({ type: 'MOVE_QUEUE_ITEM', cityId: this.city.id, fromIndex, toIndex }),
+    );
   }
 
   /**
    * Promote a queued item to be produced right now. Queue entry #1 swaps with
    * the current production (which moves one slot down and keeps its progress).
    */
-  promoteQueueItem(index: number): { success: boolean; reason?: string } {
-    if (this.gameEngine && this.gameEngine.productionManager) {
-      const result = this.gameEngine.productionManager.promoteQueuedItemToCurrent(this.city.id, index);
-      return { success: result.success !== false, reason: result.reason };
-    }
-    return { success: false, reason: 'production_manager_unavailable' };
+  async promoteQueueItem(index: number): Promise<{ success: boolean; reason?: string }> {
+    return this.productionResult(
+      await sendCommand({ type: 'PROMOTE_QUEUE_ITEM', cityId: this.city.id, index }),
+    );
   }
 
   /**
    * Postpone the item being produced: it swaps places with the first queued
    * item. Returns the engine result so the UI can explain a refusal.
    */
-  moveCurrentProductionDown(): { success: boolean; reason?: string } {
-    if (this.gameEngine && this.gameEngine.productionManager) {
-      const result = this.gameEngine.productionManager.moveCurrentProductionDown(this.city.id);
-      return { success: result.success !== false, reason: result.reason };
-    }
-    return { success: false, reason: 'production_manager_unavailable' };
+  async moveCurrentProductionDown(): Promise<{ success: boolean; reason?: string }> {
+    return this.productionResult(
+      await sendCommand({ type: 'MOVE_CURRENT_PRODUCTION_DOWN', cityId: this.city.id }),
+    );
   }
 
   /**

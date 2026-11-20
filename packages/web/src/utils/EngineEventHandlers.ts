@@ -2288,6 +2288,10 @@ export class EngineEventRouter {
     const nextId = firstUnresearchedInPath(this.gameEngine.technologies || [], path, civTechs);
     if (!nextId || !this.gameEngine.setResearch) return;
     // Restore the tech's saved progress (progress is kept across switches).
+    // This is event-driven engine automation, not a player command: `civId`
+    // can be an AI seat, so routing it through the seat-bound session would
+    // reject it as NOT_YOUR_TURN. On a server this handler belongs to the
+    // authority, not the client projection.
     this.gameEngine.setResearch(civId, nextId, state.techProgress[nextId] ?? 0);
     this.actions.updateCivilizations([...(this.gameEngine.civilizations || [])]);
   }

@@ -2,7 +2,8 @@ import GameEngine, { headlessRuntime } from '@civ1/shared';
 import type { CommandResult } from '@civ1/shared';
 import { settingsFromLobby, type LobbyConfig } from './lobby';
 import { InMemorySaveStore, type SaveStore } from './saveStore';
-import { passAllFilter, type VisibilityFilter } from './fog';
+import { engineFogFilter, type OutboundEvent, type VisibilityFilter } from './fog';
+import { classifyEvent } from './classify';
 import type { CommandEnvelope } from './commands';
 
 export interface RoomOptions {
@@ -26,13 +27,19 @@ export class GameRoom {
 
   private timer: ReturnType<typeof setInterval> | null = null;
   private seq = 0;
+  private readonly listeners = new Set<(event: OutboundEvent) => void>();
 
   constructor(options: RoomOptions) {
     this.id = options.id;
     this.lobby = options.lobby;
     this.saveStore = options.saveStore ?? new InMemorySaveStore();
-    this.visibility = options.visibility ?? passAllFilter;
     this.engine = new GameEngine(null, headlessRuntime, this.saveStore);
+    this.visibility = options.visibility ?? engineFogFilter(this.engine);
+    // Every engine event is classified once here, then filtered per seat by
+    // the transport. Nothing is sent straight from the engine to a socket.
+    this.engine.onStateChange = (type, data) => {
+      this.emit(classifyEvent(type, data));
+    };
   }
 
   async start(): Promise<void> {
@@ -42,6 +49,16 @@ export class GameRoom {
     this.engine.enableTickClock();
     await this.engine.initialize(settingsFromLobby(this.lobby));
     this.timer = setInterval(() => this.tick(), GameEngine.TICK_MS);
+  }
+
+  /** Subscribe to classified events. Returns an unsubscribe function. */
+  addListener(listener: (event: OutboundEvent) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private emit(event: OutboundEvent): void {
+    for (const listener of this.listeners) listener(event);
   }
 
   /** Server-side identity gate: the context comes from the connection, never the payload. */
@@ -54,12 +71,11 @@ export class GameRoom {
 
   private tick(): void {
     this.engine.advanceTick();
-    // Flush classified events to connections here once the transport and fog
-    // classifier land. The engine itself is advanced by commands + turn loop.
   }
 
   stop(): void {
     if (this.timer !== null) clearInterval(this.timer);
     this.timer = null;
+    this.listeners.clear();
   }
 }

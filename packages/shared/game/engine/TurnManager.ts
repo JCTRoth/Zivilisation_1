@@ -474,7 +474,7 @@ export class TurnManager {
       return;
     }
     let finished = false;
-    const timeoutHandle = setTimeout(() => {
+    const onTimeout = () => {
       if (!finished && this.currentPlayer === civilizationId) {
         console.warn(
           `[TurnManager] ⏰ AI movement timeout for civ ${civilizationId} `
@@ -482,11 +482,24 @@ export class TurnManager {
         );
         this.forceEndAITurn(civilizationId, 'timeout');
       }
-    }, this.aiTurnTimeoutMs);
+    };
+    // Browser: wall-clock safety net. Server: a deadline on the simulation
+    // clock, so the watchdog fires after the same number of ticks on every
+    // room regardless of host speed.
+    const tickCancel = this.gameEngine.usesTickClock
+      ? this.gameEngine.scheduleTickDeadline(
+        this.gameEngine.ticksFor(this.aiTurnTimeoutMs), onTimeout,
+      )
+      : null;
+    const timeoutHandle = tickCancel ? null : setTimeout(onTimeout, this.aiTurnTimeoutMs);
+    const clearWatchdog = () => {
+      if (timeoutHandle !== null) clearTimeout(timeoutHandle);
+      tickCancel?.();
+    };
 
       promise.then(() => {
       if (finished) return;
-      finished = true; clearTimeout(timeoutHandle);
+      finished = true; clearWatchdog();
       if (this.currentPlayer !== civilizationId) {
         console.warn(`[TurnManager] Stale AI turn for civ ${civilizationId} resolved on civ ${this.currentPlayer}'s turn — not advancing phases`);
         return;
@@ -504,7 +517,7 @@ export class TurnManager {
       this.nextPhase(); // END
     }).catch(err => {
       if (finished) return;
-      finished = true; clearTimeout(timeoutHandle);
+      finished = true; clearWatchdog();
       console.error('[TurnManager] AI movement error:', err);
       if (this.currentPlayer === civilizationId) {
         this.forceEndAITurn(civilizationId, 'error');
