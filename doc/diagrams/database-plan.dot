@@ -1,0 +1,71 @@
+digraph DatabasePlan {
+  label="Persistence / database plan — Civ1Browser server split\nSolid = implemented (SQLite), dashed = future scale-out (Postgres / event replay)";
+  labelloc = "t";
+  rankdir = "LR";
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=10,
+        fillcolor="#eef4fb", color="#3b6ea5"];
+  edge [fontname="Helvetica", fontsize=9, color="#444444"];
+
+  subgraph cluster_shared {
+    label="packages/shared — implemented";
+    style=filled; fillcolor="#f4f8fc"; color="#88a9c9";
+    engine      [label="GameEngine\nsaveGame() / loadGame()\ngetSaveJSON()"];
+    saveiface   [label="SaveStore interface\nget(key) / set(key,value)"];
+    blob        [label="V5 save blob\nstate + rngState +\ndisasterRngState\n(v1-v4 migrations)"];
+    browserss   [label="browserSaveStore\nlocalStorage (web)"];
+    memoryss    [label="createMemorySaveStore\nMap (client mirror)"];
+  }
+
+  subgraph cluster_server_impl {
+    label="packages/server — implemented";
+    style=filled; fillcolor="#eefaf1"; color="#78ad8a";
+    room        [label="GameRoom\ninjects SaveStore\ndebounced autosave (5 s)\nflushSave() on stop"];
+    inmemory    [label="InMemorySaveStore\nroom-local Map\n(no restart survival)"];
+    sqlite      [label="SqlitePersistence\nSqliteSaveStore implements SaveStore\nWAL + foreign keys"];
+    repo        [label="RoomRepository\nrooms / seats / event_outbox"];
+    schema      [label="schema.ts / schema.sql\nrooms, saves, seats,\nevent_outbox + indexes"];
+    mgr         [label="RoomManager\ncreate / list / remove\nrestoreAll() after restart"];
+    endpoints   [label="HTTP endpoints\nGET /rooms/:id/state\nPOST /rooms/:id/save|load"];
+  }
+
+  subgraph cluster_db {
+    label="SQLite tables — implemented";
+    style=filled; fillcolor="#eaf7ee"; color="#5fa37a";
+    rooms_t     [label="rooms\nid PK / lobby_json\nstatus / created_at"];
+    saves_t     [label="saves\nroom_id + slot PK\nversion / blob\nrng_state / disaster_rng_state"];
+    seats_t     [label="seats\nroom_id + seat PK\ntoken_hash / color / status"];
+    outbox_t    [label="event_outbox\nroom_id + seq PK\nseat / type / payload"];
+  }
+
+  subgraph cluster_future {
+    label="Planned scale-out (optional)";
+    style="filled,dashed"; fillcolor="#fff8e8"; color="#b8860b";
+    pg          [label="PostgresPersistence\nJSONB stores + RNG envelope\nLISTEN/NOTIFY event bus", style="rounded,filled", fillcolor="#eaf7ee", color="#5fa37a"];
+    redis       [label="Redis\noptional alternative pub/sub\n(not authoritative state)", style="rounded,filled,dashed", fillcolor="#fff1cf", color="#b8860b"];
+    replay      [label="Replay service\nsnapshot + event_outbox\n(no live-PG acceptance test yet)", style="rounded,filled,dashed", fillcolor="#fff1cf", color="#b8860b"];
+  }
+
+  engine  -> saveiface [label="saveGame/loadGame\nuse port only"];
+  saveiface -> browserss [label="browser default"];
+  saveiface -> memoryss  [label="mirror engine"];
+  saveiface -> inmemory  [label="room default when no persistence"];
+  saveiface -> sqlite    [label="durable server mode"];
+  saveiface -> pg        [label="planned alternative", style=dashed, color="#b8860b"];
+  engine  -> blob       [label="serialise / migrate"];
+  room    -> engine     [label="constructs with port"];
+  mgr     -> room       [label="owns lifecycle + restoreAll"];
+  mgr     -> sqlite     [label="persistence attached"];
+  sqlite  -> schema     [label="executes DDL on open"];
+  sqlite  -> repo       [label="metadata queries"];
+  repo    -> rooms_t;
+  repo    -> seats_t;
+  repo    -> outbox_t;
+  sqlite  -> saves_t    [label="get/set blob + rng columns"];
+  endpoints -> engine   [label="getSaveJSON / loadGame / flushSave"];
+  blob    -> replay     [label="base snapshot", style=dashed, color="#b8860b"];
+  outbox_t -> replay    [label="event stream", style=dashed, color="#b8860b"];
+  redis   -> mgr        [label="planned: cross-instance rooms", style=dashed, color="#b8860b"];
+
+  { rank=same; browserss; memoryss; inmemory; sqlite; pg; }
+  { rank=same; rooms_t; saves_t; seats_t; outbox_t; }
+}

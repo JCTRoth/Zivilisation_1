@@ -11,6 +11,12 @@ export interface RoomOptions {
   lobby: LobbyConfig;
   saveStore?: SaveStore;
   visibility?: VisibilityFilter;
+  /** Persist periodically after commands (default true, room durability). */
+  autoSave?: boolean;
+  /** Append every classified event to the outbox (replay/audit). */
+  onEvent?: (event: OutboundEvent, seq: number) => void;
+  /** Sequence to continue from when restoring a room with an outbox. */
+  startEventSeq?: number;
 }
 
 /**
@@ -18,6 +24,9 @@ export interface RoomOptions {
  * The engine runs with the headless runtime, so no React store, canvas or
  * wall-clock animation can leak into the authoritative simulation.
  */
+/** Save at most once every 50 ticks (5 s at TICK_MS=100). */
+const AUTOSAVE_EVERY_TICKS = 50;
+
 export class GameRoom {
   readonly id: string;
   readonly lobby: LobbyConfig;
@@ -27,12 +36,19 @@ export class GameRoom {
 
   private timer: ReturnType<typeof setInterval> | null = null;
   private seq = 0;
+  private readonly autoSave: boolean;
+  private dirty = false;
+  private eventSeq: number;
+  private readonly onEvent?: (event: OutboundEvent, seq: number) => void;
   private readonly listeners = new Set<(event: OutboundEvent) => void>();
 
   constructor(options: RoomOptions) {
     this.id = options.id;
     this.lobby = options.lobby;
     this.saveStore = options.saveStore ?? new InMemorySaveStore();
+    this.autoSave = options.autoSave ?? true;
+    this.eventSeq = options.startEventSeq ?? 0;
+    this.onEvent = options.onEvent;
     this.engine = new GameEngine(null, headlessRuntime, this.saveStore);
     this.visibility = options.visibility ?? engineFogFilter(this.engine);
     // Every engine event is classified once here, then filtered per seat by
@@ -47,7 +63,14 @@ export class GameRoom {
     // clock instead of per-room setTimeout, so two rooms on the same seed
     // advance identically regardless of host load.
     this.engine.enableTickClock();
-    await this.engine.initialize(settingsFromLobby(this.lobby));
+    // A restored room carries its save in the injected store; load it instead
+    // of generating a new world so the game continues exactly where it was.
+    if (this.saveStore.get('civ1_savegame') === null) {
+      await this.engine.initialize(settingsFromLobby(this.lobby));
+    } else if (!await this.engine.loadGame()) {
+      console.warn(`[GameRoom] ${this.id} had an invalid save — starting fresh`);
+      await this.engine.initialize(settingsFromLobby(this.lobby));
+    }
     this.timer = setInterval(() => this.tick(), GameEngine.TICK_MS);
   }
 
@@ -57,23 +80,45 @@ export class GameRoom {
     return () => this.listeners.delete(listener);
   }
 
-  private emit(event: OutboundEvent): void {
+  /** Forward an event published by another server process to local clients. */
+  receiveRemote(event: OutboundEvent): void {
+    if (typeof event.seq === 'number') this.eventSeq = Math.max(this.eventSeq, event.seq);
     for (const listener of this.listeners) listener(event);
+  }
+
+  private emit(event: OutboundEvent): void {
+    const sequenced: OutboundEvent = { ...event, seq: ++this.eventSeq };
+    this.onEvent?.(sequenced, this.eventSeq);
+    for (const listener of this.listeners) listener(sequenced);
   }
 
   /** Server-side identity gate: the context comes from the connection, never the payload. */
   submit(envelope: CommandEnvelope): CommandResult {
-    return this.engine.submit(envelope.command, {
+    const result = this.engine.submit(envelope.command, {
       ...envelope.context,
       seq: ++this.seq,
     });
+    if (result.ok && this.autoSave) this.dirty = true;
+    return result;
   }
 
   private tick(): void {
     this.engine.advanceTick();
+    if (this.dirty && this.autoSave && this.engine.currentTick % AUTOSAVE_EVERY_TICKS === 0) {
+      this.flushSave();
+    }
+  }
+
+  /** Persist immediately — used by `/save`, graceful shutdown and tests. */
+  flushSave(): boolean {
+    if (!this.engine.isInitialized) return false;
+    const ok = this.engine.saveGame();
+    if (ok) this.dirty = false;
+    return ok;
   }
 
   stop(): void {
+    if (this.dirty && this.autoSave) this.flushSave();
     if (this.timer !== null) clearInterval(this.timer);
     this.timer = null;
     this.listeners.clear();

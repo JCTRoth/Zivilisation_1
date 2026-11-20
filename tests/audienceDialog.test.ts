@@ -6,7 +6,7 @@
  * and dismissing it has to hand the turn back — the audience defers auto-end
  * like every other decision screen.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import GameEngine from '@shared/game/engine/GameEngine';
 import { EngineEventRouter } from '@/utils/EngineEventHandlers';
 import { useGameStore } from '@/stores/GameStore';
@@ -153,7 +153,7 @@ describe('Audience screen', () => {
     });
   });
 
-  it('a nomad audience pans the camera to the place it is about', () => {
+  it('a nomad audience pans the camera to the place it is about', async () => {
     router.handle('NOMAD_PARLEY', {
       col: 7,
       row: 9,
@@ -162,7 +162,13 @@ describe('Audience screen', () => {
       choices: [{ id: 'pass', labelKey: 'nomad.choice.pass', variant: 'pass' }],
     });
 
-    expect(useGameStore.getState().uiState.activeDialog).toBe('audience');
+    // The handler waits for the requested camera pan before opening the
+    // blocking audience (no GameCanvas in a node test, so the gate's short
+    // safety timeout resolves it). Wait for that instead of asserting on the
+    // same tick.
+    await vi.waitFor(() => {
+      expect(useGameStore.getState().uiState.activeDialog).toBe('audience');
+    });
     // The meeting spot travels with the audience — the camera goes there.
     expect(useGameStore.getState().cameraPanRequest).toMatchObject({ col: 7, row: 9 });
   });

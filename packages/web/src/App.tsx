@@ -13,6 +13,7 @@ import { createRemoteGame } from "./remoteGame";
 import GameCanvas from "./components/game/GameCanvas";
 import SettingsModal from "./components/ui/SettingsModal";
 import GameSetupModal from "./components/ui/GameSetupModal";
+import LobbyPanel from "./components/ui/LobbyPanel";
 import EndTurnConfirmModal from "./components/ui/EndTurnConfirmModal";
 import GameModals from "./components/ui/GameModals";
 import GameResultOverlay from "./components/ui/GameResultOverlay";
@@ -68,6 +69,7 @@ function App() {
   const [showHexDetail, setShowHexDetail] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showGameSetup, setShowGameSetup] = useState(true);
+  const [lobbyServer, setLobbyServer] = useState<string | null>(null);
   const [showEndTurnConfirm, setShowEndTurnConfirm] = useState(false);
   const [confirmNewGame, setConfirmNewGame] = useState(false);
   const [confirmQuit, setConfirmQuit] = useState(false);
@@ -343,6 +345,14 @@ function App() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
+
+    // `?lobby[=http://server:port]` shows the multiplayer lobby instead of the
+    // single-player setup screen. Value-less `?lobby` uses the default URL.
+    if (params.has('lobby')) {
+      setLobbyServer(params.get('lobby') || 'http://localhost:8787');
+      window.history.replaceState(null, "", window.location.pathname);
+      return;
+    }
 
     // `?maptype=…` (with optional `civs`, `difficulty`, `dev`, `seed`, `gold`)
     // launches that scenario straight into the game with no setup wizard. The
@@ -1391,7 +1401,9 @@ function App() {
         id="gameContainer"
         className="game-setup-screen vh-100 d-flex align-items-center justify-content-center text-white"
       >
-        <GameSetupModal show={showGameSetup} onStart={handleGameStart} />
+        {lobbyServer
+          ? <LobbyPanel defaultServer={lobbyServer} />
+          : <GameSetupModal show={showGameSetup} onStart={handleGameStart} />}
       </div>
     );
   }

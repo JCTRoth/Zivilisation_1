@@ -275,8 +275,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
     mapData.width,
     mapData.height,
     devViewStorage,
-    gameState.currentTurn,
-    gameState.activePlayer,
   ]);
   const currentQueueUnitId = useGameStore(
     (state) => state.uiState.currentQueueUnitId,

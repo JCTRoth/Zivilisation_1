@@ -1,0 +1,86 @@
+digraph ServerArchitecture {
+  label="Server architecture — authoritative room (current implementation + planned persistence)";
+  labelloc = "t";
+  rankdir = "LR";
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=10,
+        fillcolor="#eef4fb", color="#3b6ea5"];
+  edge [fontname="Helvetica", fontsize=9, color="#444444"];
+
+  subgraph cluster_clients {
+    label="Clients";
+    style=filled; fillcolor="#f7f7f7"; color="#aaaaaa";
+    web     [label="Browser\nremoteSession / SSE"];
+    admin   [label="Lobby / tooling\nHTTP API"];
+  }
+
+  subgraph cluster_transport {
+    label="Transport layer — packages/server";
+    style=filled; fillcolor="#eefaf1"; color="#78ad8a";
+    http    [label="HttpTransport\nPOST /rooms\nPOST/GET/DELETE /rooms/:id\ncommands | events(SSE) | state\nsave | load"];
+    ws      [label="WsTransport\nWS join ?room&token\ncommand messages\nfiltered event pushes"];
+    auth    [label="auth.ts\nHMAC-SHA256 seat tokens\nverifySeatToken()"];
+  }
+
+  subgraph cluster_authority {
+    label="Authority — packages/server";
+    style=filled; fillcolor="#f0ecfa"; color="#8b7ab8";
+    mgr     [label="RoomManager\ncreate / get / list / remove"];
+    room    [label="GameRoom\none engine per room\nserver-built CommandContext\nseq counter"];
+    bus     [label="Event fan-out\nonStateChange -> classify\naddListener / emit"];
+    classify[label="classify.ts\nexplicit EVENT_RULES\nscope: universal|seat|location"];
+    fog     [label="engineFogFilter\nisVisibleToPlayer(seat,col,row)\nseat-only gating"];
+    tick    [label="Tick loop\nsetInterval(TICK_MS=100)\nengine.advanceTick()"];
+  }
+
+  subgraph cluster_simulation {
+    label="Headless simulation — packages/shared";
+    style=filled; fillcolor="#fff4e8"; color="#c68b4a";
+    engine  [label="GameEngine\nsingle authoritative state"];
+    submit  [label="submit(command, context)\nturn gate + ownership gate\n-> existing rules"];
+    rng     [label="Engine RNG\nseeded from lobby rngSeed\nreplayable stream"];
+    ports   [label="headlessRuntime\nno DOM / no animation waits"];
+    clock   [label="Simulation clock\ntick deadlines for corpses,\nsleeps and AI watchdog"];
+    rules   [label="Managers + AI + MapGenerator\n(injectable RNG, no DOM)"];
+    storep  [label="SaveStore port\nget(key) / set(key,value)"];
+  }
+
+  subgraph cluster_persistence {
+    label="Persistence";
+    style="filled,dashed"; fillcolor="#fff8e8"; color="#b8860b";
+    mem     [label="InMemorySaveStore\n(room-local, no restart survival)"];
+    sqlite  [label="SqlitePersistence + SqliteSaveStore\nWAL / FK / V5 blob + RNG state"];
+    repo    [label="RoomRepository\nrooms / seats / event_outbox"];
+    db      [label="PostgresPersistence + LISTEN/NOTIFY\nvia PG_URL (multi-process)"];
+  }
+
+  web      -> http  [label="POST commands + token\nGET events / state"];
+  web      -> ws    [label="join with signed token"];
+  admin    -> http  [label="create/list/delete rooms"];
+  http     -> auth  [label="verify token -> seat"];
+  ws       -> auth  [label="verify token -> seat"];
+  http     -> mgr   [label="lookup room"];
+  ws       -> mgr   [label="lookup room"];
+  mgr      -> room  [label="owns engine + tick loop"];
+  http     -> room  [label="submit(envelope)"];
+  ws       -> room  [label="submit(envelope)"];
+  room     -> submit [label="context from connection\nnever from payload"];
+  submit   -> rules [label="delegates rules"];
+  rng      -> rules [label="feeds every gameplay roll"];
+  ports    -> engine [label="presentation no-ops"];
+  clock    -> engine [label="deadline processing"];
+  tick     -> clock [label="advanceTick()"];
+  engine   -> bus   [label="onStateChange(type,data)"];
+  bus      -> classify [label="classify once"];
+  classify -> fog   [label="per-seat filter"];
+  fog      -> http  [label="SSE frames to seat"];
+  fog      -> ws    [label="event messages to seat"];
+  engine   -> storep [label="saveGame/loadGame"];
+  storep   -> mem   [label="no persistence option"];
+  storep   -> sqlite [label="durable mode"];
+  sqlite   -> repo  [label="metadata"];
+  mgr      -> sqlite [label="restoreAll() after restart"];
+  storep   -> db    [label="PG_URL mode", style=dashed, color="#b8860b"];
+
+  { rank=same; http; ws; }
+  { rank=same; mem; db; }
+}

@@ -5,6 +5,7 @@ import type { OutboundEvent } from '@shared/types/events';
 import { createRemoteSession, type RemoteSessionOptions } from './remoteSession';
 import { setActiveSession } from './session';
 import { subscribeToRoomEvents } from './remoteEvents';
+import { applyRemoteEvent } from './remoteProjection';
 
 /**
  * Remote-mode bootstrap. The server is authoritative; this tab runs a mirror
@@ -31,6 +32,38 @@ export async function createRemoteGame(options: RemoteSessionOptions): Promise<{
     if (!payload.ok || !payload.save) return;
     saveStore.set('civ1_savegame', payload.save);
     await engine.loadGame();
+    dirty = false;
+  };
+
+  let lastSeq = 0;
+  let dirty = false;
+  const consume = (event: OutboundEvent) => {
+    if (typeof event.seq === 'number') lastSeq = Math.max(lastSeq, event.seq);
+    if (!applyRemoteEvent(event)) {
+      // An event the projection does not understand means the read model may
+      // be stale: fetch a snapshot, but only once per burst.
+      dirty = true;
+      scheduleRefresh();
+    }
+  };
+
+  // Reconnect catch-up: replay persisted events after the last one we applied
+  // instead of downloading a full snapshot.
+  const catchUp = async (): Promise<boolean> => {
+    try {
+      const response = await fetch(
+        `${options.baseUrl.replace(/\/$/, '')}/rooms/${encodeURIComponent(options.roomId)}/events`
+        + `?token=${encodeURIComponent(options.token ?? '')}&after=${lastSeq}`,
+      );
+      const payload = await response.json() as {
+        ok: boolean; events?: OutboundEvent[];
+      };
+      if (!payload.ok || !Array.isArray(payload.events)) return false;
+      for (const event of payload.events) consume(event);
+      return true;
+    } catch {
+      return false;
+    }
   };
 
   // Coalesce bursts of events/replies into one snapshot fetch, but expose an
@@ -41,23 +74,39 @@ export async function createRemoteGame(options: RemoteSessionOptions): Promise<{
     scheduled = Promise.resolve().then(async () => {
       scheduled = null;
       await refresh();
+      dirty = false;
     });
   };
 
-  setActiveSession(createRemoteSession({ ...options, onResult: scheduleRefresh }));
+  // A command reply no longer triggers a snapshot by itself: its effects are
+  // expected to arrive as projectable events. Marking dirty only schedules a
+  // bounded safety refresh (below), so ten commands do not mean ten reloads.
+  setActiveSession(createRemoteSession({
+    ...options,
+    onResult: () => { dirty = true; },
+  }));
+
+  const safetyTimer = setInterval(() => {
+    if (dirty) scheduleRefresh();
+  }, 5000);
 
   const subscription = subscribeToRoomEvents({
     baseUrl: options.baseUrl,
     roomId: options.roomId,
     token: options.token ?? '',
-    onConnected: () => void refresh(),
-    onEvent: (_event: OutboundEvent) => scheduleRefresh(),
+    onConnected: () => {
+      void catchUp().then((ok) => {
+        if (!ok) void refresh();
+      });
+    },
+    onEvent: (event: OutboundEvent) => consume(event),
     onError: (error) => console.error('[remoteGame] event stream error', error),
   });
 
   try {
     await refresh();
   } catch (error) {
+    clearInterval(safetyTimer);
     subscription.close();
     setActiveSession(null);
     throw error;
@@ -67,6 +116,7 @@ export async function createRemoteGame(options: RemoteSessionOptions): Promise<{
     engine,
     refresh,
     close: () => {
+      clearInterval(safetyTimer);
       subscription.close();
       setActiveSession(null);
     },

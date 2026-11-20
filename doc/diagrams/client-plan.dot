@@ -1,0 +1,84 @@
+digraph ClientPlan {
+  label="Client plan — React app against the authoritative server\nSolid = implemented, dashed = remaining optional work";
+  labelloc = "t";
+  rankdir = "LR";
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=10,
+        fillcolor="#eef4fb", color="#3b6ea5"];
+  edge [fontname="Helvetica", fontsize=9, color="#444444"];
+
+  subgraph cluster_entry {
+    label="Entry / join — implemented";
+    style=filled; fillcolor="#f4f8fc"; color="#88a9c9";
+    url      [label="?server=&room=&token=\n[?lobby for the lobby UI]"];
+    app      [label="App.tsx\nhandleGameStart()\nremoteGameRef cleanup"];
+    hook     [label="useGameEngine(mirror)\nrouter + store sync\nhasActiveSession() guard"];
+  }
+
+  subgraph cluster_transport {
+    label="Client transport — implemented";
+    style=filled; fillcolor="#eefaf1"; color="#78ad8a";
+    session  [label="session.ts\nsendCommand()\nactive session gate"];
+    rsess    [label="remoteSession.ts\nPOST /rooms/:id/commands\n{ seat, token, command }\nonResult hook"];
+    revents  [label="remoteEvents.ts\nSSE + bounded reconnect\nexponential backoff"];
+    rgame    [label="remoteGame.ts\nmirror bootstrap\ncoalesced refresh()\nclose()"];
+  }
+
+  subgraph cluster_readmodel {
+    label="Read model — implemented";
+    style=filled; fillcolor="#fff4e8"; color="#c68b4a";
+    project  [label="remoteProjection.ts\nknown events -> Zustand\nunknown -> snapshot fallback"];
+    refresh  [label="GET /rooms/:id/state\njoin / reconnect /\n5s safety window only"];
+    memstore [label="createMemorySaveStore\nSet('civ1_savegame', blob)"];
+    mirror   [label="GameEngine (mirror)\nheadlessRuntime\nloadGame() ONLY — never simulates"];
+    onchange [label="engine.onStateChange\nEngineEventRouter\nGAME_LOADED -> syncState"];
+    store    [label="Zustand store\nprojection of engine state"];
+    ui       [label="React components\nread mirror via store/engine\ntriggerRender()"];
+  }
+
+  subgraph cluster_lobby {
+    label="Lobby — implemented";
+    style=filled; fillcolor="#eaf7ee"; color="#5fa37a";
+    lobbyui  [label="LobbyPanel.tsx\n?lobby\ncreate room, list join links"];
+    lobbyapi [label="lobbyApi.ts\nPOST /rooms\nPOST /rooms/:id/seats\njoinUrl()"];
+    mint     [label="Server: host-only seat token minting\nsha256 hashes in DB/store"];
+  }
+
+  subgraph cluster_events {
+    label="Event schema + catch-up — implemented";
+    style=filled; fillcolor="#eaf7ee"; color="#5fa37a";
+    schema   [label="Discriminated ProjectableEvent union\n+ asProjectableEvent() guard"];
+    replay   [label="JSON catch-up ?after=seq\non reconnect"];
+  }
+
+  subgraph cluster_future {
+    label="Remaining optional work";
+    style="filled,dashed"; fillcolor="#fff8e8"; color="#b8860b";
+    e2e      [label="Playwright two-player spec\nlobby -> two tokens -> move", style="rounded,filled,dashed", fillcolor="#fff1cf", color="#b8860b"];
+  }
+
+  url      -> app     [label="read once on mount"];
+  app      -> rgame   [label="createRemoteGame(options)"];
+  rgame    -> rsess   [label="bind as active session"];
+  rgame    -> revents [label="subscribe to events"];
+  rgame    -> project [label="onEvent -> apply directly"];
+  project  -> store   [label="incremental patch"];
+  project  -> refresh [label="only if event unknown"];
+  revents  -> replay [label="reconnect -> ?after=seq"];
+  replay   -> project [label="catch-up events"];
+  rsess    -> project [label="onResult marks dirty\nonly; no snapshot"];
+  refresh  -> memstore [label="save blob"];
+  memstore -> mirror  [label="loadGame() restores state + RNG"];
+  hook     -> session [label="components call sendCommand()"];
+  session  -> rsess   [label="remote mode"];
+  mirror   -> onchange [label="GAME_LOADED and other events"];
+  onchange -> store   [label="syncState()"];
+  store    -> ui      [label="re-render"];
+  ui       -> session [label="user intent (same code locally/remotely)"];
+
+  lobbyui  -> lobbyapi [label="create + mint"];
+  lobbyapi -> mint     [label="host token required"];
+  lobbyui  -> url      [label="join links"];
+
+  schema   -> project [label="typed payloads"];
+  e2e      -> lobbyui [label="planned", style=dashed, color="#b8860b"];
+}

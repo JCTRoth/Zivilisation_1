@@ -16,6 +16,33 @@ Root-level `tests/`, `scripts/`, `e2e/` and `tools/` stay where they are. Vite s
 
 For the full implementation status — completed work, verification results, open limitations and concrete next steps — see link:doc/SERVER_CLIENT_SPLIT_STATUS.adoc[Server/Client Split Status Report].
 
+== Multiplayer / server mode
+
+Start the authoritative server in one terminal:
+
+[source,bash]
+----
+npm run dev:server
+# HTTP :8787 (commands, SSE events, state), WS :8788, SQLite DB ./server.db
+# Override with PORT, WS_PORT, GAME_SERVER_SECRET, DB_FILE
+----
+
+Then either open `http://localhost:3000/?lobby` to use the in-app lobby (create a room, mint one signed token per seat, copy the join links), or create/join through the HTTP API directly:
+
+[source,bash]
+----
+curl -X POST localhost:8787/rooms -H 'content-type: application/json' -d '{"seed":42,"numberOfCivilizations":2}'
+# -> {"ok":true,"id":"room_1","token":"<host token for seat 0>"}
+
+curl -X POST localhost:8787/rooms/room_1/seats -H 'content-type: application/json' \
+  -d '{"token":"<host token>","seats":[0,1]}'
+# -> {"ok":true,"tokens":{"0":"...","1":"..."}}
+----
+
+Open the client with `?server=http://localhost:8787&room=room_1&token=<seat token>`. The client runs a read-only mirror engine fed by `/rooms/:id/state`; every command goes through `sendCommand()` to the server, so the authority remains the only simulation. Single-player (no `?server` parameter) still uses the in-tab engine unchanged.
+
+Architecture diagrams (xdot-readable Graphviz DOT): link:doc/diagrams/README.adoc[doc/diagrams/README.adoc].
+
 **Overall Assessment** +
 Zivilisation_1 is not a perfect clone, but it is not trying to be one. +
 It is a spiritual successor that takes the core concepts of Civilisation and reimagines them for a modern audience. +

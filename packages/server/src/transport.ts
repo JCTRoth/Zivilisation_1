@@ -1,9 +1,13 @@
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'node:http';
+import { createHmac } from 'node:crypto';
 import type { GameRoom } from './room';
 import type { OutboundEvent } from './fog';
 import { RoomManager } from './roomManager';
 import type { LobbyConfig } from './lobby';
 import { createSeatToken, verifySeatToken } from './auth';
+import type { SqlitePersistence } from './persistence/sqliteStore';
+import type { AsyncRoomStore, RoomEventBusSource } from './roomManager';
+import type { RoomEventBus } from './pubsub';
 
 /**
  * Minimal HTTP transport: commands in via POST, classified events out via
@@ -18,6 +22,14 @@ export interface TransportOptions {
   host?: string;
   /** When set, commands and event streams require a valid signed seat token. */
   secret?: string;
+  /** Durable store for rooms, saves and seats. */
+  persistence?: SqlitePersistence;
+  /** Async store for multi-process deployments. */
+  asyncPersistence?: AsyncRoomStore;
+  /** Cross-process event distribution; defaults to an in-process bus. */
+  bus?: RoomEventBus;
+  /** Unique id for this process on the shared bus. */
+  sourceId?: RoomEventBusSource;
 }
 
 interface EventStream {
@@ -32,12 +44,18 @@ export class HttpTransport {
   private readonly ready: Promise<void>;
   readonly rooms: RoomManager;
   private readonly secret?: string;
+  private readonly persistence?: SqlitePersistence;
   private readonly streams = new Set<EventStream>();
   private nextStreamId = 0;
 
   constructor(options: TransportOptions = {}, rooms?: RoomManager) {
-    this.rooms = rooms ?? new RoomManager();
+    this.rooms = rooms ?? new RoomManager(
+      options.persistence ?? options.asyncPersistence,
+      options.bus,
+      options.sourceId,
+    );
     this.secret = options.secret;
+    this.persistence = options.persistence;
     this.server = createServer((req, res) => void this.handle(req, res));
     this.ready = new Promise((resolve, reject) => {
       this.server.once('error', reject);
@@ -46,8 +64,10 @@ export class HttpTransport {
   }
 
   /** Await this before reading `port` when listening on an ephemeral port. */
-  waitUntilReady(): Promise<void> {
-    return this.ready;
+  async waitUntilReady(): Promise<void> {
+    await this.ready;
+    // Restore persisted rooms before accepting traffic.
+    await this.rooms.restoreAll();
   }
 
   /** Actual bound port — useful for tests that start on port 0. */
@@ -73,6 +93,15 @@ export class HttpTransport {
   }
 
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    // The dev client runs on a different origin; allow it to call the API.
+    res.setHeader('access-control-allow-origin', '*');
+    res.setHeader('access-control-allow-headers', 'content-type, authorization');
+    res.setHeader('access-control-allow-methods', 'GET, POST, DELETE, OPTIONS');
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (url.pathname === '/health') {
       this.json(res, 200, { ok: true, rooms: this.rooms.list() });
@@ -88,12 +117,16 @@ export class HttpTransport {
       return;
     }
 
-    const roomMatch = url.pathname.match(/^\/rooms\/([^/]+)(?:\/(commands|events|save|load|state))?$/);
+    const roomMatch = url.pathname.match(/^\/rooms\/([^/]+)(?:\/(commands|events|save|load|state|seats))?$/);
     if (roomMatch) {
       const [, roomId, action] = roomMatch;
       if (!action && req.method === 'DELETE') {
         const removed = await this.rooms.remove(roomId);
         this.json(res, removed ? 200 : 404, { ok: removed });
+        return;
+      }
+      if (action === 'seats' && req.method === 'POST') {
+        await this.handleMintSeats(roomId, req, res);
         return;
       }
       if (action === 'commands' && req.method === 'POST') {
@@ -119,7 +152,7 @@ export class HttpTransport {
       if (action === 'save' && req.method === 'POST') {
         const room = this.rooms.get(roomId);
         if (!room) return this.missingRoom(res);
-        this.json(res, 200, { ok: room.engine.saveGame() });
+        this.json(res, 200, { ok: room.flushSave() });
         return;
       }
       if (action === 'load' && req.method === 'POST') {
@@ -146,12 +179,57 @@ export class HttpTransport {
       this.json(res, 400, { ok: false, reason: 'BAD_REQUEST' });
       return;
     }
-    const room = this.rooms.create(lobby);
+    const room = await this.rooms.createAsync(lobby);
     await room.start();
     // The creator gets the host seat's signed token. Other seats are issued
     // tokens by the lobby/join flow (same signer, different seat).
     const token = this.secret ? createSeatToken(this.secret, room.id, 0) : null;
     this.json(res, 201, { ok: true, id: room.id, token });
+  }
+
+  /** Host-only (seat 0): mint one signed token per requested seat. */
+  private async handleMintSeats(roomId: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (!this.secret) {
+      this.json(res, 400, { ok: false, reason: 'AUTH_NOT_CONFIGURED' });
+      return;
+    }
+    let hostToken: string | null = null;
+    let seats: number[] = [];
+    let colors: string[] = [];
+    try {
+      const parsed = JSON.parse(await this.readBody(req)) as {
+        token?: string; seats?: number[]; colors?: string[];
+      };
+      hostToken = parsed.token ?? null;
+      const authHeader = req.headers.authorization;
+      if (!hostToken && authHeader?.startsWith('Bearer ')) hostToken = authHeader.slice(7);
+      if (Array.isArray(parsed.seats)) seats = parsed.seats.map(Number);
+      if (Array.isArray(parsed.colors)) colors = parsed.colors.map(String);
+    } catch {
+      this.json(res, 400, { ok: false, reason: 'BAD_REQUEST' });
+      return;
+    }
+    if (verifySeatToken(this.secret, hostToken, roomId) !== 0) {
+      this.json(res, 403, { ok: false, reason: 'HOST_ONLY' });
+      return;
+    }
+    if (!seats.length || seats.some((s) => !Number.isInteger(s) || s < 0 || s > 6)) {
+      this.json(res, 400, { ok: false, reason: 'BAD_SEATS' });
+      return;
+    }
+    const room = this.rooms.get(roomId);
+    if (!room) return this.missingRoom(res);
+
+    const tokens: Record<string, string> = {};
+    for (const seat of seats) {
+      const token = createSeatToken(this.secret, roomId, seat);
+      tokens[String(seat)] = token;
+      // Store only a hash — a database leak must not hand out live tokens.
+      const hash = createHmac('sha256', this.secret).update(token).digest('hex');
+      room.saveStore.set(`seat_token_hash_${seat}`, hash);
+      this.persistence?.rooms.saveSeat(roomId, seat, hash, colors[seat]);
+    }
+    this.json(res, 200, { ok: true, tokens });
   }
 
   private async handleCommand(roomId: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -193,6 +271,25 @@ export class HttpTransport {
       this.json(res, 401, { ok: false, reason: 'UNAUTHORIZED' });
       return;
     }
+    // `?after=seq` is a JSON catch-up request (reconnect without a snapshot).
+    const afterParam = url.searchParams.get('after');
+    if (afterParam !== null) {
+      if (!this.persistence) {
+        this.json(res, 400, { ok: false, reason: 'NO_OUTBOX' });
+        return;
+      }
+      const after = Number(afterParam);
+      const events = this.persistence.rooms.readEvents(
+        roomId, Number.isFinite(after) ? after : 0,
+      ).filter((event) => room.visibility.isVisible({
+        type: event.type,
+        payload: event.payload,
+        civId: event.seat ?? undefined,
+      }, seat));
+      this.json(res, 200, { ok: true, events });
+      return;
+    }
+
     res.writeHead(200, {
       'content-type': 'text/event-stream',
       'cache-control': 'no-cache',

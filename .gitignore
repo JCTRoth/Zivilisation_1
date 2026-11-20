@@ -83,6 +83,11 @@ coverage/
 # SvelteKit build / generate output
 .svelte-kit
 
+# SQLite server state
+server.db
+server.db-wal
+server.db-shm
+
 # Game-specific files
 # Save game files (if implemented)
 saves/

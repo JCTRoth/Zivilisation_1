@@ -1,0 +1,25 @@
+= Architecture diagrams
+
+Graphviz DOT sources, readable with `xdot` or renderable with `dot`:
+
+[source,bash]
+----
+xdot doc/diagrams/server-architecture.dot
+dot -Tsvg doc/diagrams/server-architecture.dot -o /tmp/server-architecture.svg
+----
+
+[cols="1,3"]
+|===
+|File |What it shows
+
+|`server-architecture.dot`
+|Implemented authoritative server: HTTP/SSE + WebSocket transports, signed tokens, RoomManager/GameRoom, tick loop, event classification and fog filtering, command gate, and the headless simulation in `shared`. Planned database store is dashed.
+
+|`database-plan.dot`
+|Current `SaveStore` port and its implementations (browser localStorage, room-local in-memory, SQLite), the V5 save blob with RNG state, and the SQLite `rooms`, `saves`, `seats` and `event_outbox` tables. Postgres/Redis/replay are shown as future scale-out options.
+
+|`client-plan.dot`
+|Implemented remote-mode path: URL join, `remoteGame` mirror engine fed by `/state` snapshots, remote session/events, Zustand projection and unchanged UI reads. Planned incremental projection and lobby UI are dashed.
+|===
+
+Solid nodes and edges are implemented; dashed nodes and edges are planned work from the status report (steps 4–5 and future scale-out).
