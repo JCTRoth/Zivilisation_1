@@ -1,0 +1,239 @@
+= Server/Client Split — Implementation Status Report
+:revdate: 2026-11-20
+:toc:
+:toclevels: 3
+:sectnums:
+
+== Executive summary
+
+The headless simulation has been moved out of the browser into a three-package npm workspace. All five blockers from the original plan are closed, and every follow-up discovered during the work (transport, authentication, room lifecycle, client projection) has been implemented and tested.
+
+The authoritative server can now create rooms from lobby settings, accept commands over HTTP or WebSocket, classify and fog-filter outbound events, persist/restore full game state including the RNG stream, and serve snapshots to a client that runs a read-only mirror engine. The browser can join such a room with a URL and keeps its entire read path unchanged — components still talk to a `GameEngine` instance and `sendCommand()`; only the transport behind the session differs.
+
+The single failing test and the single lint warning in the suite are pre-existing and were reproduced on an untouched baseline worktree before any changes. No new failures were introduced.
+
+== Repository layout
+
+[cols="1,2,3"]
+|===
+|Package |Files |Contents
+
+|`packages/shared/`
+|134 files (128 TS)
+|`game/engine/**` (GameEngine, TurnManager, all managers, AI, MapGenerator), `game/SquareGrid.ts`, `data/**`, `types/**`, `i18n/**` (except the React hook), shared `utils/**`, `ports/runtime.ts`, `ports/saveStore.ts`, `Rng.ts`.
+
+|`packages/server/`
+|12 files (11 TS)
+|`room.ts`, `roomManager.ts`, `lobby.ts`, `commands.ts`, `classify.ts`, `fog.ts`, `saveStore.ts`, `auth.ts`, `transport.ts` (HTTP/SSE), `wsTransport.ts`, `index.ts`.
+
+|`packages/web/`
+|163 files (90 TS)
+|Components, rendering, stores, hooks, styles, assets, `App.tsx`, `Main.tsx`, `gameRuntime.ts`, `session.ts`, `remoteSession.ts`, `remoteEvents.ts`, `remoteGame.ts`.
+
+|Root
+|—
+|`tests/` (258 files), `scripts/`, `e2e/`, `tools/`, `public/` (kept at root, wired via Vite `publicDir`), workspace config in `package.json`, `tsconfig.json`, `vite.config.js`, `vitest.config.js`, `vitest.diag.config.ts`, `knip.json`.
+|===
+
+Dependency direction is strictly one-way: `web -> shared`, `server -> shared`. There is no `shared -> web` import left. The engine's former imports of `GameStore`, `GlideAnimation` and `CameraGlideGate` were replaced by the `GameRuntime` port in `packages/shared/ports/runtime.ts`.
+
+Path aliases: `@/*` → `packages/web/src/*`, `@shared/*` → `packages/shared/*`, `@server/*` → `packages/server/src/*`. Both Vite and Vitest configs were updated.
+
+== Closed tasks
+
+=== 0. Package structure
+
+* Converted the single-package Vite app into npm workspaces (`workspaces: ["packages/*"]`).
+* Moved 285 files with `git mv` so history is preserved; deleted four dead legacy files (`game/City.ts`, `Civilization.ts`, `Unit.ts`, `Terrain.ts`) that had no importers.
+* Rewrote 1,181 import specifiers with a codemod that resolved old paths against the pre-move tree and emitted relative aliases (`@shared/...`, `@/...`) per target package.
+* Moved `index.html` into `packages/web/`; Vite uses `root: packages/web` and serves the root `public/` directory unchanged.
+* Added `gameRuntime.ts` — the browser implementation of the presentation port (store-backed speed/handoff settings, camera glide, animation sleeps, toasts). `App.tsx` injects it into `new GameEngine(actions, webRuntime)`.
+* Added a barrel `packages/shared/index.ts` exporting `GameEngine`, the runtime/saveStore ports, command types and `GameSettings`.
+
+*Verification:* `npm run type-check`, `npm run build`, full suite.
+
+=== 1. Determinism — one engine RNG
+
+* `packages/shared/game/engine/Rng.ts` defines a stateful `Rng` interface (`mulberry32` with `getState`/`setState`), `createGameplayRng` with a salt distinct from map generation, and `rngInt`/`rngPick` helpers.
+* `GameEngine` owns `rng` with `setRng()`, `seedRng()` and a new `GameSettings.rngSeed`. Without a seed it wraps the ambient `Math.random`, so legacy test fixtures and browser games behave exactly as before.
+* Every gameplay roll is routed through it: combat contexts now pass `random: this.rng`; village outcomes, capture/building loss, tech picks, diplomacy/espionage, AI exploration and aggression, nomad decisions, disasters, auto-production and nuclear melt-downs all use the engine stream.
+* `?seed=` in the web app and `LobbyConfig.seed` in the server set both `mapSeed` and `rngSeed`.
+* Added `tests/determinism.test.ts`: stream equality, combat using the engine RNG rather than the global one, replay from the same seed, deterministic IDs, and tick deadlines.
+
+*Acceptance criterion met:* same seed + same command sequence → same state.
+
+=== 2. Deterministic IDs
+
+* `GameEngine.nextId(prefix)` is a per-engine counter with collision skipping after a save load.
+* `TurnManager` uses it for `u_1`, `u_2`, …; `AICoordinator` builds army ids from round + first unit id. Visual-only ids (glide animations, toasts, store request ids) were deliberately left wall-clock/random.
+
+=== 3. Storage port
+
+* `packages/shared/ports/saveStore.ts` defines `SaveStore { get, set }`, `browserSaveStore` (defensive `globalThis.localStorage`) and `createMemorySaveStore()`.
+* `GameEngine.saveGame/loadGame` no longer reference `localStorage`; the constructor takes a third optional `SaveStore` argument.
+* The server's `InMemorySaveStore` implements the shared interface and is injected by `GameRoom`. The v4/v5 blob and v1–v4 migrations are unchanged.
+
+=== 4. Timers → simulation ticks
+
+* `GameEngine` has a simulation clock: `currentTick`, `enableTickClock()`, `usesTickClock`, `scheduleTickDeadline()`, `ticksFor()`, `advanceTick()`.
+* All six `DEFEATED_UNIT_REMOVAL_DELAY_MS` `setTimeout`s became `scheduleCorpseRemoval()` deadlines; browser keeps wall-clock, server uses ticks. `defeatTimestamp` stores sim ticks when tick-driven.
+* `GameEngine.sleep()` resolves on tick deadlines in server mode (AI turn pacing, inter-move delays). A tick-driven engine must be advanced by its owner — `GameRoom` does this every `TICK_MS` (100 ms).
+* The AI-turn watchdog in `TurnManager` is a tick deadline when the room is tick-driven, a wall-clock `setTimeout` in the browser. The only remaining wall-clock timer in shared code is a 3 s debug reminder when a human never registers — it changes no state.
+
+=== 5. Command layer
+
+* `packages/shared/types/commands.ts` defines 27 command types, a `CommandContext { actorId, turn, seq }`, typed results and machine-readable rejections.
+* `GameEngine.submit(command, context)` enforces the turn gate and subject ownership, then delegates to the existing rules methods. Direct engine mutations are documented as engine-internal/AI/test-only.
+* All UI mutation call sites were routed through `sendCommand()` (40 call sites across `GameCanvas.tsx`, `GameModals.tsx`, `CityModal.tsx`, `CityModalLogic.ts`, `SidePanel.tsx`, `RatesModal.tsx`, `App.tsx`). This includes specialist conversion, research, unit orders, improvements, diplomacy, trade routes and the production queue.
+* Two deliberate exceptions remain, both documented in code: `EngineEventHandlers.advanceResearchPath` (event-driven AI-seat automation that would fail the seat-bound gate) and `MoveAnimator` (animation executor with a narrow `MoveEngine` interface).
+
+*Verification:* `tests/commandLayer.test.ts` covers ownership/turn rejection and success paths, including the new command families.
+
+=== Follow-up: RNG state in saves
+
+* Save blobs now carry `rngState` and `disasterRngState` (still format version 5; older saves remain loadable). `loadGame` installs a stateful PRNG before restoring the saved position. DisasterManager exposes `getRngState`/`setRngState`.
+* Test: save → draw 8 numbers → load → draw 8 numbers → identical.
+
+=== Follow-up: authoritative server transport
+
+* `classify.ts` maps engine events to wire events with `scope = universal | seat | location`, owning seat and map location; has an explicit rule table plus heuristic fallback.
+* `fog.ts` implements `engineFogFilter(engine)` using the engine's own `isVisibleToPlayer`; `passAllFilter` remains for development.
+* `GameRoom` sets `engine.onStateChange` to classify once and expose `addListener()`; it owns one engine, one tick loop and one save store.
+* `RoomManager` handles create/add/get/list/remove/closeAll with sequential room ids.
+* `HttpTransport` endpoints:
+
+[cols="1,3"]
+|===
+|`GET /health` |server health and room list
+|`POST /rooms` |create + start a room from a `LobbyConfig`; returns `{ id, token }`
+|`GET /rooms` |list rooms
+|`DELETE /rooms/:id` |stop and remove a room
+|`POST /rooms/:id/commands` |`{ seat, token, command }` → `CommandResult`
+|`GET /rooms/:id/events?token=…` |SSE stream of classified, fog-filtered events
+|`GET /rooms/:id/state?token=…` |full save-blob snapshot for client mirrors
+|`POST /rooms/:id/save`, `POST /rooms/:id/load` |persistence endpoints
+|===
+
+* `WsTransport` (`ws` + `@types/ws` added): same room registry, token-based join, command messages with `requestId`, filtered event pushes.
+
+=== Follow-up: authentication
+
+* `auth.ts` issues HMAC-SHA256 signed tokens (`createSeatToken`, `verifySeatToken`, `tokenSeatResolver`) bound to room id and expiry, verified with `timingSafeEqual`.
+* When a transport is configured with `secret`, the token is authoritative: a forged `seat` field in a command body or query string is ignored. Without a secret the transports keep the demo `?seat=` behaviour.
+
+=== Follow-up: client transport and remote mode
+
+* `remoteSession.ts` implements `GameSession` over HTTP POST with optional `onResult` refresh hook.
+* `remoteEvents.ts` consumes SSE frames with reconnectable `close()` and an `onConnected` hook.
+* `OutboundEvent` lives in shared `types/events.ts` so the client does not import server code.
+* `remoteGame.ts` creates a read-only mirror `GameEngine` with a memory save store, binds the remote session, loads snapshots through `loadGame()`, refreshes on replies/events (coalesced), and exposes `refresh()`/`close()`.
+* `session.ts` exports `hasActiveSession()`; `UseGameEngine` will not replace an already-bound remote session.
+* `App.tsx` joins a room from `?server=…&room=…&token=…[&seat=…]` and closes the stream on unmount.
+
+== Verification status
+
+[cols="2,3"]
+|===
+|Command |Result
+
+|`npm run type-check` |Clean (no diagnostics)
+|`npm run build` |Succeeds (~11 s). Pre-existing Rollup warning about chunks >500 kB.
+|`npm test` |2,984 passed, 1 failed, 2,985 total across 253 files
+|`npm run lint` |0 errors, 1 pre-existing warning (`GameCanvas.tsx:268` react-hooks/exhaustive-deps); exits non-zero because of `--max-warnings 0`
+|===
+
+*The one failing test*, `tests/audienceDialog.test.ts > "a nomad audience pans the camera to the place it is about"`, was reproduced on an untouched `HEAD` worktree before any changes. Its `NOMAD_PARLEY` handler awaits a camera glide that never resolves in a node test, so the dialog assertion runs too early. It is unrelated to the split.
+
+*A second flaky test*, `tests/ai/SettlementEvaluator.test.ts > performance`, has a 650 ms threshold and was observed failing intermittently on the baseline too (616 ms / 638 ms / >650 ms across runs).
+
+== Git state
+
+Three commits already record earlier phases:
+
+* `b057a47` — remove legacy Terrain and Unit systems
+* `4739eba` — project structure / shared package
+* `3a80983` — commands routed through `sendCommand`
+
+The following files from the later phases are **uncommitted** in the working tree:
+`package.json`, `package-lock.json`, `packages/server/package.json`, `packages/server/src/{classify,fog,index,transport}.ts`, `packages/shared/ports/saveStore.ts`, `packages/web/src/{App.tsx,hooks/UseGameEngine.ts,session.ts}`, `tests/serverTransport.test.ts`, plus untracked `packages/server/src/{auth,roomManager,wsTransport}.ts`, `packages/shared/types/events.ts`, `packages/web/src/{remoteEvents,remoteGame,remoteSession}.ts`.
+
+== Open tasks and known limitations
+
+1. *Snapshot refresh granularity.* Remote mode fetches and reloads a full save blob whenever a command reply or event burst arrives. Correct, but chattier than an incremental projection; large games may notice the cost.
+2. *Lobby UI.* Room creation/join is available through `POST /rooms` and URL parameters, but there is no in-app lobby screen for selecting seats, inviting players or displaying tokens.
+3. *Seat assignment.* Tokens are signed, but the server issues only the host (seat 0) token in `POST /rooms`. A real lobby must mint one token per seat and deliver it securely.
+4. *Event projection.* The mirror engine is refreshed via snapshots; `subscribeToRoomEvents` is used only as a refresh trigger. The event payloads are not yet applied incrementally to the Zustand projection independently of `loadGame()`.
+5. *Engine event surface.* Some engine events still carry whole objects (units, cities); a fine-grained client reducer would need a stable event schema.
+6. *Pre-existing test/lint issues* listed above remain untouched by design.
+7. *Persistence backend.* `InMemorySaveStore` is room-local; there is no database-backed `SaveStore` for reconnect/restart survival.
+
+== Concrete next steps
+
+=== Step 1 — Commit the remaining work (immediate)
+
+.Stage and commit the uncommitted files listed above, with a message describing auth, transports and remote mode. Verify `git status` is clean apart from the intentionally untracked scratch files in `/tmp`.
+*Done when:* `git status --short` shows no modified tracked files related to the split.
+
+=== Step 2 — Fix the two pre-existing failures (small, independent)
+
+*`tests/audienceDialog.test.ts`:* in `packages/web/src/utils/EngineEventHandlers.ts`, `onNomadParley` awaits `awaitCameraGlide()` when `focusCameraOnTile` has called `beginCameraGlide()`; in node there is no `GameCanvas` to call `finishCameraGlide()`, so the promise waits for the 900 ms safety timeout while the test asserts synchronously. Either make the test await the dialog (preferred) or have the handler open the audience before awaiting the camera.
+*`tests/ai/SettlementEvaluator.test.ts`:* the 650 ms threshold is too tight for shared CI; measure under load and raise it to a realistic value (or move the benchmark to `vitest.diag.config.ts`, which already excludes `*bench*` files from the main suite).
+*Done when:* `npm test` is fully green on three consecutive runs.
+
+=== Step 3 — Lint warning (trivial)
+
+`packages/web/src/components/game/GameCanvas.tsx:268` — remove `gameState.activePlayer` and `gameState.currentTurn` from the `useMemo` dependency array if they are truly unused, or use them explicitly. Confirm with `npm run lint`.
+*Done when:* lint exits 0.
+
+=== Step 4 — Incremental event projection (medium)
+
+.Extract a stable wire event schema in `packages/shared/types/events.ts` (discriminated union by `type` with typed payloads for the events the UI projects: `TURN_START`, `UNIT_MOVED`, `UNIT_DEFEATED`, `UNIT_REMOVED`, `CITY_FOUND`, `CITY_CAPTURED`, `COMBAT_HIT`, `NOTIFICATION`).
+.Give the server a typed `EVENT_RULES` map keyed by those types; keep the heuristic fallback for the long tail.
+.Add a client reducer in `packages/web/src/remoteProjection.ts` that applies those events to a read model (start from the current `EngineEventRouter` switch), and use snapshot loads only on connect/reconnect.
+.Acceptance: disconnect the SSE stream after join, issue commands, and assert the projection stays correct without another `/state` fetch.
+*Done when:* `/state` is called only at join and on reconnect; tests cover each event type.
+
+=== Step 5 — Lobby and seat tokens (medium)
+
+.Add `POST /rooms/:id/seats` (host-only) that mints one signed token per requested seat using `createSeatToken(secret, roomId, seat)`.
+.Add a `Lobby` screen in `packages/web/src/components/ui/` that creates a room, lists seats, copies tokens and joins with `?server=&room=&token=`.
+.Bind the selected seat's token into `createRemoteGame`; remove the demo `?seat=` fallback once all clients use tokens.
+*Done when:* two browser tabs with different tokens can command their own seats and are rejected for each other's units.
+
+=== Step 6 — Durable persistence (medium)
+
+.Implement a `DatabaseSaveStore implements SaveStore` in `packages/server/` (file-backed JSON for dev, swap for a DB later).
+.Inject it through `RoomOptions.saveStore`; add a `POST /rooms/:id/save`/`load` test that survives a `RoomManager` restart.
+.Include RNG state in the stored blob (already present) and verify replay after restart.
+*Done when:* a room can be stopped, recreated with the same id and loaded state, and the next RNG draw matches the pre-restart value.
+
+=== Step 7 — Documentation and ergonomics (small)
+
+.Update `README.adoc` with a "Multiplayer / server mode" section: how to start the server, create a room, mint tokens and join from the URL.
+.Add npm scripts for the server (`"dev:server"`, `"start:server"`) once an entry point (`packages/server/src/main.ts` starting `HttpTransport` + `WsTransport`) exists.
+.Add an e2e Playwright spec that joins a remote room and performs a move through the server.
+*Done when:* a developer can start a two-player game by following the README alone.
+
+== Appendix — key files
+
+[cols="2,3"]
+|===
+|File |Role
+
+|`packages/shared/game/engine/Rng.ts` |Seeded stream, state export/import
+|`packages/shared/game/engine/GameEngine.ts` |RNG, ids, runtime/saveStore ports, tick clock, `submit()`
+|`packages/shared/ports/runtime.ts` |Presentation/timing port + headless implementation
+|`packages/shared/ports/saveStore.ts` |Storage port + browser/memory implementations
+|`packages/shared/types/commands.ts` |Command union and results
+|`packages/shared/types/events.ts` |Wire event format
+|`packages/server/src/room.ts` |One room = one engine + tick loop + event fan-out
+|`packages/server/src/auth.ts` |Signed seat tokens
+|`packages/server/src/transport.ts` |HTTP/SSE endpoints
+|`packages/server/src/wsTransport.ts` |WebSocket transport
+|`packages/web/src/remoteGame.ts` |Mirror engine + remote session + event refresh
+|`packages/web/src/session.ts` |Active session gate used by all UI commands
+|===
+
+== Appendix — command union (27 types)
+
+`MOVE_UNIT`, `SET_RATES`, `SET_CITY_PRODUCTION`, `FOUND_CITY`, `TEAM_COORDINATE_ATTACK`, `TEAM_DEFEND_CITY`, `FORTIFY_UNIT`, `UNFORTIFY_UNIT`, `SLEEP_UNIT`, `WAKE_UNIT`, `SKIP_UNIT`, `DISBAND_UNIT`, `BUILD_IMPROVEMENT`, `DEPLOY_FISHING_NET`, `RECALL_FISHING_BOAT`, `ESTABLISH_TRADE_ROUTE`, `CLEAR_TRADE_ROUTE`, `EXECUTE_DIPLOMAT_ACTION`, `SET_RESEARCH`, `PROMOTE_SPECIALIST`, `DEMOTE_SPECIALIST`, `CONVERT_TILE_SPECIALIST`, `PURCHASE_PRODUCTION`, `REMOVE_QUEUE_ITEM`, `MOVE_QUEUE_ITEM`, `PROMOTE_QUEUE_ITEM`, `MOVE_CURRENT_PRODUCTION_DOWN`.

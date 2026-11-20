@@ -3,18 +3,81 @@ import { classifyEvent } from '@server/classify';
 import { engineFogFilter } from '@server/fog';
 import { GameRoom } from '@server/room';
 import { HttpTransport } from '@server/transport';
+import { WsTransport } from '@server/wsTransport';
+import { RoomManager } from '@server/roomManager';
+import { createSeatToken, verifySeatToken } from '@server/auth';
+import WebSocket from 'ws';
 import type GameEngine from '@shared/game/engine/GameEngine';
+import { createRemoteSession } from '@/remoteSession';
+import { sendCommand, setActiveSession } from '@/session';
+import { subscribeToRoomEvents } from '@/remoteEvents';
+import { createRemoteGame } from '@/remoteGame';
 
 /** The server boundary: commands in, classified + fog-filtered events out. */
 describe('server transport', () => {
   const transports: HttpTransport[] = [];
+  const wsTransports: WsTransport[] = [];
   const rooms: GameRoom[] = [];
+  const remoteGames: Array<{ close(): void }> = [];
 
   afterEach(async () => {
+    for (const remote of remoteGames) remote.close();
     for (const room of rooms) room.stop();
     for (const transport of transports) await transport.close();
+    for (const transport of wsTransports) await transport.close();
+    setActiveSession(null);
     transports.length = 0;
+    wsTransports.length = 0;
     rooms.length = 0;
+    remoteGames.length = 0;
+  });
+
+  it('signs seat tokens and rejects tampering, wrong rooms and expiry', () => {
+    const token = createSeatToken('secret', 'r1', 2, 60);
+    expect(verifySeatToken('secret', token, 'r1')).toBe(2);
+    expect(verifySeatToken('secret', token, 'r2')).toBeNull();
+    expect(verifySeatToken('other-secret', token, 'r1')).toBeNull();
+    const [body, signature] = token.split('.');
+    expect(verifySeatToken('secret', `${body}.${signature}x`, 'r1')).toBeNull();
+    expect(verifySeatToken('secret', createSeatToken('secret', 'r1', 2, -1), 'r1')).toBeNull();
+    expect(verifySeatToken('secret', null, 'r1')).toBeNull();
+  });
+
+  it('requires a signed token when the transport is configured with a secret', async () => {
+    const transport = new HttpTransport({ port: 0, secret: 'secret' });
+    await transport.waitUntilReady();
+    transports.push(transport);
+    const room = new GameRoom({ id: 'secure', lobby: { seed: 3, numberOfCivilizations: 2 } });
+    rooms.push(room);
+    transport.register(room);
+    await room.start();
+
+    const base = `http://127.0.0.1:${transport.port}`;
+    const created = await fetch(`${base}/rooms`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ seed: 4 }),
+    }).then((r) => r.json());
+    expect(created.token).toBeTruthy();
+
+    const forged = await fetch(`${base}/rooms/secure/commands`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ seat: 1, command: { type: 'SET_RATES', tax: 100, science: 0, luxury: 0 } }),
+    }).then((r) => r.json());
+    expect(forged).toMatchObject({ ok: false });
+
+    const authorized = await fetch(`${base}/rooms/secure/commands`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        token: createSeatToken('secret', 'secure', 0),
+        seat: 1, // deliberately forged — the token wins
+        command: { type: 'SET_RATES', tax: 25, science: 50, luxury: 25 },
+      }),
+    }).then((r) => r.json());
+    expect(authorized).toMatchObject({ ok: true, command: 'SET_RATES' });
+    expect(room.engine.civilizations[0].scienceRate).toBe(50);
   });
 
   it('classifies seat ownership and event location', () => {
@@ -36,7 +99,135 @@ describe('server transport', () => {
     expect(filter.isVisible(classifyEvent('ESPIONAGE_RESULT', { civId: 1 }), 2)).toBe(false);
     expect(filter.isVisible(classifyEvent('COMBAT_HIT', { col: 3, row: 3 }), 0)).toBe(true);
     expect(filter.isVisible(classifyEvent('COMBAT_HIT', { col: 8, row: 3 }), 0)).toBe(false);
-    expect(filter.isVisible(classifyEvent('TURN_START', { civilizationId: 0 }), 1)).toBe(false);
+    // Public turn transitions are universal, even though they name a civ.
+    expect(filter.isVisible(classifyEvent('TURN_START', { civilizationId: 0 }), 1)).toBe(true);
+    expect(classifyEvent('WAR_DECLARED', { civId: 0 }).scope).toBe('universal');
+  });
+
+  it('creates, lists and removes rooms over HTTP', async () => {
+    const transport = new HttpTransport({ port: 0 });
+    await transport.waitUntilReady();
+    transports.push(transport);
+    const base = `http://127.0.0.1:${transport.port}`;
+
+    const created = await fetch(`${base}/rooms`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ seed: 5, numberOfCivilizations: 2 }),
+    }).then((r) => r.json());
+    expect(created).toMatchObject({ ok: true, id: 'room_1' });
+
+    const listed = await fetch(`${base}/rooms`).then((r) => r.json());
+    expect(listed.rooms).toHaveLength(1);
+
+    const saved = await fetch(`${base}/rooms/room_1/save`, { method: 'POST' }).then((r) => r.json());
+    expect(saved).toMatchObject({ ok: true });
+
+    const removed = await fetch(`${base}/rooms/room_1`, { method: 'DELETE' }).then((r) => r.json());
+    expect(removed).toMatchObject({ ok: true });
+    const after = await fetch(`${base}/rooms`).then((r) => r.json());
+    expect(after.rooms).toHaveLength(0);
+  });
+
+  it('accepts a command over a WebSocket and pushes it through the room', async () => {
+    const manager = new RoomManager();
+    const room = manager.create({ seed: 9, numberOfCivilizations: 2 }, 'ws_room');
+    rooms.push(room);
+    await room.start();
+    const transport = new WsTransport({ port: 0 }, manager);
+    await transport.waitUntilReady();
+    wsTransports.push(transport);
+
+    const socket = new WebSocket(`ws://127.0.0.1:${transport.port}/?room=ws_room&token=0`);
+    const reply = await new Promise<{ result: { ok: boolean; command?: string } }>((resolve, reject) => {
+      socket.once('error', reject);
+      socket.once('open', () => {
+        socket.send(JSON.stringify({
+          type: 'command',
+          requestId: 'req1',
+          command: { type: 'SET_RATES', tax: 20, science: 70, luxury: 10 },
+        }));
+      });
+      socket.once('message', (raw) => resolve(JSON.parse(String(raw)) as never));
+    });
+    socket.close();
+
+    expect(reply.result).toMatchObject({ ok: true, command: 'SET_RATES' });
+    expect(room.engine.civilizations[0].taxRate).toBe(20);
+  });
+
+  it('delivers classified events to a client event stream', async () => {
+    const transport = new HttpTransport({ port: 0, secret: 'secret' });
+    await transport.waitUntilReady();
+    transports.push(transport);
+    const room = new GameRoom({ id: 'stream', lobby: { seed: 13, numberOfCivilizations: 2 } });
+    rooms.push(room);
+    transport.register(room);
+    await room.start();
+
+    const token = createSeatToken('secret', 'stream', 0);
+    const received = new Promise<{ type: string }>((resolve, reject) => {
+      const subscription = subscribeToRoomEvents({
+        baseUrl: `http://127.0.0.1:${transport.port}`,
+        roomId: 'stream',
+        token,
+        onConnected: () => {
+          room.engine.onStateChange?.('TURN_START', { civilizationId: 0 });
+        },
+        onEvent: (event) => {
+          subscription.close();
+          resolve(event);
+        },
+        onError: reject,
+      });
+    });
+    expect(await received).toMatchObject({ type: 'TURN_START', scope: 'universal' });
+  });
+
+  it('runs remote mode: server snapshot + commands through a mirror engine', async () => {
+    const transport = new HttpTransport({ port: 0, secret: 'secret' });
+    await transport.waitUntilReady();
+    transports.push(transport);
+    const room = new GameRoom({ id: 'mirror', lobby: { seed: 17, numberOfCivilizations: 2 } });
+    rooms.push(room);
+    transport.register(room);
+    await room.start();
+
+    const token = createSeatToken('secret', 'mirror', 0);
+    const mirror = await createRemoteGame({
+      baseUrl: `http://127.0.0.1:${transport.port}`,
+      roomId: 'mirror',
+      token,
+    });
+    remoteGames.push(mirror);
+    expect(mirror.engine.civilizations).toHaveLength(2);
+
+    const result = await sendCommand({ type: 'SET_RATES', tax: 10, science: 80, luxury: 10 });
+    expect(result).toMatchObject({ ok: true });
+    expect(room.engine.civilizations[0].scienceRate).toBe(80);
+    // The server publishes an event after the command; the mirror refreshes.
+    room.engine.onStateChange?.('NOTIFICATION', { civId: 0, message: 'rates' });
+    await mirror.refresh();
+    expect(mirror.engine.civilizations[0].scienceRate).toBe(80);
+  });
+
+  it('runs the same UI command through a remote session', async () => {
+    const transport = new HttpTransport({ port: 0 });
+    await transport.waitUntilReady();
+    transports.push(transport);
+    const room = new GameRoom({ id: 'remote', lobby: { seed: 11, numberOfCivilizations: 2 } });
+    rooms.push(room);
+    transport.register(room);
+    await room.start();
+
+    setActiveSession(createRemoteSession({
+      baseUrl: `http://127.0.0.1:${transport.port}`,
+      roomId: 'remote',
+      seat: 0,
+    }));
+    const result = await sendCommand({ type: 'SET_RATES', tax: 40, science: 40, luxury: 20 });
+    expect(result).toMatchObject({ ok: true, command: 'SET_RATES' });
+    expect(room.engine.civilizations[0].scienceRate).toBe(40);
   });
 
   it('accepts a command over HTTP and answers with a typed result', async () => {
@@ -50,7 +241,8 @@ describe('server transport', () => {
 
     const base = `http://127.0.0.1:${transport.port}`;
     const health = await fetch(`${base}/health`).then((r) => r.json());
-    expect(health).toMatchObject({ ok: true, rooms: ['r1'] });
+    expect(health).toMatchObject({ ok: true });
+    expect(health.rooms[0].id).toBe('r1');
 
     const result = await fetch(`${base}/rooms/r1/commands`, {
       method: 'POST',

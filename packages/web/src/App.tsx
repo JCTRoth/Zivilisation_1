@@ -9,6 +9,7 @@ import {
 } from "./utils/ModalTriggers";
 import GameEngine from "@shared/game/engine/GameEngine";
 import { webRuntime } from "./gameRuntime";
+import { createRemoteGame } from "./remoteGame";
 import GameCanvas from "./components/game/GameCanvas";
 import SettingsModal from "./components/ui/SettingsModal";
 import GameSetupModal from "./components/ui/GameSetupModal";
@@ -174,6 +175,19 @@ function App() {
   const handleGameStart = useCallback(
     async (gameSettings) => {
       try {
+        const remote = (gameSettings as {
+          __remote?: { baseUrl: string; roomId: string; token: string; seat?: number };
+        }).__remote;
+        if (remote) {
+          console.log("[App] Joining remote room:", remote.roomId, "at", remote.baseUrl);
+          const joined = await createRemoteGame(remote);
+          remoteGameRef.current = joined;
+          setGameEngine(joined.engine);
+          setShowGameSetup(false);
+          actions.startGame();
+          return;
+        }
+
         console.log("Starting new game with settings:", gameSettings);
         setShowGameSetup(false);
 
@@ -317,6 +331,13 @@ function App() {
   // modal and launch directly into a game with sensible defaults and
   // developer mode enabled.  Useful for rapid iteration during development.
   const quickstartRef = useRef(false);
+  const remoteGameRef = useRef<Awaited<ReturnType<typeof createRemoteGame>> | null>(null);
+  // Close the remote event stream when the app unmounts.
+  useEffect(() => () => {
+    remoteGameRef.current?.close();
+    remoteGameRef.current = null;
+  }, []);
+
   // Settings handed over by the URL (`?maptype=…&civs=…&seed=…`), read once.
   const urlSettingsRef = useRef<Record<string, unknown> | null>(null);
   useEffect(() => {
@@ -329,6 +350,22 @@ function App() {
     // open the URL and the map plays itself, with nothing to click and no
     // modal that can appear over the board. An AI-vs-AI mapType implies Dev
     // Mode, which `handleGameStart` forces anyway.
+    // `?server=…&room=…&token=…` joins an authoritative server room instead of
+    // starting a local simulation. The mirror engine is created in
+    // handleGameStart from this payload.
+    if (params.has("server") && params.has("room")) {
+      urlSettingsRef.current = {
+        __remote: {
+          baseUrl: params.get("server")!,
+          roomId: params.get("room")!,
+          token: params.get("token") ?? "",
+          ...(params.has("seat") ? { seat: Number(params.get("seat")) } : {}),
+        },
+      };
+      window.history.replaceState(null, "", window.location.pathname);
+      return;
+    }
+
     const mapTypeParam = params.get("maptype");
     if (mapTypeParam) {
       const num = (key: string, fallback: number) => {

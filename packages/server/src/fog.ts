@@ -1,17 +1,7 @@
 import type GameEngine from '@civ1/shared/game/engine/GameEngine';
+import type { OutboundEvent } from '@civ1/shared/types/events';
 
-/** An engine event the room emitted, before per-seat filtering. */
-export interface OutboundEvent {
-  type: string;
-  payload: unknown;
-  /** Owning seat, when the event is about one civilization. */
-  civId?: number;
-  /** Location of the subject, when the event happens on the map. */
-  col?: number;
-  row?: number;
-  /** Never broadcast beyond the owning seat. */
-  seatOnly?: boolean;
-}
+export type { OutboundEvent } from '@civ1/shared/types/events';
 
 /**
  * Per-connection visibility filtering. The server classifies every engine
@@ -25,7 +15,8 @@ export interface VisibilityFilter {
 export function engineFogFilter(engine: GameEngine): VisibilityFilter {
   return {
     isVisible: (event, seat) => {
-      if (event.seatOnly) return event.civId === seat;
+      if (event.scope === 'universal') return true;
+      if (event.seatOnly || event.scope === 'seat') return event.civId === seat;
       if (event.civId !== undefined && event.civId !== seat) return false;
       if (event.col !== undefined && event.row !== undefined) {
         return engine.isVisibleToPlayer(seat, event.col, event.row);

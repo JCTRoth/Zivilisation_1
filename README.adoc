@@ -9,10 +9,12 @@
 The repo is an npm workspace with three packages:
 
 * `packages/shared/` — headless simulation: `GameEngine`, turn/AI managers, map generator, balance data, types and i18n. Imported by both other packages; no DOM, React or wall-clock dependencies (see `ports/runtime.ts`).
-* `packages/server/` — authoritative rooms: lobby→settings, command envelopes, save store, fog filter and transport interfaces (skeleton; the room/tick loop is the prototype for the server split).
-* `packages/web/` — today's React/Vite client: components, rendering, stores, styles and `session.ts` (the client side of the command layer).
+* `packages/server/` — authoritative rooms: lobby→settings, command validation, save store, signed seat tokens, fog filtering, room lifecycle and HTTP/SSE + WebSocket transports.
+* `packages/web/` — React/Vite client: components, rendering, stores, styles and the transport seam (`session.ts`, `remoteSession.ts`, `remoteEvents.ts`, `remoteGame.ts`).
 
 Root-level `tests/`, `scripts/`, `e2e/` and `tools/` stay where they are. Vite serves `packages/web` with `public/` from the repo root; `npm test`, `npm run type-check` and `npm run build` all run from the repo root.
+
+For the full implementation status — completed work, verification results, open limitations and concrete next steps — see link:doc/SERVER_CLIENT_SPLIT_STATUS.adoc[Server/Client Split Status Report].
 
 **Overall Assessment** +
 Zivilisation_1 is not a perfect clone, but it is not trying to be one. +

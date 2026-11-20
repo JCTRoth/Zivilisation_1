@@ -26,6 +26,11 @@ export function setActiveSession(session: GameSession | null): void {
   activeSession = session;
 }
 
+/** True when a transport has already been bound (e.g. a remote room). */
+export function hasActiveSession(): boolean {
+  return activeSession !== null;
+}
+
 /**
  * Send one command to the active session. Never throws: a transport or engine
  * failure comes back as a typed rejection so callers can render it.

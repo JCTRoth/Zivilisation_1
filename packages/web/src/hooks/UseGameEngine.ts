@@ -4,7 +4,7 @@ import GameEngine from '@shared/game/engine/GameEngine';
 import { EngineEventRouter } from '../utils/EngineEventHandlers';
 import { gameLogger } from '../utils/GameLogger';
 import { gameProgression } from '../utils/GameProgression';
-import { createLocalSession, setActiveSession } from '../session';
+import { createLocalSession, hasActiveSession, setActiveSession } from '../session';
 
 /**
  * Custom hook to integrate GameEngine with Zustand state
@@ -18,7 +18,10 @@ export const useGameEngine = (gameEngine: GameEngine | null) => {
     // The UI talks to the engine only through the command layer. Bind a session
     // for this engine's lifetime; the store keeps projecting the engine's
     // events exactly as before, so nothing on the read path changes.
-    setActiveSession(createLocalSession(gameEngine));
+    // A remote room binds its session before the mirror engine is mounted;
+    // never replace it with an in-tab session (that would silently bypass the
+    // authority for every command).
+    if (!hasActiveSession()) setActiveSession(createLocalSession(gameEngine));
 
     // Keep the logger's context (round/player) in sync with the live engine.
     gameLogger.setContext(() => ({

@@ -11,6 +11,16 @@ export interface SaveStore {
   set(key: string, value: string): void;
 }
 
+/** Simple in-memory store — used by the client's read-only mirror engine. */
+export function createMemorySaveStore(): SaveStore & { data: Map<string, string> } {
+  const data = new Map<string, string>();
+  return {
+    data,
+    get: (key) => data.get(key) ?? null,
+    set: (key, value) => { data.set(key, value); },
+  };
+}
+
 /** Default for the in-tab browser engine. Safe in node (returns null). */
 export const browserSaveStore: SaveStore = {
   get: (key) => globalThis.localStorage?.getItem(key) ?? null,
