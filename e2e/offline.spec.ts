@@ -22,7 +22,7 @@ async function dismissStartDialogs(page: Page): Promise<void> {
 test.describe('offline play', () => {
   test('the app launches and shows the offline banner with the network down', async ({ page, context }) => {
     await page.goto('/');
-    await expect(page.getByRole('button', { name: 'Play' })).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByRole('heading', { name: 'Choose Your Civilization' })).toBeVisible({ timeout: 60_000 });
 
     // Wait until the service worker is installed and controlling the page.
     const state = await page.evaluate(async () => {
@@ -50,7 +50,7 @@ test.describe('offline play', () => {
     // Now the real test: a *cold* launch with no network must still boot
     // from the service worker cache.
     await page.reload();
-    await expect(page.getByRole('button', { name: 'Play' })).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByRole('heading', { name: 'Choose Your Civilization' })).toBeVisible({ timeout: 60_000 });
 
     await context.setOffline(false);
   });
@@ -65,9 +65,9 @@ test.describe('offline play', () => {
     await page.keyboard.press('Control+s');
     await expect(page.locator('.app-toast')).toContainText(/saved locally/i, { timeout: 15_000 });
 
-    // A cold reload lands on the single hub action; saving lives in the game.
+    // A cold reload lands on the wizard itself; saving lives in the game.
     await page.reload();
-    await expect(page.getByRole('button', { name: 'Play' })).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByRole('heading', { name: 'Choose Your Civilization' })).toBeVisible({ timeout: 60_000 });
 
     // Boot a fresh local game. The in-game library hydrates IndexedDB
     // asynchronously, so open it first and wait for the saved entry.

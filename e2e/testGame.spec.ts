@@ -86,9 +86,8 @@ async function startAIVsAIGame(page: Page): Promise<void> {
     try { window.localStorage.clear(); } catch { /* private mode */ }
   });
   await page.goto('/', { waitUntil: 'networkidle' });
-  await expect(page.getByRole('button', { name: 'Play' })).toBeVisible({ timeout: 30_000 });
-  await page.getByRole('button', { name: 'Play' }).click();
   await expect(page.locator('h2.modal-title')).toContainText('Zivilisation 1', { timeout: 30_000 });
+  await expect(page.getByRole('heading', { name: 'Choose Your Civilization' })).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: 'Next →' }).click();
   await expect(page.getByText('Fine-tune Your Challenge')).toBeVisible();
   await page.locator('select.setup-setting__control').last().selectOption('AI_VS_AI');

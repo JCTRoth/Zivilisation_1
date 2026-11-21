@@ -13,8 +13,9 @@ test.describe('setup step two — where to play', () => {
   test('Play online opens the room table inside the wizard', async ({ page }) => {
     await page.goto('/');
 
-    // The hub carries no title of its own above the lede any more.
-    await page.getByRole('button', { name: 'Play' }).click();
+    // The wizard is the first screen — no hub in front of it — and the old
+    // hub heading is gone for good.
+    await expect(page.getByRole('heading', { name: 'Choose Your Civilization' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'The Table Is Set' })).toHaveCount(0);
 
     await page.getByRole('button', { name: 'Next →' }).click();
@@ -45,7 +46,7 @@ test.describe('setup step two — where to play', () => {
 
   test('offline grays the online choice out', async ({ page, context }) => {
     await page.goto('/');
-    await page.getByRole('button', { name: 'Play' }).click();
+    await expect(page.getByRole('heading', { name: 'Choose Your Civilization' })).toBeVisible();
     await page.getByRole('button', { name: 'Next →' }).click();
 
     const online = page.getByRole('button', { name: 'Play online' });

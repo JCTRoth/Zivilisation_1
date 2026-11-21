@@ -14,7 +14,7 @@ import {
 // ---------------------------------------------------------------------------
 
 test.describe('Game Setup', () => {
-  test('shows the setup wizard after leaving the hub', async ({ page }) => {
+  test('opens directly on the setup wizard', async ({ page }) => {
     await page.goto('/');
     await openNewCampaign(page);
     await expect(page.getByText('Choose Your Civilization')).toBeVisible();

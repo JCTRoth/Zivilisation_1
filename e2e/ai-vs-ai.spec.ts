@@ -30,7 +30,7 @@ const LOG_DIR = join(process.cwd(), 'game-logs');
 async function startAIVsAIGame(page: Page): Promise<void> {
   await page.goto('/', { waitUntil: 'networkidle' });
 
-  // War Council hub → single-player wizard.
+  // The setup wizard is the first screen.
   await openNewCampaign(page);
 
   // Step 1 – Civilization selection (default is pre-selected)

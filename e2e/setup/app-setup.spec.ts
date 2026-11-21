@@ -24,16 +24,17 @@ test.describe('App is Running & Landing Page Loads', () => {
     await expect(page).toHaveTitle(/Zivilisation 1/);
   });
 
-  test('React app mounts and renders the War Council hub', async ({ page }) => {
+  test('React app mounts and renders the setup wizard', async ({ page }) => {
     await page.goto('/');
     // #gameContainer is the shell React renders into #root before a game starts.
     await expect(page.locator('#gameContainer')).toBeVisible({ timeout: 10_000 });
-    // The War Council is the first screen; React-Bootstrap portals the dialog
-    // to <body>, so check it directly rather than through #root.
+    // The wizard is the first screen — there is no hub in front of it — and
+    // React-Bootstrap portals the dialog to <body>, so check it directly
+    // rather than through #root.
     await expect(page.locator('h2.modal-title')).toContainText('Zivilisation 1', {
       timeout: 10_000,
     });
-    await expect(page.getByRole('button', { name: /Play/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Choose Your Civilization' })).toBeVisible();
     await expect(page.getByRole('button', { name: /Settings/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /Field Manual/ })).toBeVisible();
   });

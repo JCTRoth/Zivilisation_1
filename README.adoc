@@ -83,7 +83,7 @@ deleted before its copy is safely stored.
 * `Ctrl+S` / `Ctrl+L` save and load the manual slot.
 
 Saves are managed only from inside a running game (GAME menu and shortcuts);
-the front menu has no campaign library or "continue" card.
+the pre-game wizard has no campaign library or "continue" card.
 
 A deliberate save is written to the device immediately; the end-of-turn
 autosave is debounced. Nothing is pending when the tab is closed.

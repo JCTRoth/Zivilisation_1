@@ -14,7 +14,6 @@ import GameCanvas from "./components/game/GameCanvas";
 import SettingsModal from "./components/ui/SettingsModal";
 import GameSetupModal from "./components/ui/GameSetupModal";
 import LobbyPanel from "./components/ui/LobbyPanel";
-import WarRoomMenu from "./components/ui/WarRoomMenu";
 import EndTurnConfirmModal from "./components/ui/EndTurnConfirmModal";
 import GameModals from "./components/ui/GameModals";
 import GameResultOverlay from "./components/ui/GameResultOverlay";
@@ -85,10 +84,10 @@ function App() {
   const [showHexDetail, setShowHexDetail] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showGameSetup, setShowGameSetup] = useState(true);
-  // The pre-game room has three faces: the War Council hub (menu), the
-  // single-player wizard and the multiplayer lobby. They share the 3D stage,
-  // so moving between them feels like turning to another table in one room.
-  const [setupView, setSetupView] = useState<'menu' | 'single'>('menu');
+  // The pre-game room has two faces: the setup wizard — which is the first
+  // screen the player sees, there is no hub in front of it any more — and the
+  // multiplayer lobby a ?lobby= link lands on. They share the 3D stage, so
+  // moving between them feels like turning to another table in one room.
   const [lobbyServer, setLobbyServer] = useState<string | null>(null);
   // The local campaign library (IndexedDB) and the offline notices.
   const [showCampaigns, setShowCampaigns] = useState(false);
@@ -407,7 +406,6 @@ function App() {
       gameProgression.startSession(engine, engine.gameSettings);
       setGameEngine(engine);
       setShowGameSetup(false);
-      setSetupView("menu");
       actions.focusOnNextUnit();
       setShowCampaigns(false);
     },
@@ -999,7 +997,6 @@ function App() {
     setIsEndTurnAutomatic(false);
     setGameEngine(null);
     setShowGameSetup(true);
-    setSetupView('menu');
   }, [actions, gameEngine]);
 
   // Handle hex examination (called from canvas)
@@ -1044,7 +1041,6 @@ function App() {
     setIsEndTurnAutomatic(false);
     setGameEngine(null);
     setShowGameSetup(true);
-    setSetupView('menu');
   };
 
   // Pause / resume the game. While paused, turn processing / AI actions are
@@ -1531,43 +1527,31 @@ function App() {
     );
   }
 
-  // The pre-game room. One hub action ("Play") opens the two-step wizard;
-  // step two is where the table is chosen — on this device, or online with
-  // the room rendered inside that same step (no separate lobby page). The
-  // wizard stays mounted behind a ?lobby= landing so stepping back keeps the
-  // nation and settings the player already picked. Remote joins and URL
+  // The pre-game room. The two-step wizard IS the first screen — there is no
+  // hub in front of it any more — and step two is where the table is chosen:
+  // on this device, or online with the room rendered inside that same step.
+  // The wizard stays mounted behind a ?lobby= landing so stepping back keeps
+  // the nation and settings the player already picked. Remote joins and URL
   // scenarios skip this block entirely and open straight on the board.
   if (!gameEngine && showGameSetup) {
     // A ?lobby=<server> join is a landing, not a step of the wizard.
     const showLobby = lobbyServer !== null;
     return (
       <div id="gameContainer" className="game-setup-screen text-white">
-        {setupView !== 'menu' && (
-          <div style={showLobby ? { display: 'none' } : undefined}>
-            <GameSetupModal
-              show={showGameSetup}
-              onStart={handleGameStart}
-              onBack={() => setSetupView('menu')}
-              online={online}
-            />
-          </div>
-        )}
+        <div style={showLobby ? { display: 'none' } : undefined}>
+          <GameSetupModal
+            show={showGameSetup}
+            onStart={handleGameStart}
+            online={online}
+            onSettings={() => setShowSettings(true)}
+            onHelp={() => actions.showDialog('help')}
+          />
+        </div>
 
         {showLobby && (
           <LobbyPanel
             defaultServer={lobbyServer ?? undefined}
-            onBack={() => {
-              setLobbyServer(null);
-              setSetupView('single');
-            }}
-          />
-        )}
-
-        {setupView === 'menu' && !showLobby && (
-          <WarRoomMenu
-            onPlay={() => setSetupView('single')}
-            onSettings={() => setShowSettings(true)}
-            onHelp={() => actions.showDialog('help')}
+            onBack={() => setLobbyServer(null)}
           />
         )}
 
@@ -1575,8 +1559,8 @@ function App() {
         <OfflineBanner offline={!online} reconnecting={reconnecting} />
         <UpdateBanner available={updateAvailable} onApply={applyUpdate} onDismiss={dismissUpdate} />
 
-        {/* The same dialogs the in-game menus open, so options and the field
-            manual are no longer unreachable until after a game has started. */}
+        {/* The same dialogs the in-game menus open, opened here by the
+            wizard's nameplate buttons (Settings, Field Manual). */}
         <SettingsModal show={showSettings} onHide={() => setShowSettings(false)} />
         <GameModals gameEngine={null} />
       </div>

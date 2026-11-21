@@ -140,8 +140,13 @@ function mapTypeBadge(mapType: string): string {
 
 type GameSetupModalProps = {
   show: boolean;
-  /** Return to the War Council hub without starting a game. */
-  onBack?: () => void;
+  /**
+   * Open the shared options dialog over the council. The wizard is the first
+   * screen now, so these two are how Settings and the Field Manual stay
+   * reachable before a game exists.
+   */
+  onSettings?: () => void;
+  onHelp?: () => void;
   /**
    * Whether the device has a connection. Offline grays the "Play online"
    * choice out and keeps the wizard on the local table — the online room
@@ -510,7 +515,7 @@ function MapSizeTool({ width, height, civCount, onChange }: MapSizeToolProps) {
   );
 }
 
-function GameSetupModal({ show, onStart, onBack, online = true }: GameSetupModalProps) {
+function GameSetupModal({ show, onStart, onSettings, onHelp, online = true }: GameSetupModalProps) {
   // Subscribes the whole wizard to language changes.
   const { t, language, setLanguage } = useTranslation();
   // Drag-to-scroll on empty areas of the war table (desktop convenience).
@@ -960,19 +965,37 @@ function GameSetupModal({ show, onStart, onBack, online = true }: GameSetupModal
         {/* Nameplate — the seal of the room */}
         <header className="setup-nameplate">
           <div className="setup-nameplate__left">
-            {onBack && (
-              <button
-                type="button"
-                className="setup-nameplate__back"
-                onClick={onBack}
-                aria-label={t('warroom.backToCouncil')}
-              >
-                <span aria-hidden="true">←</span> {t('warroom.council')}
-              </button>
-            )}
             <h2 className="modal-title">🏛️ Zivilisation 1</h2>
           </div>
           <div className="setup-nameplate__right">
+            {/* Settings and the Field Manual moved in with the wizard: there
+                is no hub screen in front of it to host them any more. */}
+            {(onSettings || onHelp) && (
+              <div className="setup-nameplate__tools">
+                {onSettings && (
+                  <button
+                    type="button"
+                    className="setup-nameplate__tool"
+                    onClick={onSettings}
+                    aria-label={t('warroom.settings')}
+                    title={t('warroom.settings')}
+                  >
+                    <span aria-hidden="true">⚙️</span>
+                  </button>
+                )}
+                {onHelp && (
+                  <button
+                    type="button"
+                    className="setup-nameplate__tool"
+                    onClick={onHelp}
+                    aria-label={t('warroom.help')}
+                    title={t('warroom.help')}
+                  >
+                    <span aria-hidden="true">📖</span>
+                  </button>
+                )}
+              </div>
+            )}
             <LanguageSwitcher value={language} onChange={setLanguage} compact />
             <span className="setup-nameplate__tag">{t('setup.nameplateTag')}</span>
             <span className="setup-nameplate__steps" aria-hidden="true">

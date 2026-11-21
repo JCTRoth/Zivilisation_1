@@ -95,7 +95,7 @@ Useful URL parameters while developing:
 |===
 |Parameter |Effect
 
-|`?quickstart` |Skip the War Council and start a default game immediately.
+|`?quickstart` |Skip the setup wizard and start a default game immediately.
 |`?maptype=CLOSEUP_1V1&civs=2&seed=42` |Start a specific scenario; `seed` pins the map *and* the gameplay RNG.
 |`?noanim` |Disable movement/combat/camera animations (the e2e suite uses this).
 |`?lobby` |Ops/debug shortcut: open the multiplayer lobby against the central server (defaults to `http://localhost:8787`). Players never need this.
@@ -158,7 +158,7 @@ npm run preview            # http://localhost:4173
    Home Screen*.
 . Launch it from the desktop/launcher, then switch the network off
    (*DevTools ▸ Network ▸ Offline*, or literally disconnect).
-. The War Council still renders, a single-player game starts, plays and
+. The setup wizard still renders, a single-player game starts, plays and
    saves. Reloading still works.
 
 [NOTE]
@@ -451,7 +451,7 @@ docker ps --format '{{.Names}}\t{{.Ports}}'
 Stop the container (`docker compose down`) or run the dev server on another
 port (`npm run dev -- --port 3002`). Playwright's `webServer` reuses whatever
 answers on :3000, so a stale container silently becomes the thing under test —
-`e2e/setup/app-setup.spec.ts` checks the War Council specifically to catch
+`e2e/setup/app-setup.spec.ts` checks the setup wizard specifically to catch
 that.
 
 === The service worker serves an old version

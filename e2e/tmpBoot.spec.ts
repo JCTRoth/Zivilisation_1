@@ -13,7 +13,7 @@ test('boot reliability probe', async ({ page }) => {
     await page.goto('/');
     let appeared = true;
     try {
-      await expect(page.getByRole('button', { name: /Play/ })).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByRole('heading', { name: 'Choose Your Civilization' })).toBeVisible({ timeout: 30_000 });
     } catch {
       appeared = false;
     }

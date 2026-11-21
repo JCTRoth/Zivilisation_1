@@ -14,19 +14,20 @@ import { expect, Page } from '@playwright/test';
  * Uses the smallest/fastest map preset (CLOSEUP_1V1) to minimise wait time.
  */
 export async function openNewCampaign(page: Page): Promise<void> {
-  // The front screen is the War Council hub; the wizard is one step behind it.
+  // The setup wizard is the first screen — there is no hub in front of it.
   // 30s, not 10s: the first load of a dev-server app can spend seconds
   // transforming modules, and a cold boot on a loaded CI runner blew the 10s
   // budget often enough to fail the whole run (maxFailures: 1).
-  await expect(page.getByRole('button', { name: /Play/ })).toBeVisible({ timeout: 30_000 });
-  await page.getByRole('button', { name: /Play/ }).click();
   await expect(page.locator('h2.modal-title')).toContainText('Zivilisation 1', { timeout: 30_000 });
+  await expect(
+    page.getByRole('heading', { name: 'Choose Your Civilization' }),
+  ).toBeVisible({ timeout: 30_000 });
 }
 
 export async function startGame(page: Page): Promise<void> {
   await page.goto('/', { waitUntil: 'networkidle' });
 
-  // War Council hub → single-player wizard.
+  // The wizard opens straight on step 1 (nation choice).
   await openNewCampaign(page);
 
   // Step 1 – Civilization selection (default is pre-selected).

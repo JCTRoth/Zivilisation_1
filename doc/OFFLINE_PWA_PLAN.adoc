@@ -31,7 +31,7 @@ sections that follow describe the design.
 
 |5 — Campaign manager UI
 |Done
-|`packages/web/src/components/ui/CampaignPanel.tsx`, `WarRoomMenu.tsx`, `GameMenuSheet.tsx`.
+|`packages/web/src/components/ui/CampaignPanel.tsx`, `GameMenuSheet.tsx`.
 
 |6 — Manifest and icons
 |Done
@@ -487,8 +487,9 @@ restores the exact state (turn, year, units, cities, RNG stream).
 *Delete*; an *Import from file* action; and a *Save current game here* action
 when a game is running.
 
-*Wired into:* `WarRoomMenu` (a new "Campaigns" card) and the in-game
-`GAME` menu (a "Campaigns" entry).
+*Wired into:* the in-game `GAME` menu (a "Campaigns" entry). The pre-game
+wizard has no library of its own — the hub that once carried a "Campaigns"
+card is gone; the wizard is the first screen now.
 
 *Acceptance:* e2e — start a game, save it under a name, reload, open Campaigns,
 see it listed, continue it, delete it, and import a file.
@@ -684,7 +685,7 @@ The static server for the e2e spec is a tiny committed script
 |The local session (`createLocalSession`) is the same code path as before; only the shell and the storage changed. No request is made to the game server in single-player mode.
 
 |"The game saves its state locally and can be continued later."
-|IndexedDB campaign library + autosave slot. Resume with `GAME ▸ Load Game`, `GAME ▸ Campaigns` or `Ctrl+L` from a running game; the War Council has no library or Continue card. The restored state includes the RNG stream.
+|IndexedDB campaign library + autosave slot. Resume with `GAME ▸ Load Game`, `GAME ▸ Campaigns` or `Ctrl+L` from a running game; the pre-game wizard has no library or Continue card. The restored state includes the RNG stream.
 
 |"The game can load its state from a local file."
 |The file import path now accepts the app's own V5 saves (the version gate is fixed) and writes them into the campaign library, so an imported file is also resumable.
