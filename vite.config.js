@@ -88,6 +88,24 @@ export default defineConfig({
   server: {
     host: true,
     port: 3000,
+    watch: {
+      // Today only `packages/web` (root) and `public/` are watched, but the
+      // repo keeps ~16k generated files in tools/tile-generator/tile_sets/,
+      // 1k+ in game-logs/ and backups in public/assets/_generated_backup/:
+      // watching those walks the tree until the system inotify limit is
+      // reached and kills the dev server with
+      // `ENOSPC: System limit for number of file watchers reached`. Keep them
+      // out explicitly so a root/publicDir change cannot bring that back.
+      // Merged with Vite's own defaults (node_modules, .git, outDir).
+      ignored: [
+        '**/tile_sets/**',
+        '**/run_logs/**',
+        '**/game-logs/**',
+        '**/archive/**',
+        '**/_generated_backup/**',
+        '**/__pycache__/**',
+      ],
+    },
   },
   build: {
     // Relative to `root` (packages/web) → repository dist/.
