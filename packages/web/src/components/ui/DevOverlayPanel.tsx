@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useGameStore } from '../../stores/GameStore';
 import { useTranslation } from '../../i18n/useTranslation';
 import type { TranslationKey } from '@shared/i18n/index';
@@ -74,15 +74,27 @@ const DevOverlayPanel: React.FC = () => {
   const updateSettings = useGameStore((state) => state.actions.updateSettings);
   const [collapsed, setCollapsed] = useState(false);
 
+  // The Forge of War can be looked at through one player's eyes. Only living
+  // civilizations are offered; a stale/unknown id falls back to the AI truth.
+  const viewableCivs = civilizations.filter((civ) => civ.isAlive !== false);
+  const selectedViewGone =
+    devViewPlayerId !== null &&
+    !viewableCivs.some((civ) => civ.id === devViewPlayerId);
+
+  // A selected civ can die mid-spectator-game. Clear the stale selection so
+  // the panel and the canvas agree and the map returns to the all-seeing view.
+  useEffect(() => {
+    if (devMode && selectedViewGone) {
+      updateSettings({ devViewPlayerId: null });
+    }
+  }, [devMode, selectedViewGone, updateSettings]);
+
   if (!devMode) return null;
 
   const flags: DevOverlayFlags = overlays ?? ALL_OFF;
 
-  // The Forge of War can be looked at through one player's eyes. Only living
-  // civilizations are offered; a stale/unknown id falls back to the AI truth.
-  const viewableCivs = civilizations.filter((civ) => civ.isAlive !== false);
   const selectedViewId =
-    devViewPlayerId !== null && viewableCivs.some((civ) => civ.id === devViewPlayerId)
+    devViewPlayerId !== null && !selectedViewGone
       ? String(devViewPlayerId)
       : '';
 

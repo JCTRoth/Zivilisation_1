@@ -9,6 +9,7 @@
 npm install && npm run dev        # single-player, http://localhost:3000
 npm run build && npm run preview  # production build (installable PWA), :4173
 npm run dev:server                # multiplayer only, HTTP :8787 / WS :8788
+npm run dev:local                 # Postgres in Docker + server + web on the host
 ----
 
 New here? link:doc/RUNNING.adoc[Running Civ1 Browser] covers prerequisites,
@@ -79,9 +80,10 @@ deleted before its copy is safely stored.
 * `GAME ▸ Save Game` writes the manual slot *and* downloads a `.json` file.
 * `GAME ▸ Load Game` reads a file and adds it to the library.
 * `GAME ▸ Campaigns` opens the library: continue, export, delete, import.
-* The War Council's *Campaign Library* entry opens the same list before a
-  game starts.
 * `Ctrl+S` / `Ctrl+L` save and load the manual slot.
+
+Saves are managed only from inside a running game (GAME menu and shortcuts);
+the front menu has no campaign library or "continue" card.
 
 A deliberate save is written to the device immediately; the end-of-turn
 autosave is debounced. Nothing is pending when the tab is closed.
@@ -106,7 +108,13 @@ needs neither the dev server nor a game server.
 
 == Multiplayer / server mode
 
-Start the authoritative server in one terminal:
+There is **one central authoritative server** for all players. No LAN parties,
+no host discovery and no server selection in the UI: the deployed web client
+reads the one server URL from `/config.js` at start-up, and players only create
+a table and share invitations. The commands below are for developing and
+running that single central server.
+
+Start the authoritative server locally for development:
 
 [source,bash]
 ----
@@ -115,7 +123,22 @@ npm run dev:server
 # Override with PORT, WS_PORT, GAME_SERVER_SECRET, DB_FILE
 ----
 
-Then either open `http://localhost:3000/?lobby` to use the in-app lobby (create a room, mint one signed token per seat, copy the join links), or create/join through the HTTP API directly:
+For development against a real Postgres, one command starts everything:
+
+[source,bash]
+----
+npm run dev:local
+# Postgres in Docker (:5433), server (:8787/:8788) and Vite (:3000) on the host
+# credentials from .env (copied from .env.example on first run)
+# Ctrl-C stops the app, Postgres keeps running; --stop-postgres stops it too
+----
+
+Only the database is containerised: the client hot-reloads and the server is
+debuggable as a normal host process. No K3s needed for this loop; the K3s
+cluster is the deployment test rig (`npm run test:k3s`). Full details:
+link:doc/RUNNING.adoc#local-dev[Running Civ1 Browser — Local development].
+
+Then either open `http://localhost:3000/?lobby` to use the in-app lobby (choose seats and difficulty, then copy one invitation per seat), or create/join through the HTTP API directly. The server URL, room ID and signed tokens are discovered automatically and kept out of the player-facing UI — they remain available under *Connection details (advanced)* in the lobby:
 
 [source,bash]
 ----
@@ -656,7 +679,8 @@ link:doc/RUNNING.adoc[Running Civ1 Browser].*
 
 [source,bash]
 ----
-npm run dev          # Vite dev server, port 3000
+npm run dev          # Vite dev server, port 3000 (single-player)
+npm run dev:local    # Postgres in Docker + server + web on the host, one command
 npm run build        # production build
 npm run lint         # ESLint, max-warnings 0
 npm run type-check   # tsc --noEmit

@@ -354,6 +354,8 @@ export interface RenderDevOverlayParams {
    */
   devPlayerView?: {
     playerName: string;
+    /** High-contrast accent for this civ's war-plan lines/ring. */
+    color?: string;
     isVisible: (col: number, row: number) => boolean;
     /**
      * Present only when the selected player is a normal AI civ: show that
@@ -362,6 +364,16 @@ export interface RenderDevOverlayParams {
      */
     warPlan?: AiWarPlan | null;
   } | null;
+  /**
+   * Every living AI civ's current war plan, drawn together in the "All
+   * players" view (one high-contrast colour per player). Ignored while a
+   * single player is selected.
+   */
+  aiWarPlans?: ReadonlyArray<{
+    playerName: string;
+    color: string;
+    plan: AiWarPlan;
+  }>;
 }
 
 /** One line of a dev-overlay read-out box. */
@@ -369,6 +381,8 @@ type DevReadoutKind = 'title' | 'player' | 'body';
 interface DevReadoutLine {
   text: string;
   kind: DevReadoutKind;
+  /** Optional per-line text colour (used by the all-players war-plan list). */
+  color?: string;
 }
 
 /**
@@ -1090,6 +1104,7 @@ export class MapRenderer {
       forgeOfWar,
       aiTargets,
       devPlayerView,
+      aiWarPlans,
     } = params;
     const tileSize = this.tileSize * cameraZoom;
 
@@ -1175,9 +1190,29 @@ export class MapRenderer {
         currentTime,
         canvasSize,
         playerName: view.playerName,
+        color: view.color,
         warPlan: view.warPlan,
       });
       return;
+    }
+
+    // "All players" view: every AI civ's current objective at once, each in
+    // its own high-contrast colour. The barbarian horde (if any) is drawn on
+    // top of these afterwards.
+    const allWarPlans: ReadonlyArray<{
+      playerName: string;
+      color: string;
+      plan: AiWarPlan;
+    }> = view ? [] : (aiWarPlans ?? []);
+    if (allWarPlans.length > 0) {
+      this.drawDevAllWarPlans({
+        ctx,
+        units,
+        squareToScreen,
+        cameraZoom,
+        currentTime,
+        entries: allWarPlans,
+      });
     }
 
     const plan = forgeOfWar ?? null;
@@ -1242,6 +1277,35 @@ export class MapRenderer {
     }
     ctx.restore();
 
+    const overviewLines: DevReadoutLine[] = allWarPlans.map((entry) => {
+      const target = entry.plan.target;
+      if (!target) {
+        return {
+          text: t('dev.forge.allDefending', { player: entry.playerName }),
+          kind: 'body',
+          color: entry.color,
+        };
+      }
+      const targetName =
+        target.kind === 'unit'
+          ? t('dev.forge.enemyUnit')
+          : target.name ?? `(${target.col}, ${target.row})`;
+      return {
+        text: t(
+          entry.plan.reachableBy === 'sea'
+            ? 'dev.forge.allSea'
+            : 'dev.forge.allTarget',
+          {
+            player: entry.playerName,
+            target: targetName,
+            units: entry.plan.assignedUnitIds.length,
+          },
+        ),
+        kind: 'body',
+        color: entry.color,
+      };
+    });
+
     this.drawDevForgeReadout(
       ctx,
       plan,
@@ -1256,14 +1320,15 @@ export class MapRenderer {
               : false,
           }
         : null,
+      overviewLines,
     );
   }
 
   /**
-   * Forge of War, AI-player mode: the selected AI civilization's own committed
-   * offensive. Dashed lines run from every assigned unit to the target, and a
-   * pulsing ring marks it; both use a fixed high-contrast accent so the plan
-   * reads even when the civ colour (Romans' near-black) would not.
+   * Forge of War, AI-player mode: the selected AI civilization's own military
+   * objective. Dashed lines run from every assigned unit to the target, and a
+   * pulsing ring marks it; both use a high-contrast accent so the plan reads
+   * even when the civ colour (Romans' near-black) would not.
    */
   private drawDevAiWarPlan(params: {
     ctx: CanvasRenderingContext2D;
@@ -1273,6 +1338,7 @@ export class MapRenderer {
     currentTime: number;
     canvasSize: { width: number; height: number };
     playerName: string;
+    color?: string;
     warPlan: AiWarPlan | null;
   }): void {
     const {
@@ -1283,66 +1349,16 @@ export class MapRenderer {
       currentTime,
       canvasSize,
       playerName,
+      color,
       warPlan,
     } = params;
-    const tileSize = this.tileSize * cameraZoom;
-    // A fixed high-contrast accent, not the civ colour: several civ colours
-    // (Romans' near-black, Chinese' yellow) either vanish on the map or blend
-    // into the normal unit-path lines.
-    const color = '#4fd6ff';
+    const accent = color || '#4fd6ff';
     const pulse = 0.5 + 0.5 * Math.sin(currentTime / 220);
-    const target = warPlan?.target ?? null;
 
-    if (warPlan && target) {
-      const unitById = new Map(units.map((unit) => [unit.id, unit]));
-      const end = squareToScreen(target.col, target.row);
-
-      // Collect every assigned unit's segment first: one path stroked twice
-      // (dark underlay, then the accent) keeps the plan readable on top of
-      // the normal unit-path lines, which can share the same colour.
-      ctx.save();
-      ctx.beginPath();
-      let hasSegment = false;
-      for (const unitId of warPlan.assignedUnitIds) {
-        const unit = unitById.get(unitId);
-        if (!unit || unit.isDefeated) continue;
-        const from = squareToScreen(unit.col, unit.row);
-        ctx.moveTo(from.x, from.y);
-        ctx.lineTo(end.x, end.y);
-        hasSegment = true;
-      }
-      if (hasSegment) {
-        ctx.setLineDash([8, 5]);
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
-        ctx.lineWidth = Math.max(4, cameraZoom * 4);
-        ctx.stroke();
-        ctx.strokeStyle = color;
-        ctx.globalAlpha = 0.55 + 0.35 * pulse;
-        ctx.lineWidth = Math.max(2, cameraZoom * 2);
-        ctx.stroke();
-      }
-      ctx.setLineDash([]);
-      ctx.globalAlpha = 1;
-
-      const radius = tileSize * (0.8 + 0.12 * pulse);
-      // Dark halo first, coloured ring second — same reason as the lines.
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
-      ctx.lineWidth = Math.max(5, cameraZoom * 5);
-      ctx.beginPath();
-      ctx.arc(end.x, end.y, radius, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.strokeStyle = color;
-      ctx.lineWidth = Math.max(2, cameraZoom * 2.5);
-      ctx.beginPath();
-      ctx.arc(end.x, end.y, radius, 0, Math.PI * 2);
-      ctx.stroke();
-      // Outer echo so the target stays findable when the camera is zoomed out.
-      ctx.globalAlpha = 0.4;
-      ctx.lineWidth = Math.max(1, cameraZoom);
-      ctx.beginPath();
-      ctx.arc(end.x, end.y, radius * 1.6, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
+    if (warPlan) {
+      this.strokeDevWarPlan(
+        ctx, warPlan, units, squareToScreen, cameraZoom, pulse, accent,
+      );
     }
 
     const lines: DevReadoutLine[] = [
@@ -1432,6 +1448,96 @@ export class MapRenderer {
   }
 
   /**
+   * Draw one war plan's map markers: dashed lines from every assigned unit to
+   * the target plus a pulsing target ring. Shared by the single-player view and
+   * the all-players overview so both read identically, only the colour differs.
+   */
+  private strokeDevWarPlan(
+    ctx: CanvasRenderingContext2D,
+    warPlan: AiWarPlan,
+    units: Unit[],
+    squareToScreen: (col: number, row: number) => { x: number; y: number },
+    cameraZoom: number,
+    pulse: number,
+    color: string,
+  ): void {
+    const target = warPlan.target;
+    if (!target) return;
+    const tileSize = this.tileSize * cameraZoom;
+    const unitById = new Map(units.map((unit) => [unit.id, unit]));
+    const end = squareToScreen(target.col, target.row);
+
+    // Collect every assigned unit's segment first: one path stroked twice
+    // (dark underlay, then the accent) keeps the plan readable on top of the
+    // normal unit-path lines, which can share the same colour.
+    ctx.save();
+    ctx.beginPath();
+    let hasSegment = false;
+    for (const unitId of warPlan.assignedUnitIds) {
+      const unit = unitById.get(unitId);
+      if (!unit || unit.isDefeated) continue;
+      const from = squareToScreen(unit.col, unit.row);
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(end.x, end.y);
+      hasSegment = true;
+    }
+    if (hasSegment) {
+      ctx.setLineDash([8, 5]);
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
+      ctx.lineWidth = Math.max(4, cameraZoom * 4);
+      ctx.stroke();
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = 0.55 + 0.35 * pulse;
+      ctx.lineWidth = Math.max(2, cameraZoom * 2);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+
+    const radius = tileSize * (0.8 + 0.12 * pulse);
+    // Dark halo first, coloured ring second — same reason as the lines.
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.lineWidth = Math.max(5, cameraZoom * 5);
+    ctx.beginPath();
+    ctx.arc(end.x, end.y, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(2, cameraZoom * 2.5);
+    ctx.beginPath();
+    ctx.arc(end.x, end.y, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    // Outer echo so the target stays findable when the camera is zoomed out.
+    ctx.globalAlpha = 0.4;
+    ctx.lineWidth = Math.max(1, cameraZoom);
+    ctx.beginPath();
+    ctx.arc(end.x, end.y, radius * 1.6, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /**
+   * Forge of War, "All players" mode: every AI civ's current objective at once,
+   * each in its own colour. The read-out lists one line per civ with the same
+   * colour, so a line on the map can be traced back to its owner.
+   */
+  private drawDevAllWarPlans(params: {
+    ctx: CanvasRenderingContext2D;
+    units: Unit[];
+    squareToScreen: (col: number, row: number) => { x: number; y: number };
+    cameraZoom: number;
+    currentTime: number;
+    entries: ReadonlyArray<{ playerName: string; color: string; plan: AiWarPlan }>;
+  }): void {
+    const { ctx, units, squareToScreen, cameraZoom, currentTime, entries } = params;
+    const pulse = 0.5 + 0.5 * Math.sin(currentTime / 220);
+    for (const entry of entries) {
+      this.strokeDevWarPlan(
+        ctx, entry.plan, units, squareToScreen, cameraZoom, pulse, entry.color,
+      );
+    }
+  }
+
+  /**
    * The Forge of War numbers, in a box pinned to the bottom-left corner of the
    * canvas (the floating dev panel owns the top-left). Shown even with no horde
    * on the map so "nothing is coming" is a visible state rather than an empty
@@ -1448,6 +1554,7 @@ export class MapRenderer {
       totalRaiders: number;
       targetVisible: boolean;
     } | null,
+    extraLines: DevReadoutLine[] = [],
   ): void {
     const lines: DevReadoutLine[] = [{ text: '🔥 FORGE OF WAR', kind: 'title' }];
     if (view) {
@@ -1460,8 +1567,9 @@ export class MapRenderer {
     if (!plan || plan.mode === 'idle') {
       lines.push({ text: t('dev.forge.idle'), kind: 'body' });
       // In an AI-vs-AI game there may simply be no horde at all — point the
-      // developer at the selector, where every AI player has its own war plan.
-      if (!view) {
+      // developer at the selector, unless the all-players overview already
+      // lists every AI's war plan below.
+      if (!view && extraLines.length === 0) {
         lines.push({ text: t('dev.forge.idleHint'), kind: 'body' });
       }
     } else {
@@ -1497,6 +1605,10 @@ export class MapRenderer {
       });
     }
 
+    if (extraLines.length > 0) {
+      lines.push(...extraLines);
+    }
+
     this.drawDevReadoutBox(ctx, lines, canvasSize);
   }
 
@@ -1526,7 +1638,9 @@ export class MapRenderer {
     const boxW = boxWidth + padX * 2;
     const boxH = lines.length * lineH + padY * 2;
     const x = 12;
-    const y = canvasSize.height - boxH - 12;
+    // Keep the box clear of the floating spectator speed bar (bottom centre,
+    // ~56 px tall); without this the AI-vs-AI read-out hides behind it.
+    const y = canvasSize.height - boxH - 64;
 
     this.roundedRectPath(ctx, x, y, boxW, boxH, 8);
     ctx.fillStyle = 'rgba(12, 10, 16, 0.86)';
@@ -1539,7 +1653,7 @@ export class MapRenderer {
     ctx.textBaseline = 'top';
     lines.forEach((line, index) => {
       ctx.font = fontFor(line.kind);
-      ctx.fillStyle = colorFor(line.kind);
+      ctx.fillStyle = line.color ?? colorFor(line.kind);
       ctx.fillText(line.text, x + padX, y + padY + index * lineH);
     });
     ctx.restore();

@@ -61,7 +61,7 @@ them to `MapRenderer`:
 
 | Checkbox | What it draws | Where it comes from |
 |---|---|---|
-| **Forge of War** | With `All players` selected: assault lines from every barbarian raider converging on the weakest city (pulsing target ring), or the dashed scouting routes while the horde is too weak. With an AI player selected: that player's committed offensive — dashed high-contrast lines from its assigned army to the target, plus a pulsing target ring. Either way a read-out box at the **bottom-left of the canvas** shows round, unit/raider counts and the target's defense | `BarbarianManager.plan` (`ForgeOfWarPlan`) or `AIManager.getWarPlan(civId)` (`AiWarPlan`), refreshed continuously |
+| **Forge of War** | With `All players` selected: every living AI player's current objective at once, each in its own high-contrast colour (plus the barbarian horde, if one exists). With an AI player selected: only that player's committed offensive or current army-group target — dashed lines from its assigned army to the target, plus a pulsing target ring. Either way a read-out box at the **bottom-left of the canvas** lists round, unit/raider counts and the target's defense, raised above the spectator speed bar | `BarbarianManager.plan` (`ForgeOfWarPlan`) or `AIManager.getWarPlan(civId)` (`AiWarPlan`), refreshed continuously |
 | **AI target tiles** | The tiles the AI picked as objectives this round, fading out a few seconds later | `AI_TARGET_HIGHLIGHT` events buffered in `src/utils/DevOverlayState.ts` (never through the React store — the AI fires it per unit, per round) |
 | **City work radii** | The work radius outline of *every* city, not just the selected one | `RenderStaticFrameParams.devCityRadii` |
 | **Unit sight radius** | The square of tiles each unit reveals | `UNIT_PROPERTIES` / `unit.sightRange` (base sight, no wonder bonus) |
@@ -69,15 +69,21 @@ them to `MapRenderer`:
 ### Whose eyes? (per-player Forge of War)
 
 Ticking **Forge of War** reveals a second control: a player selector
-(`settings.devViewPlayerId`). `All players (AI truth)` shows the horde's real plan. What a selected
-civilization shows depends on the seat:
+(`settings.devViewPlayerId`). What it shows depends on the selection:
 
-- **An AI civilization** shows its **own committed offensive** — its forge of war. The overlay reads
-  `AIManager.getWarPlan(civId)` (the same `offensivePlan` the AI marches with) and draws dashed
-  lines from every assigned unit to the target in the civ's colour, a pulsing ring on the target,
-  and a read-out with round, assigned/required units, target defense and sea-invasion status. A civ
-  with no plan shows `No offensive plan` and its aggression posture. **This is the way to watch an
-  AI-vs-AI game**: every AI player has its own plan, even when no barbarian horde exists.
+- **`All players (AI truth)`** is the overview: every living AI civilization's current objective is
+  drawn at once, in a fixed palette colour per civ id (`packages/web/src/utils/DevWarPlanColors.ts`),
+  with one read-out line per civ (`Germans → Thebes · 5 units`, `Huns — no objective`). The
+  barbarian horde is still drawn on top if it exists. This is the fastest way to watch an AI-vs-AI
+  game: every player's forge of war is visible side by side. The selection rules live in
+  `buildDevWarPlanEntries` (`packages/web/src/utils/DevWarPlanEntries.ts`): living AI civs only —
+  humans have no AI plan, and the barbarians have their own horde overlay.
+- **An AI civilization** shows only its own military objective. The overlay reads
+  `AIManager.getWarPlan(civId)` (the same `offensivePlan` / army group the AI marches with) and
+  draws dashed lines from every assigned unit to the target, a pulsing ring on the target, and a
+  read-out with round, assigned/required units, target defense and sea-invasion status. A civ with
+  no plan shows `No offensive plan` and its aggression posture. Selecting a civ also switches the
+  minimap to that civ's stored fog.
 - **The human seat (or the barbarian faction itself)** filters the horde's plan through that
   player's **current fog of war**, computed by `src/utils/DevPlayerVision.ts` with the same rules as
   `GameStore.updateVisibility` (own units and cities, locked teammates; enemies never contribute):
@@ -86,9 +92,10 @@ civilization shows depends on the seat:
   - the read-out names the selected player and reports `visible/total` raiders, `No raiders in sight`
     or `Target city not in sight` instead of the AI's total numbers.
 
-The map itself stays fully revealed in dev mode — only the overlay is filtered, so you can compare
-"what player 2 sees" against the ground truth at a glance. When the horde is absent, the read-out
-reminds you to pick a player to see that AI's war plan.
+The map itself stays fully revealed in the `All players` view — only a selected player's view is
+filtered, so you can compare "what player 2 sees" against the ground truth at a glance. If the
+selected civ dies, the panel clears the stale selection and returns to the all-seeing overview.
+When neither a horde nor any AI plan exists, the read-out reminds you to pick a player.
 
 Everything is off by default (`devOverlays` in `GameStore`), so a normal game never renders a
 line of it. The panel itself draws nothing — it only writes the switches.

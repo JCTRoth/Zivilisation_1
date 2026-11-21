@@ -7,6 +7,7 @@ import { useTranslation } from '../../i18n/useTranslation';
 import { translateDynamic, type TranslationKey } from '@shared/i18n/index';
 import LanguageSwitcher from './LanguageSwitcher';
 import BattleRoomStage from './BattleRoomStage';
+import LobbyPanel from './LobbyPanel';
 import { defaultNationIndexForBrowser } from '@shared/data/CivilizationByLanguage';
 import { tGovernmentName } from '@shared/i18n/dataNames';
 import '../../styles/gameModalShell.css';
@@ -141,6 +142,12 @@ type GameSetupModalProps = {
   show: boolean;
   /** Return to the War Council hub without starting a game. */
   onBack?: () => void;
+  /**
+   * Whether the device has a connection. Offline grays the "Play online"
+   * choice out and keeps the wizard on the local table — the online room
+   * lives inside this step now, so there is nothing to fall back to.
+   */
+  online?: boolean;
   onStart: (settings: {
     playerCivilization: number;
     difficulty: string;
@@ -503,7 +510,7 @@ function MapSizeTool({ width, height, civCount, onChange }: MapSizeToolProps) {
   );
 }
 
-function GameSetupModal({ show, onStart, onBack }: GameSetupModalProps) {
+function GameSetupModal({ show, onStart, onBack, online = true }: GameSetupModalProps) {
   // Subscribes the whole wizard to language changes.
   const { t, language, setLanguage } = useTranslation();
   // Drag-to-scroll on empty areas of the war table (desktop convenience).
@@ -569,6 +576,18 @@ function GameSetupModal({ show, onStart, onBack }: GameSetupModalProps) {
   }, []);
 
   const [currentStep, setCurrentStep] = useState(1);
+  /**
+   * Step-two choice: the table on this device, or a shared table on the
+   * central server. The online room is rendered inside this very step
+   * (`LobbyPanel inline`), so the choice never leaves the wizard.
+   */
+  const [playMode, setPlayMode] = useState<'local' | 'online'>('local');
+  // Losing the connection must not strand a dead room panel on screen: fall
+  // back to the local table and gray the online card out (it also starts
+  // grayed when the page loads offline).
+  useEffect(() => {
+    if (!online) setPlayMode('local');
+  }, [online]);
   // The nation the wizard opens on follows the browser's own language, which
   // is the only thing that knows whether you are en-US or en-GB — the game
   // language has already thrown the region away. Unrouted browsers keep the
@@ -889,6 +908,47 @@ function GameSetupModal({ show, onStart, onBack }: GameSetupModalProps) {
     });
   };
 
+  /**
+   * "Where to Play" — the one choice that decides the rest of step two.
+   *
+   * Offline, the online card is grayed out and inert (its hint says why) and
+   * the wizard stays on the local table. Online, the room table replaces the
+   * local-only settings *below this same heading*: one page, one flow, no
+   * jump to a separate lobby screen.
+   */
+  const modeChoice = (
+    <div className="gm-section">
+      <div className="gm-section-title">{t('setup.modeTitle')}</div>
+      <div className="setup-mode-grid">
+        <button
+          type="button"
+          className={`setup-mode-card${playMode === 'local' ? ' is-active' : ''}`}
+          aria-pressed={playMode === 'local'}
+          onClick={() => setPlayMode('local')}
+        >
+          <span className="setup-mode-card__icon" aria-hidden="true">🎲</span>
+          <strong>{t('setup.modeLocal')}</strong>
+          <small>{t('setup.modeLocalHint')}</small>
+        </button>
+        <button
+          type="button"
+          className={`setup-mode-card${playMode === 'online' ? ' is-active' : ''}${online ? '' : ' is-disabled'}`}
+          aria-pressed={playMode === 'online'}
+          aria-disabled={!online}
+          disabled={!online}
+          onClick={() => {
+            if (!online) return;
+            setPlayMode('online');
+          }}
+        >
+          <span className="setup-mode-card__icon" aria-hidden="true">🌐</span>
+          <strong>{t('setup.modeOnline')}</strong>
+          <small>{online ? t('setup.modeOnlineHint') : t('setup.modeOnlineOffline')}</small>
+        </button>
+      </div>
+    </div>
+  );
+
   if (!show) return null;
 
   return (
@@ -1021,9 +1081,11 @@ function GameSetupModal({ show, onStart, onBack }: GameSetupModalProps) {
               </section>
             )}
 
-            {/* ---- Step 2: terms of the campaign ---- */}
-            {currentStep === 2 && (
+            {/* ---- Step 2: where and with whom the game is played ---- */}
+            {currentStep === 2 && playMode === 'local' && (
               <section className="setup-section" aria-labelledby="setup-step-settings">
+                {modeChoice}
+
                 <div className="gm-section">
                   <div className="gm-section-title">{t('setup.terms')}</div>
                   <div className="setup-settings-grid">
@@ -1321,6 +1383,15 @@ function GameSetupModal({ show, onStart, onBack }: GameSetupModalProps) {
                   </div>
                 </div>
 
+                {/* Advanced world shaping is collapsed by default: most games
+                    are fine with the preset, and the heavy size preview does
+                    not need to render until a player asks for it. */}
+                <details className="setup-advanced-world">
+                  <summary className="setup-advanced-world__summary">
+                    <span>{t('setup.advancedWorld')}</span>
+                    <small>{t('setup.advancedWorldHint')}</small>
+                  </summary>
+
                 {!isStaticMapType(mapType) && (
                   <div className="gm-section setup-map-size">
                     <div className="gm-section-title">{t('setup.mapSizeTitle')}</div>
@@ -1438,6 +1509,8 @@ function GameSetupModal({ show, onStart, onBack }: GameSetupModalProps) {
                     <p className="gm-note">{t('setup.devForcedNote')}</p>
                   </div>
                 )}
+
+                </details>
 
                 {/* Sealed orders — everything your people ride out under */}
                 <div className="setup-summary" aria-label={t('setup.summaryTitle')}>
@@ -1720,6 +1793,16 @@ function GameSetupModal({ show, onStart, onBack }: GameSetupModalProps) {
                 </div>
               </section>
             )}
+
+            {/* Online room, inside this very step: the host form and the seat
+                links take the place of the local-only settings above, so the
+                player never leaves the wizard to open a table. */}
+            {currentStep === 2 && playMode === 'online' && (
+              <section className="setup-section" aria-labelledby="setup-step-settings">
+                {modeChoice}
+                <LobbyPanel inline />
+              </section>
+            )}
           </div>
         </div>
 
@@ -1753,6 +1836,10 @@ function GameSetupModal({ show, onStart, onBack }: GameSetupModalProps) {
               >
                 {t('setup.next')}
               </button>
+            ) : playMode === 'online' ? (
+              // The room is the action now: the first turn begins when the
+              // invited seats open their links, so there is no local start.
+              <span className="setup-footer__note">{t('setup.onlineFooterHint')}</span>
             ) : (
               <button
                 type="button"

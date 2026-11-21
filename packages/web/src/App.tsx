@@ -43,7 +43,6 @@ import { gameLogger } from "./utils/GameLogger";
 import { gameProgression } from "./utils/GameProgression";
 import type { TerrainTileRenderInfo } from "./game/rendering/MapRenderer";
 import { debugLog } from '@shared/utils/DevLog';
-import { readAutosaveMeta, readAutosaveMetaAsync, type AutosaveMeta } from "./utils/Autosave";
 import { getBrowserSaveStore, SAVE_STORE_FALLBACK_EVENT } from "./pwa/browserSaveStore";
 import {
   describeSaveFileError,
@@ -89,9 +88,8 @@ function App() {
   // The pre-game room has three faces: the War Council hub (menu), the
   // single-player wizard and the multiplayer lobby. They share the 3D stage,
   // so moving between them feels like turning to another table in one room.
-  const [setupView, setSetupView] = useState<'menu' | 'single' | 'multiplayer'>('menu');
+  const [setupView, setSetupView] = useState<'menu' | 'single'>('menu');
   const [lobbyServer, setLobbyServer] = useState<string | null>(null);
-  const [autosaveMeta, setAutosaveMeta] = useState<AutosaveMeta | null>(() => readAutosaveMeta());
   // The local campaign library (IndexedDB) and the offline notices.
   const [showCampaigns, setShowCampaigns] = useState(false);
   const online = useOnlineStatus();
@@ -363,45 +361,6 @@ function App() {
   );
 
   /**
-   * Resume the campaign in the browser save slots from the War Council.
-   *
-   * A fresh engine is created and asked to restore the selected slot. The
-   * load path already projects map/units/cities/civilizations into the store,
-   * so only the "game has started" shell state and the progression recorder
-   * still need wiring here. Nothing is generated and no settings are changed.
-   */
-  const handleContinueGame = useCallback(async () => {
-    const meta = await readAutosaveMetaAsync();
-    if (!meta) {
-      setAutosaveMeta(null);
-      return;
-    }
-    try {
-      const engine = new GameEngine(actions, webRuntime, getBrowserSaveStore());
-      const loaded = await engine.loadGame(meta.slot);
-      if (!loaded) {
-        setError("Could not read the saved campaign.");
-        return;
-      }
-      actions.startGame();
-      actions.updateGameState({
-        mapGenerated: true,
-        currentTurn: engine.currentTurn,
-        currentYear: engine.currentYear,
-        humanPlayerIds: engine.gameSettings?.humanPlayerIds ?? [0],
-      });
-      gameProgression.startSession(engine, engine.gameSettings);
-      setGameEngine(engine);
-      setShowGameSetup(false);
-      setSetupView('menu');
-      actions.focusOnNextUnit();
-    } catch (e) {
-      console.error("[App] Continue campaign failed:", e);
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  }, [actions]);
-
-  /**
    * Load a campaign from the local library.
    *
    * With a game already running the campaign replaces it in place; without
@@ -489,20 +448,6 @@ function App() {
     return () => window.removeEventListener(SAVE_STORE_FALLBACK_EVENT, onFallback);
   }, [showToast, t]);
 
-  useEffect(() => {
-    if (!gameEngine && showGameSetup) {
-      // The campaign library lives in IndexedDB, so the metadata only exists
-      // after the store has been hydrated.
-      let cancelled = false;
-      void readAutosaveMetaAsync().then((meta) => {
-        if (!cancelled) setAutosaveMeta(meta);
-      });
-      return () => {
-        cancelled = true;
-      };
-    }
-  }, [gameEngine, showGameSetup]);
-
   // Bootstrap portals dialogs to <body>, where their 1050 stack sits *below*
   // the War Council (z-index 2000). While the council is the page, raise the
   // body-level modals above it so Settings and the Field Manual can open over
@@ -533,9 +478,11 @@ function App() {
 
     // `?lobby[=http://server:port]` shows the multiplayer lobby instead of the
     // single-player setup screen. Value-less `?lobby` uses the default URL.
+    // The lobby is rendered from `lobbyServer` alone — as a landing over the
+    // wizard, not as a step of it (the wizard's own "Play online" choice
+    // renders the same room table inside step two).
     if (params.has('lobby')) {
       setLobbyServer(params.get('lobby') || 'http://localhost:8787');
-      setSetupView('multiplayer');
       window.history.replaceState(null, "", window.location.pathname);
       return;
     }
@@ -1584,52 +1531,49 @@ function App() {
     );
   }
 
-  // The pre-game room. One 3D War Council stage hosts three screens — the
-  // hub, the single-player wizard and the multiplayer lobby — plus the shared
-  // settings and help dialogs. Remote joins and URL scenarios skip this block
-  // entirely and open straight on the board.
+  // The pre-game room. One hub action ("Play") opens the two-step wizard;
+  // step two is where the table is chosen — on this device, or online with
+  // the room rendered inside that same step (no separate lobby page). The
+  // wizard stays mounted behind a ?lobby= landing so stepping back keeps the
+  // nation and settings the player already picked. Remote joins and URL
+  // scenarios skip this block entirely and open straight on the board.
   if (!gameEngine && showGameSetup) {
-    const showLobby = setupView === 'multiplayer' || lobbyServer !== null;
+    // A ?lobby=<server> join is a landing, not a step of the wizard.
+    const showLobby = lobbyServer !== null;
     return (
       <div id="gameContainer" className="game-setup-screen text-white">
-        {showLobby ? (
+        {setupView !== 'menu' && (
+          <div style={showLobby ? { display: 'none' } : undefined}>
+            <GameSetupModal
+              show={showGameSetup}
+              onStart={handleGameStart}
+              onBack={() => setSetupView('menu')}
+              online={online}
+            />
+          </div>
+        )}
+
+        {showLobby && (
           <LobbyPanel
             defaultServer={lobbyServer ?? undefined}
             onBack={() => {
               setLobbyServer(null);
-              setSetupView('menu');
+              setSetupView('single');
             }}
           />
-        ) : setupView === 'single' ? (
-          <GameSetupModal
-            show={showGameSetup}
-            onStart={handleGameStart}
-            onBack={() => setSetupView('menu')}
-          />
-        ) : (
+        )}
+
+        {setupView === 'menu' && !showLobby && (
           <WarRoomMenu
-            autosave={autosaveMeta}
-            onNewCampaign={() => setSetupView('single')}
-            onMultiplayer={() => setSetupView('multiplayer')}
-            onContinue={() => void handleContinueGame()}
-            onCampaigns={() => setShowCampaigns(true)}
+            onPlay={() => setSetupView('single')}
             onSettings={() => setShowSettings(true)}
             onHelp={() => actions.showDialog('help')}
           />
         )}
 
-        {/* Offline / update notices and the local campaign library. */}
+        {/* Offline / update notices. Saving stays in the in-game GAME menu. */}
         <OfflineBanner offline={!online} reconnecting={reconnecting} />
         <UpdateBanner available={updateAvailable} onApply={applyUpdate} onDismiss={dismissUpdate} />
-        {showCampaigns && (
-          <CampaignPanel
-            onLoad={handleLoadCampaign}
-            onSaveCurrent={handleSaveCampaign}
-            hasRunningGame={!!gameEngine}
-            onBack={() => setShowCampaigns(false)}
-            notify={(message, tone) => showToast(message, tone)}
-          />
-        )}
 
         {/* The same dialogs the in-game menus open, so options and the field
             manual are no longer unreachable until after a game has started. */}

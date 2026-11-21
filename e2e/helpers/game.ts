@@ -18,8 +18,8 @@ export async function openNewCampaign(page: Page): Promise<void> {
   // 30s, not 10s: the first load of a dev-server app can spend seconds
   // transforming modules, and a cold boot on a loaded CI runner blew the 10s
   // budget often enough to fail the whole run (maxFailures: 1).
-  await expect(page.getByRole('button', { name: /New Campaign/ })).toBeVisible({ timeout: 30_000 });
-  await page.getByRole('button', { name: /New Campaign/ }).click();
+  await expect(page.getByRole('button', { name: /Play/ })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: /Play/ }).click();
   await expect(page.locator('h2.modal-title')).toContainText('Zivilisation 1', { timeout: 30_000 });
 }
 

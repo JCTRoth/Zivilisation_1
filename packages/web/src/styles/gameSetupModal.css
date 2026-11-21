@@ -1199,6 +1199,17 @@ select.setup-setting__control:focus {
   width: 100%;
 }
 
+/* Step two with "Play online" chosen: the room table is the primary action,
+   so the command bar explains when the game starts instead of offering a
+   local Start button. */
+.setup-footer__note {
+  padding: 6px 4px;
+  color: rgba(232, 238, 243, 0.6);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
 .setup-footer__button {
   flex: 1 1 auto;
   width: 100%;
@@ -2589,7 +2600,7 @@ select.setup-setting__control:focus {
 
 .war-lobby__form {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 14px;
 }
 
@@ -2645,27 +2656,9 @@ select.setup-setting__control:focus {
   color: rgba(232, 238, 243, 0.65);
 }
 
-.war-lobby__room-code {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  margin-bottom: 12px;
-  padding: 5px 10px;
-  border: 1px solid rgba(240, 195, 60, 0.28);
-  border-radius: 8px;
-  background: rgba(240, 195, 60, 0.08);
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(240, 195, 60, 0.86);
-}
-
-.war-lobby__room-code code {
-  font-family: var(--font-mono, monospace);
-  font-size: 12px;
-  letter-spacing: 0.02em;
-  color: #f4f7fa;
+.war-lobby__copy-all {
+  margin-top: 12px;
+  min-width: 210px;
 }
 
 .war-lobby__seats {
@@ -2922,5 +2915,165 @@ body.civ1-setup-active .modal-backdrop {
   .war-lobby__footer .setup-footer__button {
     width: 100%;
     min-width: 0;
+  }
+}
+
+/* ---- Step-two choice: local table or central-server table ---------------- */
+
+.setup-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.setup-mode-card {
+  display: grid;
+  justify-items: start;
+  gap: 5px;
+  padding: 14px 16px;
+  text-align: left;
+  color: var(--color-text, #e8eef3);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(20, 30, 42, 0.8), rgba(7, 12, 18, 0.85));
+  cursor: pointer;
+  transition:
+    transform 160ms var(--ease-out, ease-out),
+    border-color 160ms var(--ease-out, ease-out),
+    box-shadow 160ms var(--ease-out, ease-out);
+}
+
+.setup-mode-card:hover,
+.setup-mode-card:focus-visible {
+  transform: translateY(-2px);
+  border-color: rgba(240, 195, 60, 0.5);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4);
+}
+
+.setup-mode-card.is-active {
+  border-color: rgba(240, 195, 60, 0.75);
+  background:
+    radial-gradient(120% 100% at 0% 0%, rgba(240, 195, 60, 0.14), transparent 60%),
+    linear-gradient(180deg, rgba(20, 30, 42, 0.9), rgba(7, 12, 18, 0.92));
+  box-shadow: inset 0 0 0 1px rgba(240, 195, 60, 0.18);
+}
+
+.setup-mode-card__icon {
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.setup-mode-card strong {
+  font-size: 0.9rem;
+  letter-spacing: 0.03em;
+}
+
+.setup-mode-card small {
+  color: rgba(232, 238, 243, 0.6);
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+
+/* Offline: the online choice is still visible (so the feature is discoverable
+   and the hint can say why) but clearly out of reach. Placed after the hover
+   and active rules so those cannot light it back up. */
+.setup-mode-card:disabled,
+.setup-mode-card.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  filter: grayscale(0.85);
+  transform: none;
+  border-color: rgba(255, 255, 255, 0.07);
+  background: rgba(8, 12, 17, 0.72);
+  box-shadow: none;
+}
+
+.setup-mode-card:disabled:hover,
+.setup-mode-card:disabled:focus-visible,
+.setup-mode-card.is-disabled:hover,
+.setup-mode-card.is-disabled:focus-visible {
+  transform: none;
+  border-color: rgba(255, 255, 255, 0.07);
+  box-shadow: none;
+}
+
+.setup-mode-card:disabled small,
+.setup-mode-card.is-disabled small {
+  color: rgba(232, 238, 243, 0.45);
+  font-style: italic;
+}
+
+/* One primary action in the hub — give it room instead of a third of a row. */
+.war-menu__grid--single {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 620px;
+}
+
+.war-menu__grid--single .war-menu__card {
+  min-height: 200px;
+}
+
+@media (max-width: 719.98px) {
+  .setup-mode-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---- Progressive disclosure for advanced world shaping ------------------ */
+
+.setup-advanced-world {
+  margin: 6px 0 0;
+  border: 1px solid rgba(240, 195, 60, 0.2);
+  border-radius: 12px;
+  background: rgba(240, 195, 60, 0.04);
+  overflow: hidden;
+}
+
+.setup-advanced-world__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 11px 14px;
+  cursor: pointer;
+  color: rgba(240, 195, 60, 0.92);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  list-style-position: inside;
+  transition: background 160ms var(--ease-out, ease-out);
+}
+
+.setup-advanced-world__summary:hover,
+.setup-advanced-world[open] .setup-advanced-world__summary {
+  background: rgba(240, 195, 60, 0.08);
+}
+
+.setup-advanced-world__summary small {
+  color: rgba(232, 238, 243, 0.55);
+  font-size: 0.72rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.setup-advanced-world > :not(summary) {
+  animation: setup-fade-in 220ms var(--ease-out, ease-out) both;
+}
+
+/* A small stagger makes the council cards arrive instead of snapping in. */
+.war-menu__grid .war-menu__card {
+  animation: setup-rise 520ms var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both;
+}
+
+.war-menu__grid .war-menu__card:nth-child(2) { animation-delay: 70ms; }
+.war-menu__grid .war-menu__card:nth-child(3) { animation-delay: 140ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .war-menu__grid .war-menu__card,
+  .setup-advanced-world > :not(summary) {
+    animation: none;
   }
 }

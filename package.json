@@ -10,7 +10,10 @@
   "scripts": {
     "dev": "vite",
     "dev:server": "tsx packages/server/src/main.ts",
+    "dev:local": "node scripts/dev-local.mjs",
     "start:server": "npm run dev:server",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose stop postgres",
     "build": "vite build",
     "preview": "vite preview",
     "tiles:install": "node tools/tile-generator/install_generated_assets.mjs",

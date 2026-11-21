@@ -89,15 +89,21 @@ const MiniMap: React.FC<MiniMapProps> = ({ gameEngine = null }) => {
 
       // Spectator dev mode keeps an all-map minimap unless a civ is selected
       // under Forge of War. In that case render the selected civ's own stored
-      // current and explored fog, just like a normal player's minimap.
+      // current and explored fog, just like a normal player's minimap. A dead
+      // civ is no longer selectable, so its stale storage must not be used.
       const selectedForgeCivId =
         settings.devMode && settings.devOverlays?.forgeOfWar
           ? devViewPlayerId
           : null;
-      const selectedStorage =
+      const selectedForgeCiv =
         selectedForgeCivId === null
           ? undefined
-          : gameEngine?.getPlayerStorage?.(selectedForgeCivId);
+          : civilizationsSource.find(
+              (civ) => civ.id === selectedForgeCivId && civ.isAlive !== false,
+            );
+      const selectedStorage = selectedForgeCiv
+        ? gameEngine?.getPlayerStorage?.(selectedForgeCiv.id)
+        : undefined;
       const viewMap = selectedStorage
         ? {
             ...dataSource,

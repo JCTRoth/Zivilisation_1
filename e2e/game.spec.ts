@@ -77,7 +77,10 @@ test.describe('Main Game UI', () => {
   });
 
   test('displays turn counter', async ({ page }) => {
-    await expect(page.getByText(/Turn \d+/).first()).toBeVisible();
+    // The counter renders as `Turn <strong>1</strong>` — the number is its own
+    // element, so a text matcher over the whole "Turn 1" string finds nothing.
+    // Match the wrapper, whose text content spans both.
+    await expect(page.locator('.topbar-turn')).toContainText(/Turn\s+\d+/);
   });
 });
 
@@ -630,8 +633,10 @@ test.describe('AI Behavior', () => {
       // Advance 5 turns — tests that the AI doesn't crash or hang
       await advanceTurns(page, 5);
 
-      // Verify game progressed (turn counter > 1)
-      await expect(page.getByText(/Turn [2-9]\d*/).first()).toBeVisible();
+      // Verify game progressed (turn counter > 1). The counter renders as
+      // `Turn <strong>2</strong>` — the number is its own element, so match
+      // the wrapper whose text spans both.
+      await expect(page.locator('.topbar-turn')).toContainText(/Turn\s+[2-9]\d*/);
       // Game canvas still renders
       await expect(page.locator('.game-canvas canvas').first()).toBeVisible();
     });
@@ -968,8 +973,9 @@ test.describe('AI Behavior', () => {
       await startGame(page);
 
       const topBar = page.locator('.game-top-bar');
-      // Should show "Turn 1" and a year like "4000 BC"
-      await expect(topBar.getByText(/Turn \d+/)).toBeVisible();
+      // Should show "Turn 1" and a year like "4000 BC". The counter splits
+      // across a text node and its <strong>, so match the wrapper.
+      await expect(page.locator('.topbar-turn')).toContainText(/Turn\s+\d+/);
       await expect(topBar.getByText(/BC/)).toBeVisible();
     });
 

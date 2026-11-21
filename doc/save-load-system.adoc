@@ -106,12 +106,11 @@ A cancelled picker changes nothing.
 
 === The Campaign Library
 
-`GAME ▸ Campaigns` (and the *Campaign Library* card on the War Council) open
-a panel over the game:
+`GAME ▸ Campaigns` opens a panel over the running game. The War Council has no
+library or *Continue* card: saving stays inside the game.
 
-* **Continue** — restore a campaign. With a game running it replaces the
-  current game in place; without one it starts a fresh engine, exactly like
-  the War Council's *Continue* card.
+* **Continue** — restore a campaign, replacing the current game in place.
+  From the front menu, start a game first and use `Ctrl+L` or `GAME ▸ Load Game`.
 * **Save current game** — write the running game into the library under a
   name of the player's choosing.
 * **Export** — download a campaign as a `.json` file (the raw V5 blob).

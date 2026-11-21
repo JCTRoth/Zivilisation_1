@@ -33,8 +33,9 @@ test.describe('App is Running & Landing Page Loads', () => {
     await expect(page.locator('h2.modal-title')).toContainText('Zivilisation 1', {
       timeout: 10_000,
     });
-    await expect(page.getByRole('button', { name: /New Campaign/ })).toBeVisible();
-    await expect(page.getByRole('button', { name: /Multiplayer/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Play/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Settings/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Field Manual/ })).toBeVisible();
   });
 
   test('page loads without uncaught JavaScript exceptions', async ({ page }) => {

@@ -59,6 +59,8 @@ import { debugLog } from '@shared/utils/DevLog';
 import { getAiTargetMarkers } from '../../utils/DevOverlayState';
 import { computeDevPlayerVision } from '../../utils/DevPlayerVision';
 import { BARBARIAN_CIV_ID } from '@shared/data/VillageConstants';
+import { devWarPlanColor } from '@/utils/DevWarPlanColors';
+import { buildDevWarPlanEntries } from '@/utils/DevWarPlanEntries';
 
 /**
  * Frame rate of the single render loop that drives the map. Animations are
@@ -247,7 +249,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
   const devViewCiv =
     devViewPlayerId === null
       ? null
-      : civilizations.find((civ) => civ.id === devViewPlayerId) ?? null;
+      : civilizations.find(
+          (civ) => civ.id === devViewPlayerId && civ.isAlive !== false,
+        ) ?? null;
   const devViewStorage = devViewCiv
     ? gameEngine?.getPlayerStorage?.(devViewCiv.id)
     : undefined;
@@ -1796,6 +1800,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
             devOverlays.forgeOfWar && devPlayerVision && devViewCiv
               ? {
                   playerName: devViewCiv.name,
+                  color: devWarPlanColor(devViewCiv.id),
                   isVisible: (col: number, row: number) =>
                     devPlayerVision.isVisible(col, row),
                   // A normal AI player is shown its own active military
@@ -1807,6 +1812,20 @@ const GameCanvas: React.FC<GameCanvasProps> = ({
                       : undefined,
                 }
               : null,
+          // "All players" overview: every living AI civ's current objective,
+          // each in its own high-contrast colour. Ignored while one player is
+          // selected (the single-player branch above owns that view).
+          aiWarPlans: (() => {
+            if (devViewCiv || !devOverlays.forgeOfWar) return undefined;
+            const aiManager = gameEngine?.aiManager;
+            if (!aiManager?.getWarPlan) return undefined;
+            const entries = buildDevWarPlanEntries(
+              civilizations,
+              (id) => aiManager.getWarPlan(id),
+              BARBARIAN_CIV_ID,
+            );
+            return entries.length > 0 ? entries : undefined;
+          })(),
         });
       }
     },

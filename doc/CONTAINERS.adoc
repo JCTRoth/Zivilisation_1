@@ -338,24 +338,21 @@ See link:K3S_COMPLETION_PLAN.adoc[the plan], P0-2.
 
 == Docker Compose topology
 
-[source]
+[mermaid]
 ----
-host                                docker network (default)
-┌──────────────┐   :3000 ┌───────────────────────┐
-│ browser      │────────▶│ web (nginx)           │  renders /config.js
-└──────────────┘         │  GAME_SERVER_URL=     │
-                         │  http://localhost:8787│
-                         └───────────┬───────────┘
-                                     │ (the browser calls this directly)
-                         ┌───────────▼───────────┐
-                         │ server (:8787/:8788)  │  WORKERS=2
-                         │  PG_URL=…@postgres    │
-                         └───────────┬───────────┘
-                                     │ :5432
-                         ┌───────────▼───────────┐
-                         │ postgres:16-alpine    │  volume pgdata
-                         │  host port 5433       │
-                         └───────────────────────┘
+flowchart TB
+    B["browser"]
+
+    subgraph docker["docker network (default)"]
+        W["web (nginx)<br/>:3000 -> :80<br/>renders /config.js<br/>GAME_SERVER_URL=http://localhost:8787"]
+        S["server (:8787 / :8788)<br/>WORKERS=2<br/>PG_URL=…@postgres"]
+        P[("postgres:16-alpine<br/>volume pgdata<br/>host port 5433 -> 5432")]
+        W --> S
+        S --> P
+    end
+
+    B -- ":3000" --> W
+    B -. "the browser calls this directly" .-> S
 ----
 
 [cols="1,2,2"]
@@ -382,34 +379,63 @@ development values and must be replaced.
 before running the dev server, or change the mapping.
 ====
 
-== K3s topology
+== Local development topology (`npm run dev:local`)
 
-[source]
+For everyday development only Postgres runs in Docker; the server and the
+client are ordinary host processes. `scripts/dev-local.mjs` starts the
+container, waits for `pg_isready`, then runs `npm run dev:server` with a
+host-side `PG_URL` and `npm run dev` (Vite). The lobby at
+`http://localhost:3000/?lobby` talks to the server on `:8787` as usual.
+
+[mermaid]
 ----
-                 ┌───────────── Traefik (kube-system) ─────────────┐
-  browser ──────▶│  civ1.local:443  /      → svc/civ1-web:80       │
-                 │                  /api   → svc/civ1-server:8787  │
-                 │                  /ws    → svc/civ1-server:8788  │
-                 └──────────────────────┬──────────────────────────┘
-                                        │  (namespace civ1, default-deny)
-                    ┌───────────────────┴───────────────────┐
-                    │                                       │
-        ┌───────────▼───────────┐               ┌───────────▼───────────┐
-        │ deploy/civ1-web ×2    │               │ deploy/civ1-server ×2–6│
-        │ nginx + PWA           │               │ HTTP/SSE + WS + rooms  │
-        │ ConfigMap: server URL │               │ HPA 60% CPU            │
-        └───────────────────────┘               └───────────┬───────────┘
-                                                            │ :5432
-                                                ┌───────────▼───────────┐
-                                                │ sts/civ1-postgres ×1  │
-                                                │ PVC 2Gi               │
-                                                └───────────┬───────────┘
-                                                            │
-                                                ┌───────────▼───────────┐
-                                                │ CronJob pg-backup     │
-                                                │ PVC 5Gi (currently    │
-                                                │ blocked by netpol)    │
-                                                └───────────────────────┘
+flowchart LR
+    subgraph Host
+        B["browser"]
+    end
+
+    subgraph Docker
+        V["Vite (web)<br/>hot reload, source maps"]
+        S["server (tsx)<br/>debuggable, WORKERS=1<br/>PG_URL=…localhost"]
+        P[("postgres:16-alpine<br/>volume pgdata")]
+    end
+
+    B -- ":3000" --> V
+    V -- ":8787 / SSE" --> S
+    S -- ":5433 (host-published)" --> P
+----
+
+Credentials come from `.env`; the script rewrites the Compose-internal
+`postgres:5432` hostname to `localhost:5433` for the host server (see
+link:RUNNING.adoc#local-dev[Running Civ1 Browser]). Ctrl-C stops both host
+processes and leaves Postgres running; use `npm run db:down` to stop it.
+This is deliberately *not* a K3s topology — see <<k3s-topology>> for the
+deployment test rig with replicas, HPA, ingress and network policies.
+
+== K3s topology [[k3s-topology]]
+
+[mermaid]
+----
+flowchart TB
+    B["browser"]
+
+    subgraph kube["Traefik (kube-system)"]
+        T["civ1.local:443<br/>/    -> svc/civ1-web:80<br/>/api -> svc/civ1-server:8787<br/>/ws  -> svc/civ1-server:8788"]
+    end
+
+    B -- "https://civ1.local" --> T
+
+    subgraph ns["namespace civ1 (default-deny)"]
+        W["deploy/civ1-web ×2<br/>nginx + PWA<br/>ConfigMap: server URL"]
+        S["deploy/civ1-server ×2–6<br/>HTTP/SSE + WS + rooms<br/>HPA 60% CPU"]
+        P[("sts/civ1-postgres ×1<br/>PVC 2Gi")]
+        C["CronJob pg-backup<br/>PVC 5Gi (currently blocked by netpol)"]
+
+        T -- "/" --> W
+        T -- "/api, /ws" --> S
+        S -- ":5432" --> P
+        C -. "DNS blocked" .-> P
+    end
 ----
 
 [cols="2,2,3"]

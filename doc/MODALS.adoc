@@ -89,21 +89,29 @@ in one building instead of unrelated dialogs.
 
 User flows:
 
-. *New Campaign* → `GameSetupModal` step I (civilization) → step II (terms,
-  roster, world, summary) → *Start Game*.
-. *Multiplayer* → `LobbyPanel` → host chooses server, seats and difficulty →
-  *Create room* → one signed join link per seat → a link boots the normal remote
-  client (`?server=&room=&token=`).
-. *Continue Campaign* → the browser campaign library (IndexedDB, localStorage
-  fallback) → the newest autosave is restored; the card is disabled when no
-  campaign exists.
-. *Campaign Library* → `CampaignPanel` → list, resume, export or delete local
-  saves.
+. *Play* → `GameSetupModal` step I (civilization) → step II, which opens with
+  a *Where to Play* choice:
++
+** *On this device* → the rest of step II (terms, roster, map type, summary)
+   → *Start Game*. True-scale map sizing, the four world-shaping sliders and
+   the developer switch live behind *Fine-tune the world (advanced)*,
+   collapsed by default so the size preview only renders on request.
+** *With friends* → `LobbyPanel` → seats and difficulty → *Create room* → one
+   invitation per seat (plus *Copy all invitations*). One central server
+   serves everyone: its URL comes from the deployment's `/config.js`, so no
+   address, room ID or token appears in the player UI. The link still carries
+   the room and signed seat internally (`?server=&room=&token=`) and boots the
+   normal remote client. Stepping back returns to step II with the chosen
+   nation intact.
 . *Settings* and *Field Manual* → the same shared dialogs the in-game menus
   open. While the council is visible, `body.civ1-setup-active` lifts the
   Bootstrap portal above the room's `z-index: 2000`.
 . *Back to War Council* (wizard/lobby nameplate or footer) → the hub, without
   starting a game.
+
+Saving and loading live in the in-game GAME menu (`Save Game`, `Load Game`,
+`Campaigns`, `Ctrl+S` / `Ctrl+L`); the hub deliberately has no library or
+"continue" entry.
 
 Shortcuts that bypass the hub keep working: `?quickstart`, `?maptype=…`,
 `?combatlab`, `?server=&room=&token=` and `?lobby[=server]`. The last one opens
@@ -117,9 +125,9 @@ the hub directly on the multiplayer lobby.
 
 |War Council hub |— (App state) |page load (skipped by `?quickstart` / `?maptype` / remote join) |`17-war-council-hub.png`
 
-|Multiplayer lobby |— (App state) |War Council ▸ Multiplayer; `?lobby[=server]` |`18-multiplayer-lobby.png`
+|Multiplayer lobby |— (App state) |Setup step II ▸ With friends; `?lobby[=server]` (ops shortcut) |`18-multiplayer-lobby.png`
 
-|Game Setup wizard |— (App state) |War Council ▸ New Campaign (skipped by `?quickstart`) |`00-game-setup.png`
+|Game Setup wizard |— (App state) |War Council ▸ Play (skipped by `?quickstart`) |`00-game-setup.png`
 
 |Tech Tree |`tech` · `F2` |WORLD ▸ Tech Tree |`01-tech-tree.png`
 

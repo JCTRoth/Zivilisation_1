@@ -684,7 +684,7 @@ The static server for the e2e spec is a tiny committed script
 |The local session (`createLocalSession`) is the same code path as before; only the shell and the storage changed. No request is made to the game server in single-player mode.
 
 |"The game saves its state locally and can be continued later."
-|IndexedDB campaign library + autosave slot. "Continue" on the War Council restores the exact state, including the RNG stream.
+|IndexedDB campaign library + autosave slot. Resume with `GAME ▸ Load Game`, `GAME ▸ Campaigns` or `Ctrl+L` from a running game; the War Council has no library or Continue card. The restored state includes the RNG stream.
 
 |"The game can load its state from a local file."
 |The file import path now accepts the app's own V5 saves (the version gate is fixed) and writes them into the campaign library, so an imported file is also resumable.
