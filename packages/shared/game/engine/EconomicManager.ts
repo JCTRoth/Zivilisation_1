@@ -21,7 +21,7 @@ import {
   getResourceYields,
 } from '../../data/TerrainConstants';
 import { IMPROVEMENT_PROPERTIES, IMPROVEMENT_TYPES } from '../../data/TileImprovementConstants';
-import { NOMAD_CAMP_FOOD_COST, NOMAD_SETTLEMENT_DRAIN_RADIUS, NOMAD_SETTLEMENT_FOOD_COST } from '../../data/NomadConstants';
+import { NOMAD_CAMP_FOOD_COST, NOMAD_FOOD_PER_PAIR, NOMAD_SETTLEMENT_DRAIN_RADIUS, NOMAD_SETTLEMENT_FOOD_COST } from '../../data/NomadConstants';
 import { SPECIALIST_YIELDS, CITY_UPKEEP_PER_CITY, FREE_CITY_SUPPORT, TREATY_ROUTE_TRADE_MULTIPLIER } from '../../data/GameConstants';
 import { cityBuildingEffects } from './BuildingEffects';
 import type { City, Civilization, Unit } from '../../types/game';
@@ -1241,15 +1241,16 @@ export class EconomicManager {
     const nomads = this.gameEngine.nomadManager;
     if (!nomads || drain === 0 && !nomads.isSpawned) return drain;
 
-    // The visiting camp counts per mouth: every rider standing within
-    // reach of the gate eats its keep, for as long as they stand there —
-    // a deal with them ends, the bill with it.
+    // The visiting camp is fed per PAIR: the first two riders cost one food,
+    // the next two cost another (a three-rider horde costs 2, not 3) — for as
+    // long as they stand there. A deal with them ends, the bill with it.
     const riders = nomads.unitsNear?.(
       city.col,
       city.row,
       NOMAD_SETTLEMENT_DRAIN_RADIUS,
     ) ?? 0;
-    return drain + riders * NOMAD_CAMP_FOOD_COST;
+    const foodPoints = Math.ceil(riders / NOMAD_FOOD_PER_PAIR);
+    return drain + foodPoints * NOMAD_CAMP_FOOD_COST;
   }
 
   /**

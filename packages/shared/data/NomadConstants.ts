@@ -136,6 +136,31 @@ export const NOMAD_CONTACT_TIMEOUT_ROUNDS = 60;
 export const NOMAD_CAMP_FOOD_COST = 1;
 
 /**
+ * Riders ONE food point feeds: the first two units cost 1 food, the next two
+ * cost another, and so on. A city's camp bill is
+ * `ceil(riders / NOMAD_FOOD_PER_PAIR) * NOMAD_CAMP_FOOD_COST` — a three-rider
+ * horde costs 2, never 3.
+ */
+export const NOMAD_FOOD_PER_PAIR = 2;
+
+/**
+ * Food the court supplies for a camp, in points. One point stands for the
+ * first two riders; every point granted at the table funds two more. It is
+ * materialised from the camp's own size the first time it is read, so a camp
+ * never arrives already overfed — growth beyond it needs an explicit grant,
+ * and withdrawing it leaves the riders it no longer funds to wander off.
+ */
+export const NOMAD_CAMP_FOOD_MIN = 1;
+
+/**
+ * Chance that taking their supply away is remembered as a closed hand: the
+ * riders who no longer fits the larder leave either way, but half the time
+ * the relationship pays for it too (refusals, and past the clan's tolerance,
+ * hostility).
+ */
+export const NOMAD_WITHDRAW_ANGER_CHANCE = 0.5;
+
+/**
  * Prices rise by this much per refusal: the tribe remembers a closed hand,
  * and what they sell you (knowledge, the horde) is priced accordingly. Four
  * refusals double the price — past the clan's tolerance they stop selling

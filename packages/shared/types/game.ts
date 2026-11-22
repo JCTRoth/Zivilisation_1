@@ -748,6 +748,13 @@ export interface Civilization {
   color: string;
   isAlive: boolean;
   /**
+   * True once this civilization has owned a city. The village comeback roll —
+   * a hut offering a Settler or a free city — only fires for a civ that lost
+   * its cities: a fresh start has never owned one, so the opening hut still
+   * rolls the ordinary Civ1 pool.
+   */
+  hadCity?: boolean;
+  /**
    * Fixed-alliance team index. Undefined in a normal free-for-all game.
    * `TeamManager` is authoritative; this field is a denormalised copy for
    * rendering and save files.

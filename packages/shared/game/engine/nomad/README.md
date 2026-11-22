@@ -92,12 +92,17 @@ modal is open):
 | Let them settle *(random offer, per clan)* | only after you choose **Agree**: a camp on a tile directly beside your city, −2 food and +2 gold per turn, one warrior raised for you, and **one extra trade-route slot** for that city (3 → 4). Its guards stay on the city perimeter and intercept attackers when the shared combat-odds calculation approves the fight |
 | Refuse the settlement *(same table)* | no camp is built; this counts as a closed hand: `refusals += 1`, their prices rise by `NOMAD_REFUSAL_PRICE_PENALTY` (25 %) per refusal, and past the clan's tolerance they turn hostile |
 | Hire the riders you met | **only the units standing with you** (beside your city or beside your unit) — build cost × **5** × clan factor × the refusal penalty; the payment lands in **their** chest. The rest of the tribe keeps its tents |
-| Pass in peace | departure after 6 rounds instead of 20 — and refusals accumulate |
+| Pass in peace | departure after 6 rounds instead of 20 — and refusals accumulate; it also releases a standing *stay* |
+| Tell them to stay / Let them ride on | the **only** thing that keeps a camp standing past its window — no route, gift or deal does. Tabled at arrival and at the farewell; only this door (or an angry tribe) ends it |
+| Give them more food | tabled when the camp is fed to capacity: one point funds **two more riders**, and it is their ask that unlocks the grant |
+| Withdraw their supply | the riders the point no longer funded leave the camp and wander off; half the time the hand is remembered as closed (a refusal — past the tolerance, hostility) |
 
-**What a camp costs you while it stands**: every rider of a visiting camp
-within reach of a city eats `NOMAD_CAMP_FOOD_COST` (1) of that city's food
-per turn — a tribe parked on your doorstep costs you grain whether or not
-you invited them. A *settlement* costs `NOMAD_SETTLEMENT_FOOD_COST` (2)
+**What a camp costs you while it stands**: a visiting camp within reach of a
+city is fed **per pair** — the first two riders eat `NOMAD_CAMP_FOOD_COST` (1)
+of that city's food per turn, the next two cost another (a three-rider horde
+costs 2, never 3) — for as long as they stand there. A tribe parked on your
+doorstep costs you grain whether or not you invited them, and taking their
+supply back leaves the mouths it no longer funded wandering off. A *settlement* costs `NOMAD_SETTLEMENT_FOOD_COST` (2)
 per turn for as long as it stands (and it defends you).
 
 **Equivalent units**: the tribe buys what the players can field — a1:1
@@ -174,8 +179,10 @@ watch them change their mind.
 
 `BarbarianManager.act()` never touches negative ids: the nomads and the
 barbarians are friends. When the barbarians **take a city**, the tribe
-strikes camp and moves in beside it (`onBarbariansTookCity` → migration
-+ a friendship route) — unless angry (revenge first).
+strikes camp and moves in beside it (`onBarbariansTookCity` → migration),
+and the friendship route opens **only once a camp actually stands there** —
+a route to a city nobody visited is exactly what the map-action rule forbids
+— unless angry (revenge first).
 
 ## Tests & docs
 

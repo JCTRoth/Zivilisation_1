@@ -2211,8 +2211,10 @@ come from, how they play and how they are drawn — is
   **angry** tribe tables no knowledge and no maps: only spears, raids
   (`NOMAD_RAID_ROUNDS` = 12, 15 % of the treasury every 3 rounds) and
   bribes. Clan tolerances before they turn: Bedouin 3, Sámi 2, Mongol 1.
-* **What a camp costs you**: `NOMAD_CAMP_FOOD_COST` (1) of food **per rider
-  per turn** while they camp within the drain radius (3) of your city — the
+* **What a camp costs you**: `NOMAD_CAMP_FOOD_COST` (1) of food **per pair of
+  riders per turn** (`ceil(riders / NOMAD_FOOD_PER_PAIR)`, so the first two
+  riders cost 1 and a three-rider horde costs 2) while they camp within the
+  drain radius (3) of your city — the
   tents move to the gate when the envoy first speaks, and the bill stops
   when they ride on. A **settlement** costs `NOMAD_SETTLEMENT_FOOD_COST` (2)
   per turn for ever, raises `NOMAD_SETTLEMENT_DEFENDERS` (1) warrior for you

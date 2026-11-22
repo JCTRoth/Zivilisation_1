@@ -17,6 +17,7 @@ import { UNIT_TYPES } from '@shared/data/UnitConstants';
 import {
   NOMAD_CAMP_FOOD_COST,
   NOMAD_CIV_ID,
+  NOMAD_FOOD_PER_PAIR,
   NOMAD_REFUSAL_PRICE_PENALTY,
   NOMAD_SETTLEMENT_FOOD_COST,
   NOMAD_TRIGGER_ROUND,
@@ -389,7 +390,7 @@ describe('Nomads — the route', () => {
       }
       expect(reoffered, 'a camp at your gate never stays without a dialog').toBe(true);
       const second = eventsOf(h.events, 'NOMAD_PARLEY').at(-1)!;
-      expect(second.data.choices.map((c: any) => c.id)).toEqual(['hire', 'farewell']);
+      expect(second.data.choices.map((c: any) => c.id)).toEqual(['hire', 'stay', 'supply', 'withdraw', 'farewell']);
     } finally {
       spy.mockRestore();
     }
@@ -420,7 +421,7 @@ describe('Nomads — the route', () => {
     expect(first.data.choices.map((c: any) => c.id)).toContain('tech');
   });
 
-  it('a camp standing at your gate costs you food — per mouth, per turn', async () => {
+  it('a camp standing at your gate costs you food — per PAIR of riders, per turn', async () => {
     const h = await world();
     h.settle();
     const nm = h.engine.nomadManager;
@@ -435,9 +436,12 @@ describe('Nomads — the route', () => {
       const riders = nm.unitsNear(city.col, city.row, 3);
       expect(riders, 'the whole horde stands at the gate').toBe(3);
 
-      // Every rider standing there eats its keep — and only for as long as
-      // they stand there (no camp at the gate, no bill).
-      expect(balance()).toBe(before - riders * NOMAD_CAMP_FOOD_COST);
+      // The camp is fed per PAIR: the first two riders cost one food, the
+      // next two cost another — and only for as long as they stand there
+      // (no camp at the gate, no bill).
+      const food = Math.ceil(riders / NOMAD_FOOD_PER_PAIR) * NOMAD_CAMP_FOOD_COST;
+      expect(food).toBe(2); // three riders, two food
+      expect(balance()).toBe(before - food);
     } finally {
       spy.mockRestore();
     }

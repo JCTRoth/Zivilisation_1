@@ -121,7 +121,24 @@ from afar returns `notMeeting` — walking away is not an answer.
 
 |Pass in peace
 |They leave after 6 rounds instead of 20. Within their patience
-(≥ refusals left) they simply part; beyond it — they turn.
+(≥ refusals left) they simply part; beyond it — they turn. It also releases
+a standing *stay*.
+
+|Tell them to stay / Let them ride on
+|The **only** thing that ever keeps a camp standing past its window — no
+route, gift or deal does it. Tabled at both audiences (arrival and farewell);
+the camp's clock stops while it stands, and only this door — or an angry
+tribe — ends it.
+
+|Give them more food
+|Tabled only when the camp is fed to capacity: one point covers **two more
+riders**, and it is their ask that unlocks the grant. Growth beyond the
+standing ration needs it.
+
+|Withdraw their supply
+|The riders the point no longer funded leave the camp and wander off; half
+the time (`NOMAD_WITHDRAW_ANGER_CHANCE`) the hand is remembered as closed —
+a refusal, and past the clan's tolerance, hostility.
 |===
 
 Whichever deal was struck (or none), the **camp remains a race**: from 16
@@ -695,7 +712,8 @@ the gate, and a copy the caller cannot mutate).
 and camps at a rival (your audience count never grows, `visits` is yours
 alone); a rival answers the envoy in code with its own gold (the
 knowledge lands in their tree, never in your purse); a camp at your gate
-costs food per mouth (`NOMAD_CAMP_FOOD_COST` × riders); a settlement
+costs food per pair of riders (`NOMAD_CAMP_FOOD_COST` × `ceil(riders / 2)`);
+a settlement
 costs food forever and buys its city a fourth trade-route slot
 (`maxTradeRoutesFor` 3 → 4); and refusing their settlement is a closed
 hand — the next audience prices the riders at the refusal penalty; and

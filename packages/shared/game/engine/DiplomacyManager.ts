@@ -2041,6 +2041,9 @@ export class DiplomacyManager {
     if (roll < chance) {
       city.civilizationId = diplomatCivId;
       city.capturedTurns = 5;
+      // A bought city is owned ground: remember it for the village comeback
+      // roll (optional: test doubles of the engine do not carry the helper).
+      this.gameEngine.markCityOwned?.(diplomatCivId);
       this.markContact(diplomatCivId, victimId);
       const rel = this.getRelation(diplomatCivId, victimId);
       if (rel) {

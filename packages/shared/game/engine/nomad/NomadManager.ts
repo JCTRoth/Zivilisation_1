@@ -64,6 +64,9 @@ import {
   NOMAD_BRIBE_COOLDOWN_ROUNDS,
   NOMAD_BRIBE_RADIUS,
   NOMAD_CAMP_LINGER_ROUNDS,
+  NOMAD_CAMP_FOOD_MIN,
+  NOMAD_FOOD_PER_PAIR,
+  NOMAD_WITHDRAW_ANGER_CHANCE,
   NOMAD_CAMP_MUSTER_LIMIT,
   NOMAD_CAMP_MUSTER_ROUNDS,
   NOMAD_CARAVAN_BLOCKED_ROUNDS,
@@ -143,6 +146,7 @@ export interface NomadOutcome {
    */
   result?:
     | 'tech' | 'techGift' | 'maps' | 'hire' | 'settle' | 'pass' | 'noGold'
+    | 'stay' | 'supply' | 'withdraw'
     | 'notMeeting'
     | 'cityBought' | 'cityRefused'
     | 'goldGiven' | 'goldRefused';
@@ -231,6 +235,19 @@ export interface NomadCamp {
   parleyResolvedRound: number;
   /** The pitch beside these tents — a tent tile, visual only (`nomadTent`). */
   tent: { col: number; row: number } | null;
+  /**
+   * The player TOLD these tents to stay — the only thing that ever keeps
+   * them standing past their window. Nothing else (a route, a gift, a deal)
+   * sets this: it is an instruction, not a side effect.
+   */
+  stays?: boolean;
+  /**
+   * Food the court supplies for this camp, in points (1 point = the first two
+   * riders). Materialised from the camp's own size on first read, then only
+   * the table changes it: granting feeds two more mouths, withdrawing leaves
+   * the riders it no longer funds to wander off.
+   */
+  foodAllowance?: number;
 }
 
 /** A fresh camp at `targetCivId`, with nothing tabled yet. */
@@ -247,6 +264,7 @@ const newCamp = (col: number, row: number, targetCivId: number, round: number): 
   parleyEmittedRound: -1,
   parleyResolvedRound: -1,
   tent: null,
+  stays: false,
 });
 
 export class NomadManager {
@@ -698,7 +716,13 @@ export class NomadManager {
     }
 
     if (camp.departAt !== null && round >= camp.departAt) {
-      this.departCamp(camp, round);
+      // Told to stay: the tents stand. Only the player's word (the same door,
+      // chosen again) or an angry tribe ends this.
+      if (camp.stays) {
+        camp.departAt = null;
+      } else {
+        this.departCamp(camp, round);
+      }
     }
   }
 
@@ -1558,22 +1582,10 @@ export class NomadManager {
    */
   onBarbariansTookCity(city: City): void {
     // (No `hired` gate: a hired tribe has no camp to move — campUnitIds was
-    // retired with the sale — but its friendship route still opens.)
+    // retired with the sale — and a tribe with no camp has never stood at
+    // that city, so it opens no route either.)
     if (this.visitCount === 0 || this.settled) return;
     if (this.standing === 'angry') return;
-
-    // The friendship route — capacity permitting, once per city.
-    const already =
-      this.routes.some((r) => r.partnerCityId === city.id)
-      || this.caravans.some((c) => c.targetCityId === city.id);
-    if (!already && this.routes.length + this.caravans.length < NOMAD_TRADE_ROUTE_LIMIT) {
-      this.routes.push({ partnerCityId: city.id, partnerCivId: city.civilizationId });
-      this.gameEngine.onStateChange?.('NOMAD_ROUTE', {
-        city: city.name ?? '',
-        routes: this.routes.length,
-        limit: NOMAD_TRADE_ROUTE_LIMIT,
-      });
-    }
 
     // The whole tribe strikes tents and moves in beside the conquest — each
     // camp takes its own free spot in the ring (occupied tiles are skipped,
@@ -1593,8 +1605,24 @@ export class NomadManager {
       camp.row = spot.row;
       moved = true;
     }
-    if (moved) {
-      this.gameEngine.onStateChange?.('NOMAD_MIGRATED', { city: city.name ?? '' });
+    if (!moved) return; // nobody arrived: no news, and above all no route
+    this.gameEngine.onStateChange?.('NOMAD_MIGRATED', { city: city.name ?? '' });
+
+    // The friendship route — the consequence of ARRIVING, not of the
+    // conquest. A camp that could not find a spot beside the city has never
+    // been there, and a route to a city nobody visited is exactly what the
+    // rule forbids: every other route is walked by a caravan that physically
+    // reaches its partner.
+    const already =
+      this.routes.some((r) => r.partnerCityId === city.id)
+      || this.caravans.some((c) => c.targetCityId === city.id);
+    if (!already && this.routes.length + this.caravans.length < NOMAD_TRADE_ROUTE_LIMIT) {
+      this.routes.push({ partnerCityId: city.id, partnerCivId: city.civilizationId });
+      this.gameEngine.onStateChange?.('NOMAD_ROUTE', {
+        city: city.name ?? '',
+        routes: this.routes.length,
+        limit: NOMAD_TRADE_ROUTE_LIMIT,
+      });
     }
   }
 
@@ -1742,6 +1770,73 @@ export class NomadManager {
    * promised (`pending`), never re-rolled. A successful choice emits
    * NOMAD_RESOLVED so the store re-syncs (gold, techs, converted units).
    */
+  /** The riders still standing with this camp, in camp order. */
+  private aliveRiders(camp: NomadCamp): Unit[] {
+    return camp.unitIds
+      .map((id) => this.unitById(id))
+      .filter((u): u is Unit => u !== undefined && u.isDefeated !== true);
+  }
+
+  /**
+   * How much food the court supplies for this camp, in points. The standing
+   * ration is materialised from the camp's own size the first time it is
+   * read — a camp never arrives already overfed — and after that only the
+   * table (`supply` / `withdraw`) moves it.
+   */
+  private foodAllowanceOf(camp: NomadCamp): number {
+    if (camp.foodAllowance === undefined) {
+      camp.foodAllowance = Math.max(
+        NOMAD_CAMP_FOOD_MIN,
+        Math.ceil(this.aliveRiders(camp).length / NOMAD_FOOD_PER_PAIR),
+      );
+    }
+    return camp.foodAllowance;
+  }
+
+  /**
+   * The supply doors: a camp AT its funded size asks for more food (no
+   * grant without the ask), and anything above the standing ration can be
+   * taken back — which leaves the mouths it no longer funds out of the camp.
+   */
+  private foodChoices(choices: AudienceChoice[], camp: NomadCamp): void {
+    if (this.standing === 'angry') return;
+    const allowance = this.foodAllowanceOf(camp);
+    const funded = allowance * NOMAD_FOOD_PER_PAIR;
+    if (this.aliveRiders(camp).length >= funded) {
+      choices.push({
+        id: 'supply',
+        labelKey: 'nomad.choice.supply',
+        detailKey: 'nomad.choice.supplyTerms',
+        detailParams: { food: allowance + 1, riders: (allowance + 1) * NOMAD_FOOD_PER_PAIR },
+        variant: 'accept',
+      });
+    }
+    if (allowance > NOMAD_CAMP_FOOD_MIN) {
+      choices.push({
+        id: 'withdraw',
+        labelKey: 'nomad.choice.withdraw',
+        detailKey: 'nomad.choice.withdrawTerms',
+        detailParams: { riders: funded },
+        variant: 'pass',
+      });
+    }
+  }
+
+  /**
+   * The instruction door: tabled at both audiences — when they arrive (tell
+   * them to stay) and at the farewell (let them go). It is the ONLY thing
+   * that ever keeps a camp standing: nothing incidental (a route, a gift, a
+   * deal) sets `stays`.
+   */
+  private stayChoice(choices: AudienceChoice[], camp: NomadCamp): void {
+    if (this.standing === 'angry') return; // enemies take no instructions
+    choices.push({
+      id: 'stay',
+      labelKey: camp.stays ? 'nomad.choice.letThemGo' : 'nomad.choice.stay',
+      variant: camp.stays ? 'pass' : 'accept',
+    });
+  }
+
   resolveParley(choiceId: string): NomadOutcome {
     // Everything else is filtered by the LIVE-Parley lifecycle itself:
     // camp doors ('first'/'second') can only be live while a camp stands
@@ -1768,6 +1863,18 @@ export class NomadManager {
     // on the table. This also rejects stale or guessed choice ids after an
     // offer has been withdrawn.
     if (!this.liveChoices?.some((choice) => choice.id === choiceId)) return { ok: false };
+    // The instruction is not an ANSWER: it changes where the tents stand, not
+    // whether you have dealt with them. The audience stays open — tech, maps,
+    // hire and the door itself remain on the table — and only the stay door's
+    // own label flips to its opposite.
+    if (choiceId === 'stay') {
+      const outcome = this.applyChoice(choiceId, humanId, human);
+      if (outcome.ok) {
+        this.gameEngine.onStateChange?.('NOMAD_RESOLVED', { result: outcome.result });
+      }
+      return outcome;
+    }
+
     const wasParley = this.liveParley === 'first' || this.liveParley === 'second';
     this.liveParley = null;
 
@@ -1938,6 +2045,9 @@ export class NomadManager {
         if (camp) {
           camp.parleyDone = true;
           camp.parleyResolvedRound = this.lastRound;
+          // Passing in peace is a go-instruction: it releases a standing
+          // "stay" as well — the player asked for both in the same room.
+          camp.stays = false;
         }
         const tolerance = this.clan?.angerTolerance ?? 2;
         if (this.refusals > tolerance) {
@@ -1947,6 +2057,59 @@ export class NomadManager {
         }
         if (camp) camp.departAt = this.lastRound + NOMAD_PASS_DEPART_ROUNDS;
         return { ok: true, result: 'pass' };
+      }
+
+      // They asked for more food: one point feeds two more mouths — and it
+      // is the ASK that unlocks the grant, never a standing allowance.
+      case 'supply': {
+        if (!camp) return { ok: false, result: 'notMeeting' };
+        camp.foodAllowance = this.foodAllowanceOf(camp) + 1;
+        return { ok: true, result: 'supply', params: { food: camp.foodAllowance } };
+      }
+
+      // Taking the supply back: the mouths it no longer funded leave the camp
+      // and wander off, and half the time the hand is remembered as closed.
+      case 'withdraw': {
+        if (!camp) return { ok: false, result: 'notMeeting' };
+        const allowance = Math.max(NOMAD_CAMP_FOOD_MIN, this.foodAllowanceOf(camp) - 1);
+        camp.foodAllowance = allowance;
+        const funded = allowance * NOMAD_FOOD_PER_PAIR;
+        const riders = this.aliveRiders(camp);
+        const deserters = riders.slice(funded);
+        if (deserters.length > 0) {
+          const gone = new Set(deserters.map((u) => u.id));
+          camp.unitIds = camp.unitIds.filter((id) => !gone.has(id));
+        }
+        if ((this.gameEngine.rng ?? Math.random)() < NOMAD_WITHDRAW_ANGER_CHANCE) {
+          this.refusals += 1;
+          const tolerance = this.clan?.angerTolerance ?? 2;
+          if (this.refusals > tolerance) this.goAngry();
+        }
+        return {
+          ok: true,
+          result: 'withdraw',
+          params: { food: allowance, left: deserters.length },
+        };
+      }
+
+      // The instruction: stay goes on until the same door takes it off. The
+      // camp's own clock stops mattering, so nothing else can move them.
+      case 'stay': {
+        if (!camp) return { ok: false, result: 'notMeeting' };
+        camp.stays = !camp.stays;
+        if (camp.stays) {
+          camp.departAt = null;
+        } else {
+          // Letting them go: an ordinary linger from now on.
+          camp.departAt = this.lastRound + NOMAD_CAMP_LINGER_ROUNDS;
+        }
+        // The audience is still open — the door now reads as its opposite.
+        const stay = this.liveChoices?.find((c) => c.id === 'stay');
+        if (stay) {
+          stay.labelKey = camp.stays ? 'nomad.choice.letThemGo' : 'nomad.choice.stay';
+          stay.variant = camp.stays ? 'pass' : 'accept';
+        }
+        return { ok: true, result: 'stay', params: { staying: camp.stays ? 1 : 0 } };
       }
 
       default:
@@ -2504,6 +2667,8 @@ export class NomadManager {
           variant: 'accept',
         });
       }
+      this.stayChoice(choices, camp);
+      this.foodChoices(choices, camp);
       choices.push({ id: 'pass', labelKey: 'nomad.choice.pass', variant: 'pass' });
       // They came with a caravan: the wagon rolls up the moment the envoy
       // first speaks at these tents — never again on a re-offer.
@@ -2518,6 +2683,10 @@ export class NomadManager {
           variant: 'accept',
         });
       }
+      // The farewell audience is where the instruction matters most: they are
+      // about to ride off, and only the player can say otherwise.
+      this.stayChoice(choices, camp);
+      this.foodChoices(choices, camp);
       choices.push({ id: 'farewell', labelKey: 'nomad.choice.farewell', variant: 'pass' });
       camp.secondEmitted = true;
     }

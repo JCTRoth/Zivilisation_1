@@ -395,6 +395,83 @@ describe('Civ1 village trigger & outcomes', () => {
     // The roll consumed the hut — it is gone from the map immediately.
     expect(tile.village).toBe(false);
   });
+
+  // ── The comeback roll: a civilization that lost every city ──────────────
+
+  /**
+   * Put the triggering civ in the state the comeback rule is for: it owned a
+   * city once (`hadCity`) and has lost every one of them.
+   */
+  function loseEmpire(e: GameEngine): void {
+    const civs = (e as unknown as { civilizations: Array<{ hadCity?: boolean }> }).civilizations;
+    if (civs[0]) civs[0].hadCity = true;
+    (e as unknown as { cities: unknown[] }).cities = [];
+  }
+
+  function settlersOf(e: GameEngine, civId = 0): number {
+    return (e as unknown as { units: Array<{ type: string; civilizationId: number }> })
+      .units.filter((u) => u.civilizationId === civId && u.type === 'settler').length;
+  }
+
+  it('a civ with no city is handed a settler from a village (35%)', async () => {
+    const e = await setup();
+    loseEmpire(e);
+    const spot = villageSpot(e);
+    const tile = e.getTileAt(spot.col, spot.row) as unknown as { village?: boolean };
+    tile.village = true;
+    const warrior = spawnUnit(e, 'warrior', spot.adj.col, spot.adj.row);
+
+    const before = settlersOf(e);
+    const spy = vi.spyOn(Math, 'random').mockReturnValue(0.1); // under 35%
+    const res = e.moveUnit(warrior.id, spot.col, spot.row);
+    spy.mockRestore();
+
+    expect(res.success).toBe(true);
+    expect(tile.village).toBe(false);
+    expect(settlersOf(e)).toBe(before + 1);
+    expect((e as unknown as { cities: unknown[] }).cities).toHaveLength(0);
+  });
+
+  it('a civ with no city is handed a free city on the hut tile (25%)', async () => {
+    const e = await setup();
+    loseEmpire(e);
+    const spot = villageSpot(e);
+    const tile = e.getTileAt(spot.col, spot.row) as unknown as { village?: boolean };
+    tile.village = true;
+    const warrior = spawnUnit(e, 'warrior', spot.adj.col, spot.adj.row);
+
+    const spy = vi.spyOn(Math, 'random').mockReturnValue(0.5); // 35% … 60%
+    const res = e.moveUnit(warrior.id, spot.col, spot.row);
+    spy.mockRestore();
+
+    expect(res.success).toBe(true);
+    const cities = (e as unknown as { cities: Array<{ col: number; row: number; population: number }> })
+      .cities;
+    expect(cities).toHaveLength(1);
+    expect(cities[0].col).toBe(spot.col);
+    expect(cities[0].row).toBe(spot.row);
+    expect(cities[0].population).toBe(1);
+  });
+
+  it('past 60% the ordinary Civ1 pool decides — no comeback reward', async () => {
+    const e = await setup();
+    loseEmpire(e);
+    const spot = villageSpot(e);
+    const tile = e.getTileAt(spot.col, spot.row) as unknown as { village?: boolean };
+    tile.village = true;
+    const warrior = spawnUnit(e, 'warrior', spot.adj.col, spot.adj.row);
+
+    const before = settlersOf(e);
+    const spy = vi.spyOn(Math, 'random').mockReturnValue(0.9); // over 60%
+    const res = e.moveUnit(warrior.id, spot.col, spot.row);
+    spy.mockRestore();
+
+    expect(res.success).toBe(true);
+    expect(tile.village).toBe(false);
+    // Neither comeback reward fired: the ordinary pool took over.
+    expect(settlersOf(e)).toBe(before);
+    expect((e as unknown as { cities: unknown[] }).cities).toHaveLength(0);
+  });
 });
 
 describe('AI village eagerness', () => {

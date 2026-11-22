@@ -39,6 +39,21 @@ export const VILLAGE_BARBARIAN_TYPES: string[] = ['warrior', 'legion'];
 export const VILLAGE_BARBARIAN_MIN = 1;
 export const VILLAGE_BARBARIAN_MAX = 3;
 
+/**
+ * Comeback rolls for a civilization that has lost **every** city: the hut
+ * offers what that player needs most before the normal Civ1 pool sees the
+ * rest of the roll.
+ *
+ *  1. 35 % → a Settler (so the empire can be rebuilt),
+ *  2. 25 % → a free city on the hut's own tile,
+ *  3. the remaining 40 % rolls the ordinary five-outcome pool.
+ *
+ * The city roll needs a placeable tile; if there is none, the ordinary pool
+ * decides instead of the hut swallowing the chance.
+ */
+export const VILLAGE_CITYLESS_SETTLER_CHANCE = 0.35;
+export const VILLAGE_CITYLESS_CITY_CHANCE = 0.25;
+
 // ── AI village risk model ──────────────────────────────────────────────
 //
 // Popping a hut can spawn Barbarians next to it. A hut close to one of the

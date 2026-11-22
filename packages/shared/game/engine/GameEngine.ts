@@ -22,6 +22,8 @@ import {
   VILLAGE_BARBARIAN_TYPES,
   VILLAGE_BARBARIAN_MIN,
   VILLAGE_BARBARIAN_MAX,
+  VILLAGE_CITYLESS_SETTLER_CHANCE,
+  VILLAGE_CITYLESS_CITY_CHANCE,
 } from '../../data/VillageConstants';
 import { CombatSystem } from './CombatSystem';
 import {
@@ -2169,6 +2171,7 @@ export default class GameEngine {
           autoProduction: true // New cities default to Auto Production ON
         };
         
+        this.markCityOwned(civId);
         this.cities.push(city);
         console.log(`[CITY] Created ${cityName} for civ ${civId} at (${pos.col},${pos.row})`);
         
@@ -2507,6 +2510,7 @@ export default class GameEngine {
       }
     };
 
+    this.markCityOwned(civilizationId);
     this.cities.push(city);
 
     // First city (or a civ that lost its capital) becomes the seat of
@@ -5575,6 +5579,17 @@ const occupiedLandmasses = new Set(
   }
 
   /**
+   * Remember that a civilization owns a city — the gate for the village
+   * comeback roll (see `Civilization.hadCity`). Called wherever a city is
+   * founded, captured or flipped, so the flag survives every way an empire
+   * can be built back up.
+   */
+  markCityOwned(civId: number): void {
+    const civ = this.civilizations[civId];
+    if (civ) civ.hadCity = true;
+  }
+
+  /**
    * Resolve a village (goody hut) when a LAND unit enters its tile.
    *  - Any land unit triggers and consumes the hut: military, settler,
    *    worker, caravan, diplomat, even barbarians (Civ1 "any land unit").
@@ -5600,6 +5615,40 @@ const occupiedLandmasses = new Set(
     // triggered. The result message still pops for the human player, but the
     // village graphic is already gone.
     tile.village = false;
+
+    // A civilization that has lost EVERY city gets the hut's comeback roll
+    // first: what it needs most — a city to rule, or a settler to found one —
+    // before the ordinary Civ1 pool sees the rest of the chances. The gate is
+    // `hadCity`: a civ that never owned one (the opening turn) still rolls the
+    // ordinary pool, and barbarians/nomads own no cities at all.
+    const civ = this.civilizations[unit.civilizationId];
+    if (civ?.hadCity === true
+      && !this.cities.some((city) => city.civilizationId === unit.civilizationId)) {
+      const comeback = this.rng();
+      if (comeback < VILLAGE_CITYLESS_SETTLER_CHANCE) {
+        const unitName = UNIT_PROPS['settler']?.name ?? 'settler';
+        this.createUnit(unit.civilizationId, 'settler', unit.col, unit.row);
+        this.emitVillageResult(unit, {
+          outcome: VILLAGE_OUTCOME.FRIENDLY_MERCENARIES,
+          unitType: 'settler',
+          unitName,
+        });
+        return;
+      }
+      if (comeback < VILLAGE_CITYLESS_SETTLER_CHANCE + VILLAGE_CITYLESS_CITY_CHANCE
+        && this.canPlaceCityAt(unit.col, unit.row, unit.civilizationId)) {
+        const city = this.foundTribeCity(unit);
+        if (city) {
+          this.emitVillageResult(unit, {
+            outcome: VILLAGE_OUTCOME.ADVANCED_TRIBE,
+            cityName: city.name,
+          });
+          return;
+        }
+      }
+      // Missed the roll, or the tile cannot hold a city: the ordinary pool
+      // decides the remaining chances below.
+    }
 
     for (let attempt = 0; attempt < 10; attempt++) {
       const outcome = VILLAGE_OUTCOMES[Math.floor(this.rng() * VILLAGE_OUTCOMES.length)];
@@ -5707,6 +5756,7 @@ const occupiedLandmasses = new Set(
       buildQueue: [],
       autoProduction: true, // New cities default to Auto Production ON
     };
+    this.markCityOwned(civId);
     this.cities.push(city);
 
     if (city.isCapital) {
@@ -6896,6 +6946,12 @@ const occupiedLandmasses = new Set(
    * the capturer's cities as targets.
    */
   private markCityLost(oldCivId: number, attackerCivId: number): void {
+    // The taker now owns ground (a capture, not a raze): remember it for the
+    // village comeback roll. A razed city leaves the attacker with nothing,
+    // so nothing is marked.
+    if (this.cities.some((city) => city.civilizationId === attackerCivId)) {
+      this.markCityOwned(attackerCivId);
+    }
     const storage = this.playerStorage.get(oldCivId);
     if (storage) {
       storage.turnData.lastCityLostRound = this.currentTurn;
@@ -7112,6 +7168,7 @@ const occupiedLandmasses = new Set(
       autoProduction: true // New cities default to Auto Production ON
     };
 
+    this.markCityOwned(civId);
     this.cities.push(city);
 
     // First city (or a civ that lost its capital) becomes the seat of

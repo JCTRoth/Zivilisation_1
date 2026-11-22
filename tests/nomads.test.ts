@@ -525,6 +525,140 @@ describe('Nomads — the race and the departure', () => {
     expect(departures.length).toBeGreaterThanOrEqual(1);
     expect(departures.every((d) => d.data.from === 0)).toBe(true);
   });
+
+  it('the supply door: a camp fed to capacity asks, and the grant feeds two more mouths', async () => {
+    const h = await world();
+    h.settle();
+    meetCamp(h.engine, h.events);
+    const nm = h.engine.nomadManager as unknown as {
+      camps: Array<{ unitIds: string[]; foodAllowance?: number }>;
+      resolveParley: (id: string) => { ok: boolean };
+      processRound: (round: number) => void;
+    };
+    const camp = nm.camps[0];
+    expect(camp).toBeDefined();
+
+    // One point funds two mouths; three riders are over it — so they ask.
+    // The audience on the table was tabled before the ration was cut, so wait
+    // for the envoy's next offer (the witness is still standing there).
+    camp.foodAllowance = 1;
+    for (let r = NOMAD_TRIGGER_ROUND + 2; r <= NOMAD_TRIGGER_ROUND + 6; r++) {
+      nm.processRound(r);
+    }
+    const ids = eventsOf(h.events, 'NOMAD_PARLEY').at(-1)!
+      .data.choices.map((c: { id: string }) => c.id);
+    expect(ids).toContain('supply');
+    // The standing ration is the floor: there is nothing left to take back.
+    expect(ids).not.toContain('withdraw');
+
+    expect(nm.resolveParley('supply').ok).toBe(true);
+    expect(camp.foodAllowance, 'one point more').toBe(2);
+    // Two more mouths are funded now: no rider was added by the grant itself.
+    expect(camp.unitIds.length).toBe(3);
+  });
+
+  it('withdrawing the supply strands the riders it no longer funds', async () => {
+    const h = await world();
+    h.settle();
+    meetCamp(h.engine, h.events);
+    const nm = h.engine.nomadManager as unknown as {
+      camps: Array<{ unitIds: string[]; foodAllowance?: number }>;
+      resolveParley: (id: string) => { ok: boolean };
+      refusals: number;
+      isAngry: boolean;
+    };
+    const camp = nm.camps[0];
+    expect(camp).toBeDefined();
+
+    // The standing ration (materialised from three riders = two points) is
+    // above the minimum, so the withdrawal is on the table.
+    expect(camp.foodAllowance).toBe(2);
+    const before = camp.unitIds.length;
+    const refusalsBefore = nm.refusals;
+
+    const spy = vi.spyOn(Math, 'random').mockReturnValue(0.999); // not the bad day
+    try {
+      expect(nm.resolveParley('withdraw').ok).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(camp.foodAllowance, 'down to the standing ration').toBe(1);
+    expect(camp.unitIds.length, 'the unfunded rider left the camp').toBe(before - 1);
+    expect(nm.refusals, 'a good day costs no relationship').toBe(refusalsBefore);
+    expect(nm.isAngry).toBe(false);
+  });
+
+  it('taking their food away half the time is remembered as a closed hand', async () => {
+    const h = await world();
+    h.settle();
+    meetCamp(h.engine, h.events);
+    const nm = h.engine.nomadManager as unknown as {
+      camps: Array<{ foodAllowance?: number }>;
+      resolveParley: (id: string) => { ok: boolean };
+      refusals: number;
+    };
+    const camp = nm.camps[0];
+    expect(camp.foodAllowance).toBe(2);
+    const refusalsBefore = nm.refusals;
+
+    const spy = vi.spyOn(Math, 'random').mockReturnValue(0.01); // the bad day
+    try {
+      expect(nm.resolveParley('withdraw').ok).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(nm.refusals, 'half the time the relationship pays for it').toBe(refusalsBefore + 1);
+  });
+
+  it('the stay door is an instruction: it pins the camp, and only it lets them go', async () => {
+    const h = await world();
+    h.settle();
+    meetCamp(h.engine, h.events);
+    const nm = h.engine.nomadManager as unknown as {
+      camps: Array<{ stays?: boolean; departAt: number | null }>;
+      resolveParley: (id: string) => { ok: boolean };
+      processRound: (round: number) => void;
+      isDeparted: boolean;
+    };
+    const camp = nm.camps[0];
+    expect(camp, 'the camp stands at the gate').toBeDefined();
+
+    const parleys = () => eventsOf(h.events, 'NOMAD_PARLEY');
+    // The instruction is tabled with the rest of the first audience.
+    expect(parleys().at(-1).data.choices.map((c: { id: string }) => c.id))
+      .toContain('stay');
+
+    // Answering it pins the tents: no window, no departure.
+    expect(nm.resolveParley('stay').ok).toBe(true);
+    expect(camp.stays).toBe(true);
+    expect(camp.departAt).toBeNull();
+
+    // Long past the linger AND the contact window, the tents are still up —
+    // because the player said so, not because anything else kept them there.
+    const spy = vi.spyOn(Math, 'random').mockReturnValue(0.999);
+    try {
+      for (let r = NOMAD_TRIGGER_ROUND + 2; r < 90; r++) nm.processRound(r);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(eventsOf(h.events, 'NOMAD_DEPARTED')).toHaveLength(0);
+    expect(nm.isDeparted).toBe(false);
+
+    // The envoy re-offers to the witness still standing there, and the SAME
+    // door takes the instruction back: an ordinary linger runs again.
+    const before = parleys().length;
+    const spy2 = vi.spyOn(Math, 'random').mockReturnValue(0.999);
+    try {
+      for (let r = 90; r < 120 && parleys().length === before; r++) nm.processRound(r);
+    } finally {
+      spy2.mockRestore();
+    }
+    expect(parleys().length, 'the envoy re-offers').toBeGreaterThan(before);
+    expect(nm.resolveParley('stay').ok).toBe(true);
+    expect(camp.stays).toBe(false);
+    expect(camp.departAt, 'the ordinary linger is armed again').not.toBeNull();
+  });
 });
 
 describe('Nomads — moods, return visits and settlements', () => {
@@ -658,7 +792,7 @@ describe('Nomads — moods, return visits and settlements', () => {
       expect(nm.resolveParley('pass').ok).toBe(true); // refusal #1 — tolerated
       expect(nm.isAngry).toBe(false);
 
-      // Stand at the camp: the envoy re-offers (hire / farewell only).
+      // Stand at the camp: the envoy re-offers (hire / stay / farewell).
       const camp = nomadUnits(engine)[0];
       engine.units.push({
         id: 'visitor', type: 'warriors', civilizationId: 0,
@@ -667,7 +801,7 @@ describe('Nomads — moods, return visits and settlements', () => {
       });
       nm.processRound(9);
       const second = eventsOf(events, 'NOMAD_PARLEY').at(-1);
-      expect(second.data.choices.map((c: any) => c.id)).toEqual(['hire', 'farewell']);
+      expect(second.data.choices.map((c: any) => c.id)).toEqual(['hire', 'stay', 'supply', 'withdraw', 'farewell']);
 
       expect(nm.resolveParley('farewell').ok).toBe(true); // refusal #2 — beyond patience
       expect(nm.isAngry).toBe(true);
