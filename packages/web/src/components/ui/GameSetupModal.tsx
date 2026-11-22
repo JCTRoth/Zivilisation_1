@@ -227,6 +227,13 @@ type SetupPlayer = {
   /** CIVILIZATIONS index, or `-1` for a random unused nation. */
   civIndex: number;
   isHuman: boolean;
+  /**
+   * Only meaningful while `isHuman`: `false` = a **Human Hot Seat** (this
+   * device, taking turns), `true` = a **Human Online** (their own device,
+   * over the network). The seat types imply how the game starts: any online
+   * seat makes it an online game.
+   */
+  online: boolean;
   /** '' = the faction's own colour; otherwise a per-seat override. */
   color: string;
   /** Team index (only meaningful with fixed alliances on). */
@@ -630,8 +637,6 @@ function GameSetupModal({ show, onStart, onSettings, onHelp, online = true }: Ga
    * already running. Both live in this same step — no page swap.
    */
   const [entry, setEntry] = useState<'new' | 'join'>('new');
-  /** A new game is started at this device (hot seat) or over the network. */
-  const [newOnline, setNewOnline] = useState(false);
   /**
    * Is the game server answering? The online human-player type needs this
    * *and* a connection, so it is probed while step two is on screen.
@@ -670,6 +675,7 @@ function GameSetupModal({ show, onStart, onSettings, onHelp, online = true }: Ga
     Array.from({ length: numCivilizations }, (_, slot) => ({
       civIndex: slot === 0 ? selectedCiv : -1,
       isHuman: slot === 0,
+      online: false,
       color: '',
       team: slot % 2,
       spawn: -1,
@@ -720,6 +726,7 @@ function GameSetupModal({ show, onStart, onSettings, onHelp, online = true }: Ga
       return Array.from({ length: numCivilizations }, (_, slot) => prev[slot] ?? {
         civIndex: slot === 0 ? selectedCiv : -1,
         isHuman: slot === 0,
+        online: false,
         color: '',
         team: slot % 2,
         spawn: -1,
@@ -753,6 +760,12 @@ function GameSetupModal({ show, onStart, onSettings, onHelp, online = true }: Ga
   // ── Derived ─────────────────────────────────────────────────────────
   const humanSeats = players.map((p, i) => (p.isHuman ? i : -1)).filter((i) => i >= 0);
   const derivedGameMode: 'single' | 'hotseat' = humanSeats.length > 1 ? 'hotseat' : 'single';
+  /**
+   * The seat types ARE the where-to-play choice: one seat marked *Human
+   * Online* makes the whole game an online one (everyone plays through the
+   * room), all-hot-seat stays on this device.
+   */
+  const wantsOnline = players.some((p) => p.isHuman && p.online);
 
   // A game with no human seat is a spectator game: Dev Mode is FORCED on (the
   // whole map must be observable, and nothing waits for a player), exactly
@@ -785,16 +798,6 @@ function GameSetupModal({ show, onStart, onSettings, onHelp, online = true }: Ga
   const balanceTeams = (count: number) => {
     setTeamCount(count);
     setPlayers((prev) => prev.map((p, slot) => ({ ...p, team: slot % count })));
-  };
-
-  /**
-   * Flip a seat between Human and AI. ANY seat may be flipped — including
-   * seat 0 ("you"): a game with no human seat at all is a spectator game the
-   * setup may start (Dev Mode is then forced on, and the engine plays every
-   * civ). With humans present, seat 0 stays the primary perspective.
-   */
-  const toggleHuman = (slot: number) => {
-    setPlayers((prev) => prev.map((p, i) => (i === slot ? { ...p, isHuman: !p.isHuman } : p)));
   };
 
   // ── Spawn points ────────────────────────────────────────────────────
@@ -1065,12 +1068,39 @@ function GameSetupModal({ show, onStart, onSettings, onHelp, online = true }: Ga
       ? t('setup.checkingServer')
       : t('setup.modeOnlineNoServer');
 
+  /**
+   * One button, three seat states: AI → Human Hot Seat (this device) → Human
+   * Online (their own device) → AI. Online is skipped when it cannot be had,
+   * so the cycle never lands on a game this machine cannot start.
+   *
+   * ANY seat may be cycled — including seat 0 ("you"): a game with no human
+   * seat at all is a spectator game the setup may start (Dev Mode is then
+   * forced on, and the engine plays every civ). With humans present, seat 0
+   * stays the primary perspective.
+   */
+  const cycleSeatKind = (slot: number): void => {
+    setPlayers((prev) => prev.map((p, i) => {
+      if (i !== slot) return p;
+      if (!p.isHuman) return { ...p, isHuman: true, online: false };
+      if (!p.online) {
+        return canPlayOnline
+          ? { ...p, online: true }
+          : { ...p, isHuman: false, online: false };
+      }
+      return { ...p, isHuman: false, online: false };
+    }));
+  };
+
   // ── Join a running game ─────────────────────────────────────────────────
   // Losing the connection or the server drops a half-made online choice and
   // puts the player back on the local door — never a dead panel.
   useEffect(() => {
     if (canPlayOnline) return;
-    setNewOnline(false);
+    // No wire, no server: nobody is playing over the network — and the join
+    // door goes with it.
+    setPlayers((prev) => (prev.some((p) => p.online)
+      ? prev.map((p) => (p.online ? { ...p, online: false } : p))
+      : prev));
     setEntry((current) => (current === 'join' ? 'new' : current));
   }, [canPlayOnline]);
 
@@ -1155,45 +1185,6 @@ function GameSetupModal({ show, onStart, onSettings, onHelp, online = true }: Ga
    * means; the online one is only selectable while the server answers and the
    * device is online, and says which of the two is missing otherwise.
    */
-  const whereToggle = (
-    <div className="gm-section">
-      <div className="gm-section-title">{t('setup.modeTitle')}</div>
-      <div className="setup-player-types" role="radiogroup" aria-label={t('setup.modeTitle')}>
-        <button
-          type="button"
-          role="radio"
-          aria-checked={!newOnline}
-          className={`setup-player-type${newOnline ? '' : ' is-active'}`}
-          title={t('setup.modeLocalHint')}
-          onClick={() => setNewOnline(false)}
-        >
-          <span className="setup-player-type__icon" aria-hidden="true">💺</span>
-          <strong>{t('setup.lobby.human')} · {t('setup.modeLocal')}</strong>
-          <small className="setup-player-type__info">{t('setup.modeLocalHint')}</small>
-        </button>
-        <button
-          type="button"
-          role="radio"
-          aria-checked={newOnline}
-          aria-disabled={!canPlayOnline}
-          disabled={!canPlayOnline}
-          title={canPlayOnline ? t('setup.modeOnlineHint') : onlineUnavailableReason}
-          className={`setup-player-type${newOnline ? ' is-active' : ''}${canPlayOnline ? '' : ' is-disabled'}`}
-          onClick={() => {
-            if (canPlayOnline) setNewOnline(true);
-          }}
-        >
-          <span className="setup-player-type__icon" aria-hidden="true">🌐</span>
-          <strong>{t('setup.lobby.human')} · {t('setup.modeOnline')}</strong>
-          <small className={`setup-player-type__info${canPlayOnline ? '' : ' is-shown'}`}>
-            {canPlayOnline ? t('setup.modeOnlineHint') : onlineUnavailableReason}
-          </small>
-        </button>
-      </div>
-      {startError && <div className="war-lobby__error" role="alert">{startError}</div>}
-    </div>
-  );
-
   /** Once the room exists, the links are the next step — not another form. */
   const inviteSection = createdRoom ? (
     <InviteLinks
@@ -1457,7 +1448,6 @@ function GameSetupModal({ show, onStart, onSettings, onHelp, online = true }: Ga
             {currentStep === 2 && entry === 'new' && (
               <section className="setup-section" aria-labelledby="setup-step-settings">
                 {entryChoice}
-                {whereToggle}
 
                 <div className="gm-section">
                   <div className="gm-section-title">{t('setup.terms')}</div>
@@ -1601,11 +1591,21 @@ function GameSetupModal({ show, onStart, onSettings, onHelp, online = true }: Ga
                             </span>
                             <button
                               type="button"
-                              className={`setup-lobby__type ${human ? 'is-human' : 'is-ai'}`}
-                              onClick={() => toggleHuman(slot)}
-                              title={t('setup.lobby.typeHint')}
+                              className={`setup-lobby__type ${
+                                !human ? 'is-ai' : p.online ? 'is-online' : 'is-human'
+                              }`}
+                              onClick={() => cycleSeatKind(slot)}
+                              title={
+                                human && p.online && !canPlayOnline
+                                  ? onlineUnavailableReason
+                                  : t('setup.lobby.typeHint')
+                              }
                             >
-                              {human ? t('setup.lobby.human') : t('setup.lobby.ai')}
+                              {!human
+                                ? t('setup.lobby.ai')
+                                : p.online
+                                  ? t('setup.seatOnline')
+                                  : t('setup.seatHotSeat')}
                             </button>
                           </span>
 
@@ -1719,6 +1719,16 @@ function GameSetupModal({ show, onStart, onSettings, onHelp, online = true }: Ga
                     <p className="setup-teams__error" role="alert">
                       {t('setup.teams.invalid')}
                     </p>
+                  )}
+
+                  {/* The seat types decide how the game starts: say why an
+                      online seat cannot be had, and surface a room that
+                      failed to open. */}
+                  {!canPlayOnline && (
+                    <p className="setup-setting__hint">{onlineUnavailableReason}</p>
+                  )}
+                  {startError && (
+                    <div className="war-lobby__error" role="alert">{startError}</div>
                   )}
                 </div>
 
@@ -2233,7 +2243,7 @@ function GameSetupModal({ show, onStart, onSettings, onHelp, online = true }: Ga
               <button
                 type="button"
                 onClick={() => {
-                  if (newOnline) void startOnlineRoom();
+                  if (wantsOnline) void startOnlineRoom();
                   else handleStart();
                 }}
                 disabled={!teamSetupValid || starting}
