@@ -117,8 +117,9 @@ describe('Dev Mode is gated too', () => {
     expect(SOURCE).toContain('return !isAutoScenario(mapType) && humanSeatCount > 0;');
     // …and the all-AI lobby forces Dev Mode on, exactly like an AI-vs-AI map.
     expect(SOURCE).toContain('if (humanSeats.length === 0) setDevMode(true);');
-    // Any seat — including seat 0 — may be flipped to AI.
-    expect(SOURCE).toContain('const toggleHuman = (slot: number) => {');
+    // Any seat — including seat 0 — may be cycled to AI (one button now
+    // walks AI → Human Hot Seat → Human Online → AI).
+    expect(SOURCE).toContain('const cycleSeatKind = (slot: number): void => {');
     expect(SOURCE).not.toContain('if (slot === 0) return;');
   });
 });

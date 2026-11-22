@@ -89,21 +89,29 @@ User flows:
 . *Choose Your Civilization* → *Next* → step II, which opens with two doors:
 +
 ** *Start a new game* → the full settings sheet (terms, roster, map type,
-   summary) with an *On this device / Play online* split above it — **the
-   same settings either way**; online only adds the invites. True-scale map
-   sizing, the four world-shaping sliders and the developer switch live
-   behind *Fine-tune the world (advanced)*, collapsed by default so the size
-   preview only renders on request. *Start Game* starts the local game; with
-   *Play online* selected it creates the room **from exactly the settings on
-   screen**, shows one invitation per human seat (the Players table decides
-   who is human, so it decides who gets a link) and turns the command bar
-   into *Enter the game*. One central server serves everyone: its URL comes
+   summary). Whether it runs here or over the network is decided by the
+   **seat types** in the Players table — one button per seat cycles *AI* →
+   *Human Hot Seat* (this device) → *Human Online* (their own device) →
+   *AI*, and the online state is only offered while the device is online
+   **and** the game server answers (otherwise the cycle skips it and the
+   table says why). **The settings are the same either way**; an online
+   seat only adds the invites. True-scale map sizing, the four
+   world-shaping sliders and the developer switch live behind
+   *Fine-tune the world (advanced)*, collapsed by default so the size
+   preview only renders on request. *Start Game* starts the local game;
+   with an online seat it creates the room **from exactly the settings on
+   screen**, shows one invitation per human seat (every human seat gets a
+   link) and turns the command bar into *Enter the game*. One central
+   server serves everyone: its URL comes
    from the deployment's `/config.js`, so no address, room ID or token
    appears in the player UI. The link still carries the room and signed seat
    internally (`?server=&room=&token=`) and boots the normal remote client.
 ** *Join a running game* → `GET /rooms` lists what the server is running
-   (turn, civilisations, difficulty, seats taken). Picking one shows its
-   settings summary with the players underneath — *here* (a live event
+   (turn, civilisations, difficulty, seats taken). Picking one shows the
+   **same summary card the start screen seals its orders with** — map type,
+   map size, world sliders, civilisations, difficulty, teams — plus the two
+   only a joined game has (how far it has already run, and its seed), with
+   the players underneath — *here* (a live event
    stream), *waiting to join* (an invite was minted, nobody connected) or
    *free seat* — and *Join this game* claims the next free seat through
    `POST /rooms/:id/join` before booting the remote client. Offline both
@@ -551,7 +559,7 @@ Buttons inside a shell modal use the game-wide `.touch-btn` family from
 | B
 | `showGameSetup` starts `true` (`App.tsx` L67); reset to `true` by quit (`App.tsx` L813) and new-game reset (L857). Rendered as a full-screen early return instead of the app shell (`App.tsx` L1328-1336).
 | Before any game exists.
-| `GameSetupModal` is a **plain `<div className="setup-screen" role="dialog">`** (`GameSetupModal.tsx`) — not a react-bootstrap `Modal`, so there is no `game-setup-dialog` class and no `dialogClassName`. Header: `h2.modal-title` "🏛️ Zivilisation 1", the **Settings** and **Field Manual** nameplate buttons (the hub that used to host them is gone — the wizard is the first screen), the nameplate tag **"War Council"** (`setup.nameplateTag`) and two step dots (there is no "Step N of 3" string — `totalSteps = 2`). Steps: *Choose Your Civilization* → *Fine-tune Your Challenge*, the second one carrying the *Your Setup* summary. The challenge step also holds the optional *Fixed Alliances* builder (toggle, team count, presets, per-slot team selectors, validation) and opens with the *Start or join* choice: *Start a new game* keeps the whole settings sheet whether it is played on this device or online (online only adds the invite links and *Enter the game*), while *Join a running game* swaps the sheet for the server's running-game list with the chosen game's settings summary and its players underneath.
+| `GameSetupModal` is a **plain `<div className="setup-screen" role="dialog">`** (`GameSetupModal.tsx`) — not a react-bootstrap `Modal`, so there is no `game-setup-dialog` class and no `dialogClassName`. Header: `h2.modal-title` "🏛️ Zivilisation 1", the **Settings** and **Field Manual** nameplate buttons (the hub that used to host them is gone — the wizard is the first screen), the nameplate tag **"War Council"** (`setup.nameplateTag`) and two step dots (there is no "Step N of 3" string — `totalSteps = 2`). Steps: *Choose Your Civilization* → *Fine-tune Your Challenge*, the second one carrying the *Your Setup* summary. The challenge step also holds the optional *Fixed Alliances* builder (toggle, team count, presets, per-slot team selectors, validation) and opens with the *Start or join* choice: *Start a new game* keeps the whole settings sheet, and the **seat types** in the Players table (AI → Human Hot Seat → Human Online) decide whether it runs here or over the network — an online seat adds the invite links and *Enter the game*, with the same settings either way — while *Join a running game* swaps the sheet for the server's running-game list, whose chosen game gets the full summary card and its players underneath.
 | ← Previous, Next →, "🏛️ Start Game" (shown on the final step).
 | `h2.modal-title` contains `Zivilisation 1`; `Choose Your Civilization`; `.setup-civ-card`; `.setup-footer__selected-value`; `Fine-tune Your Challenge`; `← Previous`; `Next →`; `.setup-summary-title` = `Your Setup`; `.setup-summary`; `select.setup-setting__control`; button `🏛️ Start Game`
 

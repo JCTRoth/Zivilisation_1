@@ -1194,6 +1194,26 @@ function GameSetupModal({ show, onStart, onSettings, onHelp, online = true }: Ga
     />
   ) : null;
 
+  // What a joiner needs before taking a seat: the same card the start screen
+  // seals its orders with, fed from the room's own settings — plus how far the
+  // game already is and its seed, the two things only a joined game has.
+  const joinLobby = selectedRoomData?.lobby ?? {};
+  const joinMapType = joinLobby.mapType ?? 'EARTH';
+  const joinMapLabel = MAP_TYPE_LABEL_KEYS[joinMapType]
+    ? t(MAP_TYPE_LABEL_KEYS[joinMapType])
+    : joinMapType;
+  const joinMapBadge = mapTypeBadge(joinMapType);
+  const joinSize = joinLobby.mapWidth && joinLobby.mapHeight
+    ? `${joinLobby.mapWidth}×${joinLobby.mapHeight} ${t('setup.sizeTiles')}`
+    : '—';
+  const joinDifficulty = joinLobby.difficulty ?? 'PRINCE';
+  const joinCivs = joinLobby.numberOfCivilizations ?? 0;
+  const joinTeams = new Set(joinLobby.teamAssignments ?? []).size;
+  const joinLandMass = joinLobby.landMass ?? 1;
+  const joinTemperature = joinLobby.temperature ?? 1;
+  const joinClimate = joinLobby.climate ?? 1;
+  const joinAge = joinLobby.age ?? 1;
+
   const joinSection = (
     <>
       <div className="gm-section">
@@ -1244,27 +1264,71 @@ function GameSetupModal({ show, onStart, onSettings, onHelp, online = true }: Ga
 
       {selectedRoomData && (
         <div className="gm-section">
-          <div className="gm-section-title">{t('setup.joinSummaryTitle')}</div>
-          <dl className="setup-join__summary">
-            <div>
-              <dt>{t('setup.o.map')}</dt>
-              <dd>{translateDynamic(`setup.mapLabel.${selectedRoomData.lobby.mapType ?? 'EARTH'}`,
-                undefined, selectedRoomData.lobby.mapType ?? 'EARTH')}</dd>
+          <div className="setup-summary" aria-label={t('setup.joinSummaryTitle')}>
+            <div className="setup-summary-header">
+              <h4 className="setup-summary-title">{t('setup.joinSummaryTitle')}</h4>
             </div>
-            <div>
-              <dt>{t('setup.civsCount')}</dt>
-              <dd>{selectedRoomData.lobby.numberOfCivilizations ?? '?'}</dd>
+            <div className="setup-summary-grid">
+              <div className="setup-summary-item">
+                <span className="label">{t('setup.mapType')}</span>
+                <span className="value">{joinMapBadge}{joinMapLabel}</span>
+              </div>
+              <div className="setup-summary-item">
+                <span className="label">{t('setup.mapSizeTitle')}</span>
+                <span className="value">{joinSize}</span>
+              </div>
+              {worldShapingSettingsHaveEffect(joinMapType) && (
+                <>
+                  <div className="setup-summary-item">
+                    <span className="label">{t('setup.landMass')}</span>
+                    <span className="value">{landMassShort[joinLandMass]}</span>
+                  </div>
+                  <div className="setup-summary-item">
+                    <span className="label">{t('setup.temperature')}</span>
+                    <span className="value">{temperatureShort[joinTemperature]}</span>
+                  </div>
+                  <div className="setup-summary-item">
+                    <span className="label">{t('setup.climate')}</span>
+                    <span className="value">{climateShort[joinClimate]}</span>
+                  </div>
+                  <div className="setup-summary-item">
+                    <span className="label">{t('setup.age')}</span>
+                    <span className="value">{ageShort[joinAge]}</span>
+                  </div>
+                </>
+              )}
+              <div className="setup-summary-item">
+                <span className="label">{t('setup.summaryCivilizations')}</span>
+                <span className="value">{joinCivs || '—'}</span>
+              </div>
+              <div className="setup-summary-item">
+                <span className="label">{t('setup.difficulty')}</span>
+                <span className="value">
+                  {translateDynamic(`data.difficulty.${joinDifficulty}`, undefined, joinDifficulty)}
+                </span>
+              </div>
+              {joinLobby.fixedAlliances && joinTeams > 0 && (
+                <div className="setup-summary-item">
+                  <span className="label">{t('setup.teams.summary')}</span>
+                  <span className="value">
+                    {t('setup.teams.summaryValue', { teams: joinTeams, civs: joinCivs })}
+                  </span>
+                </div>
+              )}
+              {/* The two only a joined game can show: how far it has already
+                  run, and the seed that made this world. */}
+              <div className="setup-summary-item">
+                <span className="label">{t('common.turn', { turn: '' }).trim()}</span>
+                <span className="value">{selectedRoomData.turn}</span>
+              </div>
+              {typeof joinLobby.seed === 'number' && (
+                <div className="setup-summary-item">
+                  <span className="label">{t('setup.seedLabel')}</span>
+                  <span className="value">{joinLobby.seed}</span>
+                </div>
+              )}
             </div>
-            <div>
-              <dt>{t('setup.difficulty')}</dt>
-              <dd>{translateDynamic(`data.difficulty.${selectedRoomData.lobby.difficulty ?? 'PRINCE'}`,
-                undefined, selectedRoomData.lobby.difficulty ?? 'PRINCE')}</dd>
-            </div>
-            <div>
-              <dt>{t('common.turn', { turn: '' }).trim()}</dt>
-              <dd>{selectedRoomData.turn}</dd>
-            </div>
-          </dl>
+          </div>
 
           <div className="gm-section-title">{t('setup.players.title')}</div>
           <ul className="setup-join__seats">
@@ -1596,7 +1660,7 @@ function GameSetupModal({ show, onStart, onSettings, onHelp, online = true }: Ga
                               }`}
                               onClick={() => cycleSeatKind(slot)}
                               title={
-                                human && p.online && !canPlayOnline
+                                human && !canPlayOnline
                                   ? onlineUnavailableReason
                                   : t('setup.lobby.typeHint')
                               }

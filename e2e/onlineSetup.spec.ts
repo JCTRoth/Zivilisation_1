@@ -76,28 +76,6 @@ test.afterAll(async () => {
 });
 
 test.describe('setup step two — start or join', () => {
-  test('a human-player chip explains what it is on hover', async ({ page }) => {
-    await page.goto('/');
-    await page.mouse.move(0, 0);
-    await page.getByRole('button', { name: 'Next →' }).click();
-
-    const hotSeat = page.getByRole('radio', { name: /Human · Hot Seat/ });
-    const online = page.getByRole('radio', { name: /Human · Online/ });
-    const hotSeatInfo = hotSeat.locator('.setup-player-type__info');
-    const onlineInfo = online.locator('.setup-player-type__info');
-
-    // The selected chip is always readable; the resting one waits for the
-    // pointer. The line already occupies its space, so nothing jumps.
-    await expect(hotSeatInfo).toHaveCSS('opacity', '1');
-    await expect(onlineInfo).toHaveCSS('opacity', '0');
-
-    await online.hover();
-    await expect(onlineInfo).toHaveCSS('opacity', '1');
-    // …and it says which kind of game the chip starts.
-    await expect(onlineInfo).toContainText('online game');
-    await expect(hotSeatInfo).toContainText('offline game');
-  });
-
   test('offers both doors and keeps every setting under the new game', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Choose Your Civilization' })).toBeVisible();
@@ -111,9 +89,10 @@ test.describe('setup step two — start or join', () => {
     await expect(joinCard).toHaveAttribute('aria-pressed', 'false');
 
     // Starting a game — hot seat or online — keeps the whole settings sheet.
-    await expect(page.getByRole('radio', { name: /Human · Hot Seat/ })).toBeVisible();
-    const onlineType = page.getByRole('radio', { name: /Human · Online/ });
-    await expect(onlineType).toBeVisible();
+    // The choice lives in the Players table: seat 0 is you, as a hot seat.
+    const seat0 = page.locator('.setup-lobby__type').nth(0);
+    await expect(seat0).toHaveText('Human Hot Seat');
+    await expect(page.locator('.setup-lobby__type').nth(1)).toHaveText('AI');
     await expect(page.getByText('Terms of Engagement')).toBeVisible();
     await expect(page.getByText('Players', { exact: true }).first()).toBeVisible();
     await expect(page.getByRole('button', { name: '🏛️ Start Game' })).toBeVisible();
@@ -124,8 +103,9 @@ test.describe('setup step two — start or join', () => {
       signal: AbortSignal.timeout(1_500),
     }).then((r) => r.ok).catch(() => false);
     if (!serverUp) {
-      await expect(onlineType).toBeDisabled();
-      await expect(onlineType).toContainText('not reachable');
+      // The players table carries several hints; this one is appended last.
+      await expect(page.locator('.setup-lobby .setup-setting__hint').last())
+        .toContainText('The game server is not reachable.');
       await expect(joinCard).toBeDisabled();
       await expect(joinCard).toContainText('not reachable');
       // The local door is the one left standing.
@@ -171,30 +151,29 @@ test.describe('with a running game server', () => {
     }
   });
 
-  test('the online human type needs the server and a connection', async ({ page, context }) => {
+  test('an online seat needs the server and a connection', async ({ page, context }) => {
     test.skip(!!process.env.CIV1_SERVER, 'needs the local game server');
     await page.goto('/');
     await page.getByRole('button', { name: 'Next →' }).click();
 
-    const onlineType = page.getByRole('radio', { name: /Human · Online/ });
-    const joinCard = page.getByRole('button', { name: 'Join a running game' });
+    const seat0 = page.locator('.setup-lobby__type').nth(0);
+    await expect(seat0).toHaveText('Human Hot Seat');
 
-    // Server answers and the device is online → both online doors are open.
-    await expect(onlineType).toBeEnabled();
-    await expect(joinCard).toBeEnabled();
-
-    // Pull the connection: the online type goes gray and says which condition
-    // is missing, while the local table stays untouched.
+    // Offline: the cycle skips the state it cannot reach, and says why.
     await context.setOffline(true);
-    await expect(onlineType).toBeDisabled();
-    await expect(onlineType).toContainText('offline');
-    await expect(joinCard).toBeDisabled();
-    await expect(joinCard).toContainText('offline');
+    await seat0.click();
+    await expect(seat0).toHaveText('AI');
+    await expect(page.locator('.setup-lobby .setup-setting__hint').last())
+      .toContainText("You're offline — online play needs a connection.");
+    // …while the local table is untouched by it.
     await expect(page.getByRole('button', { name: '🏛️ Start Game' })).toBeEnabled();
 
+    // Back on the wire: human seats come back and Online is reachable.
     await context.setOffline(false);
-    await expect(onlineType).toBeEnabled();
-    await expect(joinCard).toBeEnabled();
+    await seat0.click();
+    await expect(seat0).toHaveText('Human Hot Seat');
+    await seat0.click();
+    await expect(seat0).toHaveText('Human Online');
   });
 
   test('reads a running game off the list and joins it', async ({ page }) => {
@@ -225,7 +204,8 @@ test.describe('with a running game server', () => {
     await row.click();
 
     // The settings the game was started with…
-    const summary = page.locator('.setup-join__summary');
+    // The join card now uses the same summary block as the start screen.
+    const summary = page.locator('.setup-summary');
     await expect(page.getByText("This game's settings")).toBeVisible();
     await expect(summary).toContainText('Close-Up 1v1');
     await expect(summary).toContainText('Warlord');
@@ -242,9 +222,15 @@ test.describe('with a running game server', () => {
     await page.goto('/');
     await page.getByRole('button', { name: 'Next →' }).click();
 
-    // Two human seats, so there is somebody to invite.
-    await page.getByRole('button', { name: 'AI', exact: true }).click();
-    await page.getByRole('radio', { name: /Human · Online/ }).click();
+    // Seat 0 plays over the network, seat 1 is a human on this device — so
+    // there is somebody to invite.
+    const seat0 = page.locator('.setup-lobby__type').nth(0);
+    const seat1 = page.locator('.setup-lobby__type').nth(1);
+    await expect(seat0).toHaveText('Human Hot Seat');
+    await seat0.click();
+    await expect(seat0).toHaveText('Human Online');
+    await seat1.click();
+    await expect(seat1).toHaveText('Human Hot Seat');
     await page.getByRole('button', { name: '🏛️ Start Game' }).click();
 
     // The room is created from the settings on screen; the links are the next

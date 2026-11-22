@@ -2162,6 +2162,14 @@ select.setup-setting__control:focus {
   background: rgba(255, 255, 255, 0.05);
 }
 
+/* A seat that plays over the network — distinct from the hot seat on this
+   device and from the AI, so the table reads at a glance. */
+.setup-lobby__type.is-online {
+  border-color: rgba(126, 231, 168, 0.55);
+  color: #b8f5d4;
+  background: rgba(126, 231, 168, 0.16);
+}
+
 .setup-lobby__color {
   gap: 0.4rem;
 }
@@ -2852,27 +2860,6 @@ body.civ1-setup-active .modal-backdrop {
   white-space: nowrap;
 }
 
-.setup-join__summary {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 10px;
-  margin: 0;
-}
-
-.setup-join__summary dt {
-  color: rgba(232, 238, 243, 0.55);
-  font-size: 10.5px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.setup-join__summary dd {
-  margin: 2px 0 0;
-  font-size: 0.86rem;
-  font-weight: 600;
-}
-
 .setup-join__seats {
   display: grid;
   gap: 6px;
@@ -2930,113 +2917,6 @@ body.civ1-setup-active .modal-backdrop {
   cursor: not-allowed;
 }
 
-/* ---- Human player types: hot seat or online ----------------------------- */
-
-.setup-player-types {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 8px;
-}
-
-.setup-player-type {
-  display: grid;
-  justify-items: start;
-  gap: 4px;
-  padding: 14px 16px;
-  text-align: left;
-  color: var(--color-text, #e8eef3);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 12px;
-  background: linear-gradient(180deg, rgba(20, 30, 42, 0.8), rgba(7, 12, 18, 0.85));
-  cursor: pointer;
-  transition:
-    transform 160ms var(--ease-out, ease-out),
-    border-color 160ms var(--ease-out, ease-out),
-    box-shadow 160ms var(--ease-out, ease-out);
-}
-
-.setup-player-type:hover,
-.setup-player-type:focus-visible {
-  transform: translateY(-2px);
-  border-color: rgba(240, 195, 60, 0.5);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4);
-}
-
-.setup-player-type.is-active {
-  border-color: rgba(240, 195, 60, 0.75);
-  background:
-    radial-gradient(120% 100% at 0% 0%, rgba(240, 195, 60, 0.14), transparent 60%),
-    linear-gradient(180deg, rgba(20, 30, 42, 0.9), rgba(7, 12, 18, 0.92));
-  box-shadow: inset 0 0 0 1px rgba(240, 195, 60, 0.18);
-}
-
-.setup-player-type__icon {
-  font-size: 1.4rem;
-  line-height: 1;
-}
-
-.setup-player-type strong {
-  font-size: 0.9rem;
-  letter-spacing: 0.03em;
-}
-
-/* The info line is what hover (or focus) reveals. It already occupies its
-   space, so nothing jumps when it fades in — and touch devices, which have
-   no hover, simply always show it. */
-.setup-player-type__info {
-  color: rgba(232, 238, 243, 0.66);
-  font-size: 0.74rem;
-  line-height: 1.4;
-  opacity: 0;
-  transform: translateY(-3px);
-  transition:
-    opacity 160ms var(--ease-out, ease-out),
-    transform 160ms var(--ease-out, ease-out);
-}
-
-.setup-player-type:hover .setup-player-type__info,
-.setup-player-type:focus-visible .setup-player-type__info,
-.setup-player-type.is-active .setup-player-type__info,
-.setup-player-type__info.is-shown {
-  opacity: 1;
-  transform: none;
-}
-
-@media (hover: none) {
-  .setup-player-type__info {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-.setup-player-type.is-disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-  filter: grayscale(0.85);
-  transform: none;
-  border-color: rgba(255, 255, 255, 0.07);
-  box-shadow: none;
-}
-
-.setup-player-type.is-disabled:hover,
-.setup-player-type.is-disabled:focus-visible {
-  transform: none;
-  border-color: rgba(255, 255, 255, 0.07);
-  box-shadow: none;
-}
-
-/* The reason it is off replaces the info text and stays visible. */
-.setup-player-type.is-disabled .setup-player-type__info {
-  color: rgba(232, 238, 243, 0.5);
-  font-style: italic;
-}
-
-@media (max-width: 719.98px) {
-  .setup-player-types {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
 
 @media (max-width: 719.98px) {
   .setup-mode-grid {
