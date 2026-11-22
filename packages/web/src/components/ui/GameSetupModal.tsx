@@ -630,8 +630,13 @@ function GameSetupModal({ show, onStart, onSettings, onHelp, online = true }: Ga
    * already running. Both live in this same step — no page swap.
    */
   const [entry, setEntry] = useState<'new' | 'join'>('new');
-  /** A new game is started on this device or on the server (with invites). */
+  /** A new game is started at this device (hot seat) or over the network. */
   const [newOnline, setNewOnline] = useState(false);
+  /**
+   * Is the game server answering? The online human-player type needs this
+   * *and* a connection, so it is probed while step two is on screen.
+   */
+  const [serverState, setServerState] = useState<'checking' | 'up' | 'down'>('checking');
   /** Set once the room exists: the invite links replace the Start button. */
   const [createdRoom, setCreatedRoom] = useState<LobbyResult | null>(null);
   const [starting, setStarting] = useState(false);
@@ -1024,10 +1029,50 @@ function GameSetupModal({ show, onStart, onSettings, onHelp, online = true }: Ga
     );
   };
 
-  // ── Join a running game ─────────────────────────────────────────────────
+  // ── Is the server there? ────────────────────────────────────────────────
+  // The online human-player type needs a connection *and* a server that
+  // answers, so probe it while step two is on screen. `/health` is the same
+  // origin the join list uses, and the game server allows cross-origin GETs.
   useEffect(() => {
-    if (!online) setNewOnline(false);
-  }, [online]);
+    if (currentStep !== 2) return;
+    if (!online) {
+      setServerState('down');
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    setServerState('checking');
+    fetch(`${defaultGameServer()}/health`, { signal: controller.signal })
+      .then((response) => {
+        if (!cancelled) setServerState(response.ok ? 'up' : 'down');
+      })
+      .catch(() => {
+        if (!cancelled) setServerState('down');
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [currentStep, online]);
+
+  /** Both conditions for playing online: the wire and the server. */
+  const canPlayOnline = online && serverState === 'up';
+
+  /** Why the online choices are off — shown where their info text would be. */
+  const onlineUnavailableReason = !online
+    ? t('setup.modeOnlineOffline')
+    : serverState === 'checking'
+      ? t('setup.checkingServer')
+      : t('setup.modeOnlineNoServer');
+
+  // ── Join a running game ─────────────────────────────────────────────────
+  // Losing the connection or the server drops a half-made online choice and
+  // puts the player back on the local door — never a dead panel.
+  useEffect(() => {
+    if (canPlayOnline) return;
+    setNewOnline(false);
+    setEntry((current) => (current === 'join' ? 'new' : current));
+  }, [canPlayOnline]);
 
   useEffect(() => {
     if (entry !== 'join') return;
@@ -1088,53 +1133,63 @@ function GameSetupModal({ show, onStart, onSettings, onHelp, online = true }: Ga
         </button>
         <button
           type="button"
-          className={`setup-mode-card${entry === 'join' ? ' is-active' : ''}${online ? '' : ' is-disabled'}`}
+          className={`setup-mode-card${entry === 'join' ? ' is-active' : ''}${canPlayOnline ? '' : ' is-disabled'}`}
           aria-pressed={entry === 'join'}
-          aria-disabled={!online}
-          disabled={!online}
+          aria-disabled={!canPlayOnline}
+          disabled={!canPlayOnline}
           onClick={() => {
-            if (online) setEntry('join');
+            if (canPlayOnline) setEntry('join');
           }}
         >
           <span className="setup-mode-card__icon" aria-hidden="true">🌐</span>
           <strong>{t('setup.entryJoin')}</strong>
-          <small>{online ? t('setup.entryJoinHint') : t('setup.modeOnlineOffline')}</small>
+          <small>{canPlayOnline ? t('setup.entryJoinHint') : onlineUnavailableReason}</small>
         </button>
       </div>
     </div>
   );
 
-  /** On this device / online — the same settings either way. */
+  /**
+   * How the humans play: side by side at this device (hot seat), or each on
+   * their own over the network. Hovering — or focusing — a type shows what it
+   * means; the online one is only selectable while the server answers and the
+   * device is online, and says which of the two is missing otherwise.
+   */
   const whereToggle = (
     <div className="gm-section">
       <div className="gm-section-title">{t('setup.modeTitle')}</div>
-      <div className="setup-lobby__segmented" role="radiogroup" aria-label={t('setup.modeTitle')}>
+      <div className="setup-player-types" role="radiogroup" aria-label={t('setup.modeTitle')}>
         <button
           type="button"
           role="radio"
           aria-checked={!newOnline}
-          className={`setup-lobby__seg${newOnline ? '' : ' is-active'}`}
+          className={`setup-player-type${newOnline ? '' : ' is-active'}`}
+          title={t('setup.modeLocalHint')}
           onClick={() => setNewOnline(false)}
         >
-          {t('setup.modeLocal')}
+          <span className="setup-player-type__icon" aria-hidden="true">💺</span>
+          <strong>{t('setup.modeLocal')}</strong>
+          <small className="setup-player-type__info">{t('setup.modeLocalHint')}</small>
         </button>
         <button
           type="button"
           role="radio"
           aria-checked={newOnline}
-          aria-disabled={!online}
-          disabled={!online}
-          className={`setup-lobby__seg${newOnline ? ' is-active' : ''}${online ? '' : ' is-disabled'}`}
+          aria-disabled={!canPlayOnline}
+          disabled={!canPlayOnline}
+          title={canPlayOnline ? t('setup.modeOnlineHint') : onlineUnavailableReason}
+          className={`setup-player-type${newOnline ? ' is-active' : ''}${canPlayOnline ? '' : ' is-disabled'}`}
           onClick={() => {
-            if (online) setNewOnline(true);
+            if (canPlayOnline) setNewOnline(true);
           }}
         >
-          {t('setup.modeOnline')}
+          <span className="setup-player-type__icon" aria-hidden="true">🌐</span>
+          <strong>{t('setup.modeOnline')}</strong>
+          <small className={`setup-player-type__info${canPlayOnline ? '' : ' is-shown'}`}>
+            {canPlayOnline ? t('setup.modeOnlineHint') : onlineUnavailableReason}
+          </small>
         </button>
       </div>
-      <p className="setup-setting__hint">
-        {newOnline ? t('setup.modeOnlineHint') : t('setup.modeLocalHint')}
-      </p>
       {startError && <div className="war-lobby__error" role="alert">{startError}</div>}
     </div>
   );

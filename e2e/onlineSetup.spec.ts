@@ -1,5 +1,5 @@
-import { expect, test, type ChildProcess } from '@playwright/test';
-import { spawn } from 'node:child_process';
+import { expect, test } from '@playwright/test';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -88,48 +88,27 @@ test.describe('setup step two — start or join', () => {
     await expect(startCard).toHaveAttribute('aria-pressed', 'true');
     await expect(joinCard).toHaveAttribute('aria-pressed', 'false');
 
-    // Starting a game — offline or online — keeps the whole settings sheet.
-    await expect(page.getByRole('radio', { name: 'On this device' })).toBeVisible();
-    await expect(page.getByRole('radio', { name: 'Play online' })).toBeVisible();
+    // Starting a game — hot seat or online — keeps the whole settings sheet.
+    await expect(page.getByRole('radio', { name: 'Hot Seat' })).toBeVisible();
+    const onlineType = page.getByRole('radio', { name: 'Online' });
+    await expect(onlineType).toBeVisible();
     await expect(page.getByText('Terms of Engagement')).toBeVisible();
     await expect(page.getByText('Players', { exact: true }).first()).toBeVisible();
     await expect(page.getByRole('button', { name: '🏛️ Start Game' })).toBeVisible();
 
-    // Joining stays in the same step: no page swap, the list takes the place
-    // of the local settings.
-    await joinCard.click();
-    await expect(page.getByText('Fine-tune Your Challenge')).toBeVisible();
-    await expect(page.getByText('Running games')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Refresh' })).toBeVisible();
-    await expect(page.getByText('Terms of Engagement')).toBeHidden();
-    await expect(page.getByRole('button', { name: '🏛️ Start Game' })).toBeHidden();
-
-    // …and back.
-    await startCard.click();
-    await expect(page.getByText('Terms of Engagement')).toBeVisible();
-    await expect(page.getByRole('button', { name: '🏛️ Start Game' })).toBeVisible();
-  });
-
-  test('grays the online choices out while offline', async ({ page, context }) => {
-    await page.goto('/');
-    await page.getByRole('button', { name: 'Next →' }).click();
-
-    const joinCard = page.getByRole('button', { name: 'Join a running game' });
-    const onlineToggle = page.getByRole('radio', { name: 'Play online' });
-    await expect(joinCard).toBeEnabled();
-    await expect(onlineToggle).toBeEnabled();
-
-    await context.setOffline(true);
-    await expect(joinCard).toBeDisabled();
-    await expect(joinCard).toContainText('offline');
-    await expect(onlineToggle).toBeDisabled();
-
-    // The local table is untouched by the missing connection.
-    await expect(page.getByRole('button', { name: '🏛️ Start Game' })).toBeEnabled();
-
-    await context.setOffline(false);
-    await expect(joinCard).toBeEnabled();
-    await expect(onlineToggle).toBeEnabled();
+    // Without a server the online type is off and says which condition is
+    // missing (this describe runs before the server is started).
+    const serverUp = await fetch('http://localhost:8787/health', {
+      signal: AbortSignal.timeout(1_500),
+    }).then((r) => r.ok).catch(() => false);
+    if (!serverUp) {
+      await expect(onlineType).toBeDisabled();
+      await expect(onlineType).toContainText('not reachable');
+      await expect(joinCard).toBeDisabled();
+      await expect(joinCard).toContainText('not reachable');
+      // The local door is the one left standing.
+      await expect(startCard).toHaveAttribute('aria-pressed', 'true');
+    }
   });
 });
 
@@ -170,6 +149,32 @@ test.describe('with a running game server', () => {
     }
   });
 
+  test('the online human type needs the server and a connection', async ({ page, context }) => {
+    test.skip(!!process.env.CIV1_SERVER, 'needs the local game server');
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Next →' }).click();
+
+    const onlineType = page.getByRole('radio', { name: 'Online' });
+    const joinCard = page.getByRole('button', { name: 'Join a running game' });
+
+    // Server answers and the device is online → both online doors are open.
+    await expect(onlineType).toBeEnabled();
+    await expect(joinCard).toBeEnabled();
+
+    // Pull the connection: the online type goes gray and says which condition
+    // is missing, while the local table stays untouched.
+    await context.setOffline(true);
+    await expect(onlineType).toBeDisabled();
+    await expect(onlineType).toContainText('offline');
+    await expect(joinCard).toBeDisabled();
+    await expect(joinCard).toContainText('offline');
+    await expect(page.getByRole('button', { name: '🏛️ Start Game' })).toBeEnabled();
+
+    await context.setOffline(false);
+    await expect(onlineType).toBeEnabled();
+    await expect(joinCard).toBeEnabled();
+  });
+
   test('reads a running game off the list and joins it', async ({ page }) => {
     test.skip(!!process.env.CIV1_SERVER, 'needs the local game server');
     // Seat 0 is invited (the host), seat 1 is still free to claim.
@@ -184,6 +189,14 @@ test.describe('with a running game server', () => {
     await page.goto('/');
     await page.getByRole('button', { name: 'Next →' }).click();
     await page.getByRole('button', { name: 'Join a running game' }).click();
+
+    // Joining stays in the same step: the list takes the place of the local
+    // settings, and the doors are still there to go back.
+    await expect(page.getByText('Fine-tune Your Challenge')).toBeVisible();
+    await expect(page.getByText('Running games')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Refresh' })).toBeVisible();
+    await expect(page.getByText('Terms of Engagement')).toBeHidden();
+    await expect(page.getByRole('button', { name: '🏛️ Start Game' })).toBeHidden();
 
     const row = page.getByRole('button', { name: new RegExp(roomId) });
     await expect(row).toBeVisible({ timeout: 15_000 });
@@ -209,7 +222,7 @@ test.describe('with a running game server', () => {
 
     // Two human seats, so there is somebody to invite.
     await page.getByRole('button', { name: 'AI', exact: true }).click();
-    await page.getByRole('radio', { name: 'Play online' }).click();
+    await page.getByRole('radio', { name: 'Online' }).click();
     await page.getByRole('button', { name: '🏛️ Start Game' }).click();
 
     // The room is created from the settings on screen; the links are the next
