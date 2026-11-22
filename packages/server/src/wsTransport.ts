@@ -85,8 +85,10 @@ export class WsTransport {
       }
     });
     this.unsubscribes.set(socket, unsubscribe);
+    room.seatConnected(seat);
     socket.on('close', () => {
       unsubscribe();
+      room.seatDisconnected(seat);
       this.unsubscribes.delete(socket);
     });
 

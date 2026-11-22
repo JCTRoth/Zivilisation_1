@@ -32,6 +32,18 @@ export interface AsyncRoomStore {
   removeRoom(id: string): Promise<void>;
 }
 
+/** One running game as the join screen sees it. */
+export interface RoomSummary {
+  id: string;
+  turn: number;
+  started: boolean;
+  lobby: LobbyConfig;
+  /** Seats an invite was minted for (from the seats table). */
+  seats: Array<{ seat: number; color: string | null; status: string; invitedAt: number | null }>;
+  /** Subset of those seats with a live event stream right now. */
+  connectedSeats: number[];
+}
+
 /**
  * Room lifecycle: create from a lobby payload, look up, and dispose. IDs are
  * sequential counters — transport-level, not gameplay state, but still free
@@ -212,6 +224,39 @@ export class RoomManager {
       turn: room.engine.currentTurn,
       started: room.engine.isInitialized,
     }));
+  }
+
+  /**
+   * The join screen's data: settings, progress and seats for every room that
+   * is actually running (loaded in this process). Seats come from the seats
+   * table — an invite was minted for them — and `connectedSeats` says which
+   * of those are here right now.
+   */
+  summaries(): RoomSummary[] {
+    return [...this.rooms.values()].map((room) => {
+      // In-memory claims first (a server without persistence still knows its
+      // own invites), the seats table then fills in colour and mint time.
+      const seats = new Map<number, RoomSummary['seats'][number]>();
+      for (const seat of room.claimedSeats) {
+        seats.set(seat, {
+          seat,
+          color: room.lobby.playerColors?.[seat] ?? null,
+          status: 'joined',
+          invitedAt: null,
+        });
+      }
+      for (const row of this.sqlite?.rooms.listSeats(room.id) ?? []) {
+        seats.set(row.seat, row);
+      }
+      return {
+        id: room.id,
+        turn: room.engine.currentTurn,
+        started: room.engine.isInitialized,
+        lobby: room.lobby,
+        seats: [...seats.values()].sort((a, b) => a.seat - b.seat),
+        connectedSeats: room.connectedSeats,
+      };
+    });
   }
 
   async remove(id: string): Promise<boolean> {

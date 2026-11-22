@@ -817,7 +817,7 @@ test.describe('AI Behavior', () => {
 
       // Turn counter should show the game progressed significantly
       const topBarText = await page.locator('.game-top-bar').textContent() ?? '';
-      const turnMatch = topBarText.match(/Turn (\d+)/);
+      const turnMatch = topBarText.match(/Turn\s+(\d+)/);
       expect(turnMatch).not.toBeNull();
       expect(Number(turnMatch![1])).toBeGreaterThanOrEqual(8);
 
@@ -1251,7 +1251,7 @@ test.describe('AI Behavior', () => {
       expect(finalText).not.toBe(initialText);
 
       // Extract turn number from "Turn {n}"
-      const turnMatch = finalText?.match(/Turn (\d+)/);
+      const turnMatch = finalText?.match(/Turn\s+(\d+)/);
       expect(turnMatch).not.toBeNull();
       expect(Number(turnMatch![1])).toBeGreaterThanOrEqual(13);
 

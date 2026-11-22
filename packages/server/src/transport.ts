@@ -139,16 +139,20 @@ export class HttpTransport {
       return;
     }
     if (url.pathname === '/rooms' && req.method === 'GET') {
-      this.json(res, 200, { ok: true, rooms: this.rooms.list() });
+      this.json(res, 200, { ok: true, rooms: this.rooms.summaries() });
       return;
     }
 
-    const roomMatch = url.pathname.match(/^\/rooms\/([^/]+)(?:\/(commands|events|save|load|state|seats))?$/);
+    const roomMatch = url.pathname.match(/^\/rooms\/([^/]+)(?:\/(commands|events|save|load|state|seats|join))?$/);
     if (roomMatch) {
       const [, roomId, action] = roomMatch;
       if (!action && req.method === 'DELETE') {
         const removed = await this.rooms.remove(roomId);
         this.json(res, removed ? 200 : 404, { ok: removed });
+        return;
+      }
+      if (action === 'join' && req.method === 'POST') {
+        await this.handleJoin(roomId, res);
         return;
       }
       if (action === 'seats' && req.method === 'POST') {
@@ -214,6 +218,46 @@ export class HttpTransport {
   }
 
   /** Host-only (seat 0): mint one signed token per requested seat. */
+  /**
+   * Claim a free seat in a running game — the public join path behind the
+   * "Join a running game" list. No host token is involved: the room is listed
+   * as joinable, and an invite that was already minted is never re-issued (it
+   * stays valid for whoever holds it). Candidates come from the lobby's own
+   * human-seat list, so a joiner lands on a seat the game treats as human.
+   */
+  private async handleJoin(roomId: string, res: ServerResponse): Promise<void> {
+    const room = await this.rooms.getOrLoad(roomId);
+    if (!room) return this.missingRoom(res);
+    const candidates = room.lobby.humanSeats?.length
+      ? [...room.lobby.humanSeats]
+      : Array.from({ length: room.lobby.numberOfCivilizations ?? 4 }, (_, i) => i);
+    const claimed = new Set<number>(room.claimedSeats);
+    for (const seat of room.connectedSeats) claimed.add(seat);
+    for (const seat of this.persistence?.rooms.listSeats(roomId) ?? []) {
+      claimed.add(seat.seat);
+    }
+    const seat = candidates.find((s) => !claimed.has(s));
+    if (seat === undefined) {
+      this.json(res, 409, { ok: false, reason: 'NO_FREE_SEAT' });
+      return;
+    }
+    room.claimSeat(seat);
+    const color = room.lobby.playerColors?.[seat] ?? undefined;
+    if (!this.secret) {
+      // No auth configured: the client joins with ?seat=N. The claim is still
+      // recorded so the next joiner cannot be handed the same seat.
+      this.persistence?.rooms.saveSeat(roomId, seat, 'unauthenticated', color);
+      this.json(res, 200, { ok: true, seat, token: null });
+      return;
+    }
+    const token = createSeatToken(this.secret, roomId, seat);
+    // Store only a hash — a database leak must not hand out live tokens.
+    const hash = createHmac('sha256', this.secret).update(token).digest('hex');
+    room.saveStore.set(`seat_token_hash_${seat}`, hash);
+    this.persistence?.rooms.saveSeat(roomId, seat, hash, color);
+    this.json(res, 200, { ok: true, seat, token });
+  }
+
   private async handleMintSeats(roomId: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (!this.secret) {
       this.json(res, 400, { ok: false, reason: 'AUTH_NOT_CONFIGURED' });
@@ -253,6 +297,7 @@ export class HttpTransport {
       // Store only a hash — a database leak must not hand out live tokens.
       const hash = createHmac('sha256', this.secret).update(token).digest('hex');
       room.saveStore.set(`seat_token_hash_${seat}`, hash);
+      room.claimSeat(seat);
       this.persistence?.rooms.saveSeat(roomId, seat, hash, colors[seat]);
     }
     this.json(res, 200, { ok: true, tokens });
@@ -350,9 +395,11 @@ export class HttpTransport {
       res.write(`data: ${JSON.stringify(event)}\n\n`);
     });
     this.streams.add(stream);
+    room.seatConnected(seat);
     req.on('close', () => {
       stream.unsubscribe();
       this.streams.delete(stream);
+      room.seatDisconnected(seat);
     });
   }
 

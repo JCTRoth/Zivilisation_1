@@ -7,7 +7,16 @@ import { useTranslation } from '../../i18n/useTranslation';
 import { translateDynamic, type TranslationKey } from '@shared/i18n/index';
 import LanguageSwitcher from './LanguageSwitcher';
 import BattleRoomStage from './BattleRoomStage';
-import LobbyPanel from './LobbyPanel';
+import InviteLinks from './InviteLinks';
+import {
+  createRoomWithSeats,
+  defaultGameServer,
+  joinRoom,
+  listRooms,
+  remoteJoinUrl,
+  type LobbyResult,
+  type RoomSummary,
+} from '../../lobbyApi';
 import { defaultNationIndexForBrowser } from '@shared/data/CivilizationByLanguage';
 import { tGovernmentName } from '@shared/i18n/dataNames';
 import '../../styles/gameModalShell.css';
@@ -136,6 +145,41 @@ function mapTypeBadge(mapType: string): string {
   const icon = MAP_TYPE_ICONS[mapType] ?? '';
   const fixed = FIXED_MAP_TYPES.has(mapType) ? '🗺️' : '';
   return `${icon}${fixed}`;
+}
+
+/** Classify a room API failure; the component turns this into a message. */
+function roomErrorCode(error: unknown): 'NO_FREE_SEAT' | 'UNREACHABLE' | 'UNKNOWN' {
+  const reason = String((error as Error)?.message ?? error);
+  if (reason === 'NO_FREE_SEAT') return 'NO_FREE_SEAT';
+  if (reason === 'ROOM_LIST_FAILED'
+    || /Failed to fetch|NetworkError|ECONNREFUSED|Load failed/i.test(reason)) {
+    return 'UNREACHABLE';
+  }
+  return 'UNKNOWN';
+}
+
+type SeatRow = { seat: number; color: string | null; state: 'here' | 'waiting' | 'free' };
+
+/**
+ * Every seat of a running game with the state the join screen shows: *here* (a live event stream), *waiting* (an invite was minted but nobody is
+ * connected) or *free* (claimable). The candidates come from the lobby's own
+ * human-seat list, so a seat the game does not treat as human is never
+ * offered.
+ */
+function seatRowsOf(room: RoomSummary): SeatRow[] {
+  const seats = room.lobby.humanSeats?.length
+    ? [...room.lobby.humanSeats]
+    : Array.from({ length: room.lobby.numberOfCivilizations ?? 0 }, (_, i) => i);
+  const invited = new Map(room.seats.map((s) => [s.seat, s]));
+  const connected = new Set(room.connectedSeats);
+  return seats.map((seat) => {
+    const record = invited.get(seat);
+    return {
+      seat,
+      color: record?.color ?? room.lobby.playerColors?.[seat] ?? null,
+      state: connected.has(seat) ? 'here' : record ? 'waiting' : 'free',
+    };
+  });
 }
 
 type GameSetupModalProps = {
@@ -582,17 +626,22 @@ function GameSetupModal({ show, onStart, onSettings, onHelp, online = true }: Ga
 
   const [currentStep, setCurrentStep] = useState(1);
   /**
-   * Step-two choice: the table on this device, or a shared table on the
-   * central server. The online room is rendered inside this very step
-   * (`LobbyPanel inline`), so the choice never leaves the wizard.
+   * Step-two entry: set up a fresh game here, or take a seat in one that is
+   * already running. Both live in this same step — no page swap.
    */
-  const [playMode, setPlayMode] = useState<'local' | 'online'>('local');
-  // Losing the connection must not strand a dead room panel on screen: fall
-  // back to the local table and gray the online card out (it also starts
-  // grayed when the page loads offline).
-  useEffect(() => {
-    if (!online) setPlayMode('local');
-  }, [online]);
+  const [entry, setEntry] = useState<'new' | 'join'>('new');
+  /** A new game is started on this device or on the server (with invites). */
+  const [newOnline, setNewOnline] = useState(false);
+  /** Set once the room exists: the invite links replace the Start button. */
+  const [createdRoom, setCreatedRoom] = useState<LobbyResult | null>(null);
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+  /** The "Join a running game" list. */
+  const [joinList, setJoinList] = useState<RoomSummary[] | null>(null);
+  const [joinLoading, setJoinLoading] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
+  const [joinNonce, setJoinNonce] = useState(0);
+  const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
   // The nation the wizard opens on follows the browser's own language, which
   // is the only thing that knows whether you are en-US or en-GB — the game
   // language has already thrown the region away. Unrouted browsers keep the
@@ -921,37 +970,281 @@ function GameSetupModal({ show, onStart, onSettings, onHelp, online = true }: Ga
    * local-only settings *below this same heading*: one page, one flow, no
    * jump to a separate lobby screen.
    */
-  const modeChoice = (
+  // ── Start a new game: on this device, or on the server with invites ────
+  const describeRoomError = useCallback((error: unknown): string => {
+    const code = roomErrorCode(error);
+    if (code === 'NO_FREE_SEAT') return t('setup.joinNoFreeSeat');
+    if (code === 'UNREACHABLE') return t('warroom.errorConnect');
+    return t('warroom.errorUnknown');
+  }, [t]);
+  /** Exactly what is on screen right now — the room must not invent settings. */
+  const roomFromSettings = () => ({
+    mapType,
+    mapWidth,
+    mapHeight,
+    landMass,
+    temperature,
+    climate,
+    age,
+    numberOfCivilizations: numCivilizations,
+    humanSeats,
+    playerCivilizations: players.map((p) => (p.civIndex >= 0 ? p.civIndex : null)),
+    playerColors: players.map((p) => ((p.color || '').trim() ? p.color : null)),
+    playerSpawns: showSpawnCol
+      ? players.map((p) => (p.spawn >= 0 ? p.spawn : null))
+      : players.map(() => null),
+    difficulty,
+    gameMode: derivedGameMode,
+    fixedAlliances: fixedAlliances && teamValidation.ok,
+    teamAssignments: fixedAlliances && teamValidation.ok
+      ? teamAssignments.slice(0, numCivilizations)
+      : undefined,
+  });
+
+  const startOnlineRoom = async (): Promise<void> => {
+    setStarting(true);
+    setStartError(null);
+    try {
+      // One invite per human seat: the Players table decides who is human,
+      // so it also decides who gets a link.
+      const seats = humanSeats.length ? humanSeats : [0];
+      setCreatedRoom(await createRoomWithSeats(defaultGameServer(), roomFromSettings(), seats));
+    } catch {
+      setStartError(t('warroom.errorCreate'));
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const enterCreatedRoom = (): void => {
+    if (!createdRoom) return;
+    // Seat 0 is this player's own seat — the links above go to the others.
+    window.location.href = remoteJoinUrl(
+      createdRoom.roomId, 0, createdRoom.tokens['0'] ?? null, createdRoom.baseUrl,
+    );
+  };
+
+  // ── Join a running game ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (!online) setNewOnline(false);
+  }, [online]);
+
+  useEffect(() => {
+    if (entry !== 'join') return;
+    let cancelled = false;
+    setJoinLoading(true);
+    setJoinError(null);
+    listRooms()
+      .then((rooms) => {
+        if (cancelled) return;
+        setJoinList(rooms);
+        setSelectedRoom((current) =>
+          (current && rooms.some((room) => room.id === current) ? current : null));
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setJoinError(describeRoomError(error));
+      })
+      .finally(() => {
+        if (!cancelled) setJoinLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [entry, joinNonce, t, describeRoomError]);
+
+  const selectedRoomData = joinList?.find((room) => room.id === selectedRoom) ?? null;
+
+  const doJoin = async (): Promise<void> => {
+    if (!selectedRoomData) return;
+    setStarting(true);
+    setJoinError(null);
+    try {
+      const { seat, token } = await joinRoom(selectedRoomData.id);
+      window.location.href = remoteJoinUrl(selectedRoomData.id, seat, token);
+    } catch (error) {
+      setJoinError(describeRoomError(error));
+      setStarting(false);
+    }
+  };
+
+  /**
+   * What do you want to do: a fresh table, or one that is already running.
+   * Joining needs a connection, so it grays out offline.
+   */
+  const entryChoice = (
     <div className="gm-section">
-      <div className="gm-section-title">{t('setup.modeTitle')}</div>
+      <div className="gm-section-title">{t('setup.entryTitle')}</div>
       <div className="setup-mode-grid">
         <button
           type="button"
-          className={`setup-mode-card${playMode === 'local' ? ' is-active' : ''}`}
-          aria-pressed={playMode === 'local'}
-          onClick={() => setPlayMode('local')}
+          className={`setup-mode-card${entry === 'new' ? ' is-active' : ''}`}
+          aria-pressed={entry === 'new'}
+          onClick={() => setEntry('new')}
         >
           <span className="setup-mode-card__icon" aria-hidden="true">🎲</span>
-          <strong>{t('setup.modeLocal')}</strong>
-          <small>{t('setup.modeLocalHint')}</small>
+          <strong>{t('setup.entryNew')}</strong>
+          <small>{t('setup.entryNewHint')}</small>
         </button>
         <button
           type="button"
-          className={`setup-mode-card${playMode === 'online' ? ' is-active' : ''}${online ? '' : ' is-disabled'}`}
-          aria-pressed={playMode === 'online'}
+          className={`setup-mode-card${entry === 'join' ? ' is-active' : ''}${online ? '' : ' is-disabled'}`}
+          aria-pressed={entry === 'join'}
           aria-disabled={!online}
           disabled={!online}
           onClick={() => {
-            if (!online) return;
-            setPlayMode('online');
+            if (online) setEntry('join');
           }}
         >
           <span className="setup-mode-card__icon" aria-hidden="true">🌐</span>
-          <strong>{t('setup.modeOnline')}</strong>
-          <small>{online ? t('setup.modeOnlineHint') : t('setup.modeOnlineOffline')}</small>
+          <strong>{t('setup.entryJoin')}</strong>
+          <small>{online ? t('setup.entryJoinHint') : t('setup.modeOnlineOffline')}</small>
         </button>
       </div>
     </div>
+  );
+
+  /** On this device / online — the same settings either way. */
+  const whereToggle = (
+    <div className="gm-section">
+      <div className="gm-section-title">{t('setup.modeTitle')}</div>
+      <div className="setup-lobby__segmented" role="radiogroup" aria-label={t('setup.modeTitle')}>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={!newOnline}
+          className={`setup-lobby__seg${newOnline ? '' : ' is-active'}`}
+          onClick={() => setNewOnline(false)}
+        >
+          {t('setup.modeLocal')}
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={newOnline}
+          aria-disabled={!online}
+          disabled={!online}
+          className={`setup-lobby__seg${newOnline ? ' is-active' : ''}${online ? '' : ' is-disabled'}`}
+          onClick={() => {
+            if (online) setNewOnline(true);
+          }}
+        >
+          {t('setup.modeOnline')}
+        </button>
+      </div>
+      <p className="setup-setting__hint">
+        {newOnline ? t('setup.modeOnlineHint') : t('setup.modeLocalHint')}
+      </p>
+      {startError && <div className="war-lobby__error" role="alert">{startError}</div>}
+    </div>
+  );
+
+  /** Once the room exists, the links are the next step — not another form. */
+  const inviteSection = createdRoom ? (
+    <InviteLinks
+      result={createdRoom}
+      seats={humanSeats.length ? humanSeats : [0]}
+      hint={humanSeats.length > 1 ? t('warroom.roomReadyHint') : t('setup.onlyOneHuman')}
+    />
+  ) : null;
+
+  const joinSection = (
+    <>
+      <div className="gm-section">
+        <div className="gm-section-title setup-join__title">
+          <span>{t('setup.joinTitle')}</span>
+          <button
+            type="button"
+            className="setup-join__refresh"
+            onClick={() => setJoinNonce((n) => n + 1)}
+            disabled={joinLoading}
+          >
+            {t('setup.joinRefresh')}
+          </button>
+        </div>
+        {joinLoading && <p className="setup-setting__hint">{t('setup.joinLoading')}</p>}
+        {joinError && <div className="war-lobby__error" role="alert">{joinError}</div>}
+        {!joinLoading && !joinError && (joinList?.length ?? 0) === 0 && (
+          <p className="setup-setting__hint">{t('setup.joinEmpty')}</p>
+        )}
+        <div className="setup-join__list">
+          {(joinList ?? []).map((room) => (
+            <button
+              key={room.id}
+              type="button"
+              className={`setup-join__game${selectedRoom === room.id ? ' is-selected' : ''}`}
+              aria-pressed={selectedRoom === room.id}
+              onClick={() => setSelectedRoom(room.id)}
+            >
+              <span className="setup-join__id">{room.id}</span>
+              <span className="setup-join__meta">
+                {t('common.turn', { turn: room.turn })} ·{' '}
+                {room.lobby.numberOfCivilizations ?? '?'} {t('setup.joinCivs')} ·{' '}
+                {translateDynamic(`data.difficulty.${room.lobby.difficulty ?? 'PRINCE'}`,
+                  undefined, room.lobby.difficulty ?? 'PRINCE')}
+              </span>
+              <span className="setup-join__taken">
+                {t('setup.joinSeatsTaken', {
+                  taken: room.seats.length,
+                  total: room.lobby.humanSeats?.length
+                    ?? room.lobby.numberOfCivilizations
+                    ?? 0,
+                })}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {selectedRoomData && (
+        <div className="gm-section">
+          <div className="gm-section-title">{t('setup.joinSummaryTitle')}</div>
+          <dl className="setup-join__summary">
+            <div>
+              <dt>{t('setup.o.map')}</dt>
+              <dd>{translateDynamic(`setup.mapLabel.${selectedRoomData.lobby.mapType ?? 'EARTH'}`,
+                undefined, selectedRoomData.lobby.mapType ?? 'EARTH')}</dd>
+            </div>
+            <div>
+              <dt>{t('setup.civsCount')}</dt>
+              <dd>{selectedRoomData.lobby.numberOfCivilizations ?? '?'}</dd>
+            </div>
+            <div>
+              <dt>{t('setup.difficulty')}</dt>
+              <dd>{translateDynamic(`data.difficulty.${selectedRoomData.lobby.difficulty ?? 'PRINCE'}`,
+                undefined, selectedRoomData.lobby.difficulty ?? 'PRINCE')}</dd>
+            </div>
+            <div>
+              <dt>{t('common.turn', { turn: '' }).trim()}</dt>
+              <dd>{selectedRoomData.turn}</dd>
+            </div>
+          </dl>
+
+          <div className="gm-section-title">{t('setup.players.title')}</div>
+          <ul className="setup-join__seats">
+            {seatRowsOf(selectedRoomData).map((row) => (
+              <li key={row.seat} className="setup-join__seat">
+                <span
+                  className="setup-join__seat-dot"
+                  aria-hidden="true"
+                  style={row.color ? { background: row.color } : undefined}
+                />
+                <span className="setup-join__seat-name">
+                  {row.seat === 0 ? t('warroom.hostSeat') : t('warroom.guestSeat', { n: row.seat })}
+                </span>
+                <span className={`setup-join__state is-${row.state}`}>
+                  {row.state === 'here'
+                    ? t('setup.joinSeatHere')
+                    : row.state === 'waiting'
+                      ? t('setup.joinSeatWaiting')
+                      : t('setup.joinSeatFree')}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </>
   );
 
   if (!show) return null;
@@ -1104,10 +1397,12 @@ function GameSetupModal({ show, onStart, onSettings, onHelp, online = true }: Ga
               </section>
             )}
 
-            {/* ---- Step 2: where and with whom the game is played ---- */}
-            {currentStep === 2 && playMode === 'local' && (
+            {/* ---- Step 2, start a new game: identical settings offline
+                 and online — online only adds the invite links. ---- */}
+            {currentStep === 2 && entry === 'new' && (
               <section className="setup-section" aria-labelledby="setup-step-settings">
-                {modeChoice}
+                {entryChoice}
+                {whereToggle}
 
                 <div className="gm-section">
                   <div className="gm-section-title">{t('setup.terms')}</div>
@@ -1814,16 +2109,16 @@ function GameSetupModal({ show, onStart, onSettings, onHelp, online = true }: Ga
                     )}
                   </div>
                 </div>
+                {inviteSection}
               </section>
             )}
 
-            {/* Online room, inside this very step: the host form and the seat
-                links take the place of the local-only settings above, so the
-                player never leaves the wizard to open a table. */}
-            {currentStep === 2 && playMode === 'online' && (
+            {/* ---- Step 2, join a running game: the list, then the chosen
+                 game's settings with its players underneath. ---- */}
+            {currentStep === 2 && entry === 'join' && (
               <section className="setup-section" aria-labelledby="setup-step-settings">
-                {modeChoice}
-                <LobbyPanel inline />
+                {entryChoice}
+                {joinSection}
               </section>
             )}
           </div>
@@ -1859,19 +2154,38 @@ function GameSetupModal({ show, onStart, onSettings, onHelp, online = true }: Ga
               >
                 {t('setup.next')}
               </button>
-            ) : playMode === 'online' ? (
-              // The room is the action now: the first turn begins when the
-              // invited seats open their links, so there is no local start.
-              <span className="setup-footer__note">{t('setup.onlineFooterHint')}</span>
+            ) : entry === 'join' ? (
+              <button
+                type="button"
+                onClick={() => void doJoin()}
+                disabled={!selectedRoomData || starting}
+                title={!selectedRoomData ? t('setup.joinHint') : undefined}
+                className="touch-btn touch-btn--primary setup-footer__button setup-footer__button--primary"
+              >
+                {starting ? t('warroom.creating') : t('setup.joinCta')}
+              </button>
+            ) : createdRoom ? (
+              // The room exists with exactly the settings above: the links
+              // are on screen, and this is the door into the seat.
+              <button
+                type="button"
+                onClick={enterCreatedRoom}
+                className="touch-btn touch-btn--success setup-footer__button setup-footer__button--success"
+              >
+                {t('setup.enterGame')}
+              </button>
             ) : (
               <button
                 type="button"
-                onClick={handleStart}
-                disabled={!teamSetupValid}
+                onClick={() => {
+                  if (newOnline) void startOnlineRoom();
+                  else handleStart();
+                }}
+                disabled={!teamSetupValid || starting}
                 title={!teamSetupValid ? t('setup.teams.invalid') : undefined}
                 className="touch-btn touch-btn--success setup-footer__button setup-footer__button--success"
               >
-                {t('setup.startGame')}
+                {starting ? t('warroom.creating') : t('setup.startGame')}
               </button>
             )}
           </div>

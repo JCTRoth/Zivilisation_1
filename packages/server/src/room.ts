@@ -90,6 +90,41 @@ export class GameRoom {
     return () => this.listeners.delete(listener);
   }
 
+  /**
+   * Seats with a live event stream right now — the honest "who is here"
+   * signal for the join screen. An invite being minted does not mean anyone
+   * is connected, so this is tracked per transport connection, not from the
+   * seats table.
+   */
+  private readonly connections = new Set<number>();
+
+  seatConnected(seat: number): void {
+    this.connections.add(seat);
+  }
+
+  seatDisconnected(seat: number): void {
+    this.connections.delete(seat);
+  }
+
+  get connectedSeats(): number[] {
+    return [...this.connections].sort((a, b) => a - b);
+  }
+
+  /**
+   * Seats an invite was minted for, in this process. The seats table is the
+   * durable copy; this exists so a server without persistence (and a test)
+   * still refuses to hand the same seat to two joiners.
+   */
+  private readonly claimed = new Set<number>();
+
+  claimSeat(seat: number): void {
+    this.claimed.add(seat);
+  }
+
+  get claimedSeats(): number[] {
+    return [...this.claimed].sort((a, b) => a - b);
+  }
+
   /** Forward an event published by another server process to local clients. */
   receiveRemote(event: OutboundEvent): void {
     if (typeof event.seq === 'number') this.eventSeq = Math.max(this.eventSeq, event.seq);

@@ -1199,17 +1199,6 @@ select.setup-setting__control:focus {
   width: 100%;
 }
 
-/* Step two with "Play online" chosen: the room table is the primary action,
-   so the command bar explains when the game starts instead of offering a
-   local Start button. */
-.setup-footer__note {
-  padding: 6px 4px;
-  color: rgba(232, 238, 243, 0.6);
-  font-size: 0.78rem;
-  line-height: 1.45;
-  text-align: center;
-}
-
 .setup-footer__button {
   flex: 1 1 auto;
   width: 100%;
@@ -2775,6 +2764,170 @@ body.civ1-setup-active .modal-backdrop {
 .setup-mode-card.is-disabled small {
   color: rgba(232, 238, 243, 0.45);
   font-style: italic;
+}
+
+/* ---- Join a running game ----------------------------------------------- */
+
+.setup-join__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.setup-join__refresh {
+  padding: 3px 9px;
+  border: 1px solid rgba(240, 195, 60, 0.32);
+  border-radius: 999px;
+  background: rgba(240, 195, 60, 0.08);
+  color: rgba(240, 195, 60, 0.92);
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background-color var(--dur-fast, 120ms) var(--ease-out, ease-out);
+}
+
+.setup-join__refresh:hover:not(:disabled) {
+  background: rgba(240, 195, 60, 0.16);
+}
+
+.setup-join__refresh:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+.setup-join__list {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.setup-join__game {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  text-align: left;
+  color: var(--color-text, #e8eef3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  transition:
+    border-color 160ms var(--ease-out, ease-out),
+    background-color 160ms var(--ease-out, ease-out);
+}
+
+.setup-join__game:hover,
+.setup-join__game:focus-visible {
+  border-color: rgba(240, 195, 60, 0.45);
+}
+
+.setup-join__game.is-selected {
+  border-color: rgba(240, 195, 60, 0.75);
+  background:
+    radial-gradient(120% 100% at 0% 0%, rgba(240, 195, 60, 0.14), transparent 60%),
+    rgba(255, 255, 255, 0.05);
+}
+
+.setup-join__id {
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.setup-join__meta {
+  color: rgba(232, 238, 243, 0.62);
+  font-size: 0.74rem;
+}
+
+.setup-join__taken {
+  color: rgba(240, 195, 60, 0.85);
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.setup-join__summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.setup-join__summary dt {
+  color: rgba(232, 238, 243, 0.55);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.setup-join__summary dd {
+  margin: 2px 0 0;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.setup-join__seats {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.setup-join__seat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 0.8rem;
+}
+
+.setup-join__seat-dot {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.setup-join__seat-name {
+  flex: 1 1 auto;
+}
+
+.setup-join__state {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.setup-join__state.is-here {
+  color: #7ee7a8;
+}
+
+.setup-join__state.is-waiting {
+  color: rgba(240, 195, 60, 0.9);
+}
+
+.setup-join__state.is-free {
+  color: rgba(232, 238, 243, 0.5);
+}
+
+/* The on-device / online split is a radio row: grayed out when offline. */
+.setup-lobby__seg:disabled,
+.setup-lobby__seg.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 @media (max-width: 719.98px) {

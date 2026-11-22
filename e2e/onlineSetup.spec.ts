@@ -1,71 +1,225 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type ChildProcess } from '@playwright/test';
+import { spawn } from 'node:child_process';
+import { existsSync, unlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 /**
- * The pre-game flow is one page, one choice.
+ * The pre-game flow, end to end:
  *
- * Step two offers "Play online" *in place*: choosing it swaps the local-only
- * settings for the room table without leaving the wizard, and the command bar
- * explains when the game starts instead of offering a local Start button.
- * Without a connection the choice is grayed out and inert — the wizard stays
- * on the local table rather than stranding a dead room panel.
+ *  - step two offers exactly two doors — *Start a new game* and *Join a
+ *    running game* — and a new game carries the same settings offline and
+ *    online (online only adds the invite links);
+ *  - offline, the two online choices gray out;
+ *  - with a server up, a running game can be picked from the list, its
+ *    settings and players read off it, and joined — and a game started
+ *    online hands out one invite per human seat.
  */
-test.describe('setup step two — where to play', () => {
-  test('Play online opens the room table inside the wizard', async ({ page }) => {
+
+// The wizard talks to `defaultGameServer()` — no URL field in the UI — so the
+// server has to be where the client looks by default.
+const SERVER_PORT = 8787;
+const WS_PORT = 8788;
+const BASE = `http://127.0.0.1:${SERVER_PORT}`;
+const DB_FILE = join(tmpdir(), 'civ1-e2e-join.db');
+
+test.setTimeout(180_000);
+
+let server: ChildProcess | null = null;
+let serverLog = '';
+
+async function waitForHealth(): Promise<void> {
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(`${BASE}/health`);
+      if (response.ok) return;
+    } catch {
+      // not up yet
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`game server did not become healthy\n--- server log ---\n${serverLog}`);
+}
+
+async function createRoom(lobby: Record<string, unknown>): Promise<{ id: string; token: string | null }> {
+  const created = await fetch(`${BASE}/rooms`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(lobby),
+  }).then((r) => r.json()) as { ok: boolean; id: string; token?: string | null };
+  if (!created.ok) throw new Error(`ROOM_CREATE_FAILED: ${JSON.stringify(created)}`);
+  return { id: created.id, token: created.token ?? null };
+}
+
+async function mintSeats(roomId: string, token: string | null, seats: number[]): Promise<void> {
+  const minted = await fetch(`${BASE}/rooms/${encodeURIComponent(roomId)}/seats`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ token, seats }),
+  }).then((r) => r.json()) as { ok: boolean };
+  if (!minted.ok) throw new Error(`SEAT_MINT_FAILED: ${JSON.stringify(minted)}`);
+}
+
+test.afterAll(async () => {
+  if (server?.pid) {
+    try {
+      // Negative pid → the whole process group (npx spawns a grandchild).
+      process.kill(-server.pid, 'SIGTERM');
+    } catch {
+      // already gone
+    }
+  }
+  for (const suffix of ['', '-wal', '-shm']) {
+    if (existsSync(DB_FILE + suffix)) unlinkSync(DB_FILE + suffix);
+  }
+});
+
+test.describe('setup step two — start or join', () => {
+  test('offers both doors and keeps every setting under the new game', async ({ page }) => {
     await page.goto('/');
-
-    // The wizard is the first screen — no hub in front of it — and the old
-    // hub heading is gone for good.
     await expect(page.getByRole('heading', { name: 'Choose Your Civilization' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'The Table Is Set' })).toHaveCount(0);
-
     await page.getByRole('button', { name: 'Next →' }).click();
     await expect(page.getByText('Fine-tune Your Challenge')).toBeVisible();
 
-    // Local by default: the local-only settings and the local action.
+    // Two doors, new game selected first.
+    const startCard = page.getByRole('button', { name: 'Start a new game' });
+    const joinCard = page.getByRole('button', { name: 'Join a running game' });
+    await expect(startCard).toHaveAttribute('aria-pressed', 'true');
+    await expect(joinCard).toHaveAttribute('aria-pressed', 'false');
+
+    // Starting a game — offline or online — keeps the whole settings sheet.
+    await expect(page.getByRole('radio', { name: 'On this device' })).toBeVisible();
+    await expect(page.getByRole('radio', { name: 'Play online' })).toBeVisible();
     await expect(page.getByText('Terms of Engagement')).toBeVisible();
+    await expect(page.getByText('Players', { exact: true }).first()).toBeVisible();
     await expect(page.getByRole('button', { name: '🏛️ Start Game' })).toBeVisible();
 
-    // "Play online" is a choice on this very page — picking it must not
-    // navigate anywhere.
-    await page.getByRole('button', { name: 'Play online' }).click();
-    await expect(page.getByRole('button', { name: 'Create room' })).toBeVisible();
+    // Joining stays in the same step: no page swap, the list takes the place
+    // of the local settings.
+    await joinCard.click();
     await expect(page.getByText('Fine-tune Your Challenge')).toBeVisible();
-
-    // The room took the place of the local-only settings and of the local
-    // Start button; the command bar now says when the first turn begins.
+    await expect(page.getByText('Running games')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Refresh' })).toBeVisible();
     await expect(page.getByText('Terms of Engagement')).toBeHidden();
     await expect(page.getByRole('button', { name: '🏛️ Start Game' })).toBeHidden();
-    await expect(page.getByText('The game starts when your friends open their links.')).toBeVisible();
 
-    // Stepping back to the local table restores the local flow.
-    await page.getByRole('button', { name: 'On this device' }).click();
-    await expect(page.getByRole('button', { name: '🏛️ Start Game' })).toBeVisible();
+    // …and back.
+    await startCard.click();
     await expect(page.getByText('Terms of Engagement')).toBeVisible();
-    await expect(page.getByText('The game starts when your friends open their links.')).toBeHidden();
+    await expect(page.getByRole('button', { name: '🏛️ Start Game' })).toBeVisible();
   });
 
-  test('offline grays the online choice out', async ({ page, context }) => {
+  test('grays the online choices out while offline', async ({ page, context }) => {
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'Choose Your Civilization' })).toBeVisible();
     await page.getByRole('button', { name: 'Next →' }).click();
 
-    const online = page.getByRole('button', { name: 'Play online' });
-    await expect(online).toBeEnabled();
+    const joinCard = page.getByRole('button', { name: 'Join a running game' });
+    const onlineToggle = page.getByRole('radio', { name: 'Play online' });
+    await expect(joinCard).toBeEnabled();
+    await expect(onlineToggle).toBeEnabled();
 
-    // Connected → choosing the room works.
-    await online.click();
-    await expect(page.getByRole('button', { name: 'Create room' })).toBeVisible();
-
-    // Lose the connection: the choice goes gray and says why, and the wizard
-    // falls back to the local table instead of showing a dead room.
     await context.setOffline(true);
-    await expect(online).toBeDisabled();
-    await expect(online).toContainText('offline');
-    await expect(page.getByText('Terms of Engagement')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Create room' })).toBeHidden();
+    await expect(joinCard).toBeDisabled();
+    await expect(joinCard).toContainText('offline');
+    await expect(onlineToggle).toBeDisabled();
 
-    // Back online: the choice lights up again.
+    // The local table is untouched by the missing connection.
+    await expect(page.getByRole('button', { name: '🏛️ Start Game' })).toBeEnabled();
+
     await context.setOffline(false);
-    await expect(online).toBeEnabled();
+    await expect(joinCard).toBeEnabled();
+    await expect(onlineToggle).toBeEnabled();
+  });
+});
+
+test.describe('with a running game server', () => {
+  test.beforeAll(async () => {
+    // An external stack (CIV1_SERVER) is not on the client's default port, so
+    // the list would be empty there — run these against our own server only.
+    if (process.env.CIV1_SERVER) return;
+    for (const suffix of ['', '-wal', '-shm']) {
+      if (existsSync(DB_FILE + suffix)) unlinkSync(DB_FILE + suffix);
+    }
+    server = spawn('npx', ['tsx', 'packages/server/src/main.ts'], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        PORT: String(SERVER_PORT),
+        WS_PORT: String(WS_PORT),
+        DB_FILE,
+        GAME_SERVER_SECRET: 'e2e-secret',
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      // Own process group so the grandchild dies with it.
+      detached: true,
+    });
+    server.stdout?.on('data', (chunk) => { serverLog += String(chunk); });
+    server.stderr?.on('data', (chunk) => { serverLog += String(chunk); });
+    await waitForHealth();
+  });
+
+  test.afterAll(async () => {
+    if (server?.pid) {
+      try {
+        process.kill(-server.pid, 'SIGTERM');
+      } catch {
+        // already gone
+      }
+      server = null;
+    }
+  });
+
+  test('reads a running game off the list and joins it', async ({ page }) => {
+    test.skip(!!process.env.CIV1_SERVER, 'needs the local game server');
+    // Seat 0 is invited (the host), seat 1 is still free to claim.
+    const { id: roomId, token } = await createRoom({
+      mapType: 'CLOSEUP_1V1',
+      numberOfCivilizations: 2,
+      difficulty: 'WARLORD',
+      humanSeats: [0, 1],
+    });
+    await mintSeats(roomId, token, [0]);
+
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Next →' }).click();
+    await page.getByRole('button', { name: 'Join a running game' }).click();
+
+    const row = page.getByRole('button', { name: new RegExp(roomId) });
+    await expect(row).toBeVisible({ timeout: 15_000 });
+    await row.click();
+
+    // The settings the game was started with…
+    const summary = page.locator('.setup-join__summary');
+    await expect(page.getByText("This game's settings")).toBeVisible();
+    await expect(summary).toContainText('Close-Up 1v1');
+    await expect(summary).toContainText('Warlord');
+    // …and underneath, every seat with its state.
+    await expect(page.getByText('waiting to join')).toBeVisible();
+    await expect(page.getByText('free seat')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Join this game' }).click();
+    await expect(page.locator('.app-shell')).toBeVisible({ timeout: 30_000 });
+  });
+
+  test('starts online with the same settings and hands out the invites', async ({ page }) => {
+    test.skip(!!process.env.CIV1_SERVER, 'needs the local game server');
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Next →' }).click();
+
+    // Two human seats, so there is somebody to invite.
+    await page.getByRole('button', { name: 'AI', exact: true }).click();
+    await page.getByRole('radio', { name: 'Play online' }).click();
+    await page.getByRole('button', { name: '🏛️ Start Game' }).click();
+
+    // The room is created from the settings on screen; the links are the next
+    // step and the command bar offers the door into the seat.
+    await expect(page.getByText('The Table Is Open')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole('link', { name: /Join as seat 0/ })).toBeVisible();
+    await expect(page.getByRole('link', { name: /Join as seat 1/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Enter the game' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Enter the game' }).click();
+    await expect(page.locator('.app-shell')).toBeVisible({ timeout: 30_000 });
   });
 });

@@ -266,6 +266,124 @@ describe('server transport', () => {
     expect(after.rooms).toHaveLength(0);
   });
 
+  it('lists running games with their settings, seats and live connections', async () => {
+    const transport = new HttpTransport({ port: 0, secret: 'secret' });
+    await transport.waitUntilReady();
+    transports.push(transport);
+    const base = `http://127.0.0.1:${transport.port}`;
+
+    const created = await fetch(`${base}/rooms`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        mapType: 'CLOSEUP_1V1',
+        numberOfCivilizations: 3,
+        difficulty: 'WARLORD',
+        humanSeats: [0, 1],
+        landMass: 2,
+        age: 1,
+        fixedAlliances: true,
+        teamAssignments: [0, 0, 1],
+      }),
+    }).then((r) => r.json());
+    const roomId = created.id as string;
+
+    // The host mints its own seat — what createRoomWithSeats does — and a
+    // joiner claims the next one through the public join path.
+    await fetch(`${base}/rooms/${roomId}/seats`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: created.token, seats: [0] }),
+    }).then((r) => r.json());
+    const joined = await fetch(`${base}/rooms/${roomId}/join`, { method: 'POST' })
+      .then((r) => r.json());
+    expect(joined).toMatchObject({ ok: true, seat: 1 });
+
+    const summaryOf = async (): Promise<{
+      lobby: Record<string, unknown>;
+      seats: Array<{ seat: number }>;
+      connectedSeats: number[];
+      turn: number;
+      started: boolean;
+    }> => {
+      const listed = await fetch(`${base}/rooms`).then((r) => r.json()) as {
+        rooms: Array<Record<string, never> & {
+          id: string; lobby: Record<string, unknown>;
+          seats: Array<{ seat: number }>; connectedSeats: number[];
+          turn: number; started: boolean;
+        }>;
+      };
+      const found = listed.rooms.find((r) => r.id === roomId);
+      if (!found) throw new Error('room missing from the list');
+      return found;
+    };
+
+    // The join screen reads the exact settings the wizard started it with —
+    // the same options offline and online is the whole point.
+    const summary = await summaryOf();
+    expect(summary).toMatchObject({
+      started: true,
+      turn: expect.any(Number),
+      lobby: {
+        mapType: 'CLOSEUP_1V1',
+        numberOfCivilizations: 3,
+        difficulty: 'WARLORD',
+        landMass: 2,
+        age: 1,
+        fixedAlliances: true,
+        teamAssignments: [0, 0, 1],
+      },
+    });
+    expect(summary.seats.map((s) => s.seat)).toEqual([0, 1]);
+    expect(summary.connectedSeats).toEqual([]);
+
+    // An invite alone does not make a player present: only an open stream does.
+    const token = createSeatToken('secret', roomId, 0);
+    let subscription: { close(): void } | undefined;
+    await new Promise<void>((resolve, reject) => {
+      subscription = subscribeToRoomEvents({
+        baseUrl: base,
+        roomId,
+        token,
+        onConnected: () => resolve(),
+        onEvent: () => {},
+        onError: reject,
+      });
+    });
+    expect((await summaryOf()).connectedSeats).toEqual([0]);
+    subscription?.close();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect((await summaryOf()).connectedSeats).toEqual([]);
+  });
+
+  it('claims free seats for a public join, in order, and refuses when full', async () => {
+    const transport = new HttpTransport({ port: 0, secret: 'secret' });
+    await transport.waitUntilReady();
+    transports.push(transport);
+    const base = `http://127.0.0.1:${transport.port}`;
+
+    const created = await fetch(`${base}/rooms`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ numberOfCivilizations: 2, humanSeats: [0, 1] }),
+    }).then((r) => r.json());
+    const roomId = created.id as string;
+    const join = () => fetch(`${base}/rooms/${roomId}/join`, { method: 'POST' })
+      .then((r) => r.json()) as Promise<{ ok: boolean; seat?: number; token?: string; reason?: string }>;
+
+    const first = await join();
+    expect(first).toMatchObject({ ok: true, seat: 0 });
+    const second = await join();
+    expect(second).toMatchObject({ ok: true, seat: 1 });
+    const third = await join();
+    expect(third).toMatchObject({ ok: false, reason: 'NO_FREE_SEAT' });
+
+    // Claiming a seat does not invalidate the invite the host already holds.
+    expect(verifySeatToken('secret', created.token, roomId)).toBe(0);
+    expect(verifySeatToken('secret', first.token!, roomId)).toBe(0);
+    expect(verifySeatToken('secret', second.token!, roomId)).toBe(1);
+  });
+
   it('accepts a command over a WebSocket and pushes it through the room', async () => {
     const manager = new RoomManager();
     const room = manager.create({ seed: 9, numberOfCivilizations: 2 }, 'ws_room');

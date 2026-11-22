@@ -10,6 +10,11 @@ export interface LobbyConfig {
   mapType?: string;
   mapWidth?: number;
   mapHeight?: number;
+  /** Civ1 world-shaping sliders — part of "the same options" online. */
+  landMass?: number;
+  temperature?: number;
+  climate?: number;
+  age?: number;
   numberOfCivilizations?: number;
   humanSeats?: number[];
   playerCivilizations?: (number | null)[];
@@ -17,6 +22,8 @@ export interface LobbyConfig {
   playerSpawns?: (number | null)[];
   difficulty?: string;
   gameMode?: 'single' | 'hotseat';
+  fixedAlliances?: boolean;
+  teamAssignments?: number[];
 }
 
 export function settingsFromLobby(lobby: LobbyConfig): GameSettings {
@@ -32,10 +39,16 @@ export function settingsFromLobby(lobby: LobbyConfig): GameSettings {
     rngSeed: lobby.seed,
     mapWidth: lobby.mapWidth,
     mapHeight: lobby.mapHeight,
+    landMass: lobby.landMass,
+    temperature: lobby.temperature,
+    climate: lobby.climate,
+    age: lobby.age,
     gameMode: lobby.gameMode ?? (seats.length > 1 ? 'hotseat' : 'single'),
     humanPlayerIds: seats,
     playerCivilizations: lobby.playerCivilizations,
     playerColors: lobby.playerColors,
     playerSpawns: lobby.playerSpawns,
+    fixedAlliances: lobby.fixedAlliances,
+    teamAssignments: lobby.teamAssignments,
   };
 }

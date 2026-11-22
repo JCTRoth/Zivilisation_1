@@ -47,6 +47,32 @@ export class RoomRepository {
     return row?.token_hash ?? null;
   }
 
+  /**
+   * Every seat an invite was minted for, in seat order.
+   *
+   * `connected_at` is stamped when the invite is minted, so it reads as
+   * "invited at" — whether the holder is actually connected comes from the
+   * room's live connection set, not from here.
+   */
+  listSeats(roomId: string): Array<{
+    seat: number;
+    color: string | null;
+    status: string;
+    invitedAt: number | null;
+  }> {
+    const rows = this.db.prepare(
+      'SELECT seat, color, status, connected_at FROM seats WHERE room_id = ? ORDER BY seat',
+    ).all(roomId) as Array<{
+      seat: number; color: string | null; status: string; connected_at: number | null;
+    }>;
+    return rows.map((r) => ({
+      seat: r.seat,
+      color: r.color,
+      status: r.status,
+      invitedAt: r.connected_at ?? null,
+    }));
+  }
+
   /** Oldest retained sequence (0 when empty). */
   oldestEventSeq(roomId: string): number {
     const row = this.db.prepare(
