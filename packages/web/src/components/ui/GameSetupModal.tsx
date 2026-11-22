@@ -1168,7 +1168,7 @@ function GameSetupModal({ show, onStart, onSettings, onHelp, online = true }: Ga
           onClick={() => setNewOnline(false)}
         >
           <span className="setup-player-type__icon" aria-hidden="true">💺</span>
-          <strong>{t('setup.modeLocal')}</strong>
+          <strong>{t('setup.lobby.human')} · {t('setup.modeLocal')}</strong>
           <small className="setup-player-type__info">{t('setup.modeLocalHint')}</small>
         </button>
         <button
@@ -1184,7 +1184,7 @@ function GameSetupModal({ show, onStart, onSettings, onHelp, online = true }: Ga
           }}
         >
           <span className="setup-player-type__icon" aria-hidden="true">🌐</span>
-          <strong>{t('setup.modeOnline')}</strong>
+          <strong>{t('setup.lobby.human')} · {t('setup.modeOnline')}</strong>
           <small className={`setup-player-type__info${canPlayOnline ? '' : ' is-shown'}`}>
             {canPlayOnline ? t('setup.modeOnlineHint') : onlineUnavailableReason}
           </small>
