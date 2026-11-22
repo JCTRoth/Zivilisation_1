@@ -291,6 +291,7 @@ export const de: PartialTranslationDict = {
   'setup.joinNoFreeSeat': "Alle Plätze sind belegt.",
   'setup.enterGame': "Ins Spiel gehen",
   'setup.onlyOneHuman': "Nur dein Platz ist menschlich — markiere mehr Plätze in der Spielerliste, um Freunde einzuladen.",
+  'setup.inviteOpenSeat': 'Ein Platz bleibt offen für alle, die über die Liste beitreten.',
   'setup.difficulty': 'Schwierigkeit',
   'setup.difficultyHint': 'Wirkt sich auf KI-Boni und Barbarenaktivität aus.',
   'setup.civsCount': 'Zivilisationen im Spiel',

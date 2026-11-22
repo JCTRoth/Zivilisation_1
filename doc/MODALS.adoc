@@ -100,8 +100,9 @@ User flows:
    *Fine-tune the world (advanced)*, collapsed by default so the size
    preview only renders on request. *Start Game* starts the local game;
    with an online seat it creates the room **from exactly the settings on
-   screen**, shows one invitation per human seat (every human seat gets a
-   link) and turns the command bar into *Enter the game*. One central
+   screen**, shows one invitation per human seat **except the last, which
+   stays open for the join list** (so a room created here is always
+   joinable) and turns the command bar into *Enter the game*. One central
    server serves everyone: its URL comes
    from the deployment's `/config.js`, so no address, room ID or token
    appears in the player UI. The link still carries the room and signed seat

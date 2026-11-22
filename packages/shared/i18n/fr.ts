@@ -290,6 +290,7 @@ export const fr: PartialTranslationDict = {
   'setup.joinNoFreeSeat': "Toutes les places sont prises.",
   'setup.enterGame': "Entrer dans la partie",
   'setup.onlyOneHuman': "Seule votre place est humaine — cochez d'autres places dans la liste des joueurs pour inviter des amis.",
+  'setup.inviteOpenSeat': 'Une place reste ouverte à qui rejoint depuis la liste.',
   'setup.difficulty': 'Difficulté',
   'setup.difficultyHint': 'Influence les bonus de l’IA et l’activité barbare.',
   'setup.civsCount': 'Civilisations en jeu',

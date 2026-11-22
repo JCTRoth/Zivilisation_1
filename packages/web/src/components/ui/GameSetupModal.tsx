@@ -644,6 +644,12 @@ function GameSetupModal({ show, onStart, onSettings, onHelp, online = true }: Ga
   const [serverState, setServerState] = useState<'checking' | 'up' | 'down'>('checking');
   /** Set once the room exists: the invite links replace the Start button. */
   const [createdRoom, setCreatedRoom] = useState<LobbyResult | null>(null);
+  /**
+   * The seats that actually got an invite. The LAST human seat is never
+   * invited — it stays open for the join list, so a room created here is
+   * always joinable.
+   */
+  const [invitedSeats, setInvitedSeats] = useState<number[]>([]);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   /** The "Join a running game" list. */
@@ -1013,10 +1019,14 @@ function GameSetupModal({ show, onStart, onSettings, onHelp, online = true }: Ga
     setStarting(true);
     setStartError(null);
     try {
-      // One invite per human seat: the Players table decides who is human,
-      // so it also decides who gets a link.
+      // One invite per human seat EXCEPT the last: that seat stays open for
+      // the join list, so a room created here is always joinable. A solo
+      // online game (a single human seat) still invites its own host.
       const seats = humanSeats.length ? humanSeats : [0];
-      setCreatedRoom(await createRoomWithSeats(defaultGameServer(), roomFromSettings(), seats));
+      const invited = seats.length > 1 ? seats.slice(0, -1) : seats;
+      const room = await createRoomWithSeats(defaultGameServer(), roomFromSettings(), invited);
+      setInvitedSeats(invited);
+      setCreatedRoom(room);
     } catch {
       setStartError(t('warroom.errorCreate'));
     } finally {
@@ -1187,11 +1197,16 @@ function GameSetupModal({ show, onStart, onSettings, onHelp, online = true }: Ga
    */
   /** Once the room exists, the links are the next step — not another form. */
   const inviteSection = createdRoom ? (
-    <InviteLinks
-      result={createdRoom}
-      seats={humanSeats.length ? humanSeats : [0]}
-      hint={humanSeats.length > 1 ? t('warroom.roomReadyHint') : t('setup.onlyOneHuman')}
-    />
+    <>
+      <InviteLinks
+        result={createdRoom}
+        seats={invitedSeats}
+        hint={humanSeats.length > 1 ? t('warroom.roomReadyHint') : t('setup.onlyOneHuman')}
+      />
+      {humanSeats.length > invitedSeats.length && (
+        <p className="setup-setting__hint">{t('setup.inviteOpenSeat')}</p>
+      )}
+    </>
   ) : null;
 
   // What a joiner needs before taking a seat: the same card the start screen

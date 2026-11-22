@@ -290,6 +290,7 @@ export const es: PartialTranslationDict = {
   'setup.joinNoFreeSeat': "Todos los asientos están ocupados.",
   'setup.enterGame': "Entrar en la partida",
   'setup.onlyOneHuman': "Solo tu asiento es humano: marca más asientos en la lista de jugadores para invitar amigos.",
+  'setup.inviteOpenSeat': 'Un asiento queda libre para quien se una desde la lista.',
   'setup.difficulty': 'Dificultad',
   'setup.difficultyHint': 'Afecta a los bonus de la IA y a la actividad bárbara.',
   'setup.civsCount': 'Civilizaciones en juego',

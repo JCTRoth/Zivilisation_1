@@ -301,6 +301,7 @@ export const en = {
   'setup.joinNoFreeSeat': "Every seat is taken.",
   'setup.enterGame': "Enter the game",
   'setup.onlyOneHuman': "Only your seat is human — mark more seats in the Players list to invite friends.",
+  'setup.inviteOpenSeat': 'One seat stays open for anyone joining from the list.',
   'setup.difficulty': 'Difficulty',
   'setup.difficultyHint': 'Affects AI bonuses and barbarian activity.',
   'setup.civsCount': 'Civilizations in Play',

@@ -290,6 +290,7 @@ export const ru: PartialTranslationDict = {
   'setup.joinNoFreeSeat': "Все места заняты.",
   'setup.enterGame': "Войти в игру",
   'setup.onlyOneHuman': "Только ваше место за людьми — отметьте больше мест в списке игроков, чтобы пригласить друзей.",
+  'setup.inviteOpenSeat': 'Одно место остаётся для тех, кто присоединится из списка.',
   'setup.difficulty': 'Сложность',
   'setup.difficultyHint': 'Влияет на бонусы ИИ и активность варваров.',
   'setup.civsCount': 'Цивилизаций в игре',

@@ -290,6 +290,7 @@ export const ja: PartialTranslationDict = {
   'setup.joinNoFreeSeat': "すべての席が埋まっています。",
   'setup.enterGame': "ゲームに入る",
   'setup.onlyOneHuman': "人間の席はあなただけです — プレイヤー一覧で他の席を指定すると友達を招待できます。",
+  'setup.inviteOpenSeat': 'リストから参加する人のために1席が空けられます。',
   'setup.difficulty': '難易度',
   'setup.difficultyHint': 'AIボーナスと野蛮人の活動に影響します。',
   'setup.civsCount': '登場する文明',

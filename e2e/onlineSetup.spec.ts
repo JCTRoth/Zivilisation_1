@@ -237,7 +237,10 @@ test.describe('with a running game server', () => {
     // step and the command bar offers the door into the seat.
     await expect(page.getByText('The Table Is Open')).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole('link', { name: /Join as seat 0/ })).toBeVisible();
-    await expect(page.getByRole('link', { name: /Join as seat 1/ })).toBeVisible();
+    // The LAST human seat is never invited: it stays open for the join list,
+    // so a room created here is always joinable.
+    await expect(page.getByRole('link', { name: /Join as seat 1/ })).toHaveCount(0);
+    await expect(page.getByText('One seat stays open for anyone joining from the list.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Enter the game' })).toBeVisible();
 
     await page.getByRole('button', { name: 'Enter the game' }).click();
